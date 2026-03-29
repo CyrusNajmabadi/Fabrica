@@ -48,8 +48,6 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
     }
 
-    internal TestAccessor GetTestAccessor() => new(this);
-
     private void RunOneIteration(
         CancellationToken cancellationToken,
         ref long lastTime,
@@ -146,7 +144,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             if (_memory.PinnedVersions.IsPinned(toProcess.Image.TickNumber))
             {
                 toProcess.ClearNext();
-                _pinnedQueue.Add(toProcess);
+                if (!_pinnedQueue.Add(toProcess))
+                    throw new InvalidOperationException("Pinned snapshot was added to the cleanup queue more than once.");
             }
             else
             {
@@ -186,6 +185,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         if (delay > 0)
             _waiter.Wait(new TimeSpan(delay / 100), cancellationToken);
     }
+
+    internal TestAccessor GetTestAccessor() => new(this);
 
     internal readonly struct TestAccessor
     {
