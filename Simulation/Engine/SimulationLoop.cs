@@ -46,23 +46,29 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         long accumulator = 0;
 
         while (!cancellationToken.IsCancellationRequested)
+            RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
+    }
+
+    private void RunOneIteration(
+        CancellationToken cancellationToken,
+        ref long lastTime,
+        ref long accumulator)
+    {
+        long now   = _clock.NowNanoseconds;
+        long delta = now - lastTime;
+        lastTime   = now;
+        accumulator += delta;
+
+        while (accumulator >= SimulationConstants.TickDurationNanoseconds)
         {
-            long now   = _clock.NowNanoseconds;
-            long delta = now - lastTime;
-            lastTime   = now;
-            accumulator += delta;
-
-            while (accumulator >= SimulationConstants.TickDurationNanoseconds)
-            {
-                ApplyPressureDelay(cancellationToken);
-                Tick(cancellationToken);
-                CleanupStaleSnapshots();
-                accumulator -= SimulationConstants.TickDurationNanoseconds;
-            }
-
-            // Brief yield while waiting for the next tick window.
-            _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
+            ApplyPressureDelay(cancellationToken);
+            Tick(cancellationToken);
+            CleanupStaleSnapshots();
+            accumulator -= SimulationConstants.TickDurationNanoseconds;
         }
+
+        // Brief yield while waiting for the next tick window.
+        _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
     }
 
     // ── Initialisation ───────────────────────────────────────────────────────
