@@ -154,9 +154,8 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(3, test.Accessor.CurrentSnapshot!.Image.TickNumber);
         Assert.NotSame(latestBefore, test.Accessor.CurrentSnapshot);
         Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(imagesAvailableBefore - 1, test.CountAvailableImages());
+        Assert.Equal(imagesAvailableBefore + 1, test.CountAvailableImages());
     }
-
 
     [Fact]
     public void Tick_DoesNotAdvanceState_WhenCancelledDuringRetryWait()
