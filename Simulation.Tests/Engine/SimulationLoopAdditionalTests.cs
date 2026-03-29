@@ -17,7 +17,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick(CancellationToken.None);
 
         List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
-        Assert.Equal(5, drainedSnapshots.Count);
+        Assert.Equal(test.SnapshotPoolCapacity - 3, drainedSnapshots.Count);
 
         int waitCount = 0;
         test.WaiterState.BeforeWait = () =>
@@ -31,8 +31,8 @@ public sealed class SimulationLoopAdditionalTests
 
         Assert.Equal(
             [
-                TimeSpan.FromMilliseconds(1),
-                TimeSpan.FromMilliseconds(1),
+                GetPoolRetryWait(),
+                GetPoolRetryWait(),
             ],
             test.WaiterState.WaitCalls);
         Assert.Equal(3, test.Accessor.CurrentTick);
@@ -50,7 +50,7 @@ public sealed class SimulationLoopAdditionalTests
 
         int imagesAvailableBefore = test.CountAvailableImages();
         List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
-        Assert.Equal(7, drainedSnapshots.Count);
+        Assert.Equal(test.SnapshotPoolCapacity - 1, drainedSnapshots.Count);
 
         using var cancellationSource = new CancellationTokenSource();
         int waitCount = 0;
@@ -70,7 +70,7 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Equal(imagesAvailableBefore, test.CountAvailableImages());
         Assert.Equal(0, test.CountAvailableSnapshots());
         Assert.Equal(3, test.WaiterState.WaitCalls.Count);
-        Assert.All(test.WaiterState.WaitCalls, wait => Assert.Equal(TimeSpan.FromMilliseconds(1), wait));
+        Assert.All(test.WaiterState.WaitCalls, wait => Assert.Equal(GetPoolRetryWait(), wait));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class SimulationLoopAdditionalTests
 
         int snapshotsAvailableBefore = test.CountAvailableSnapshots();
         List<WorldImage> drainedImages = test.DrainImages();
-        Assert.Equal(7, drainedImages.Count);
+        Assert.Equal(test.ImagePoolCapacity - 1, drainedImages.Count);
 
         using var cancellationSource = new CancellationTokenSource();
         int waitCount = 0;
@@ -103,7 +103,7 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Equal(0, test.CountAvailableImages());
         Assert.Equal(snapshotsAvailableBefore, test.CountAvailableSnapshots());
         Assert.Equal(3, test.WaiterState.WaitCalls.Count);
-        Assert.All(test.WaiterState.WaitCalls, wait => Assert.Equal(TimeSpan.FromMilliseconds(1), wait));
+        Assert.All(test.WaiterState.WaitCalls, wait => Assert.Equal(GetPoolRetryWait(), wait));
     }
 
     [Fact]
@@ -221,7 +221,7 @@ public sealed class SimulationLoopAdditionalTests
 
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ TimeSpan.FromMilliseconds(1) ],
+            [ GetPoolRetryWait() ],
             test.WaiterState.WaitCalls);
     }
 
@@ -244,8 +244,8 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(
             [
-                TimeSpan.FromMilliseconds(1),
-                TimeSpan.FromMilliseconds(1),
+                GetExpectedPressureDelay(availableSnapshots: 6, capacity: test.SnapshotPoolCapacity),
+                GetPoolRetryWait(),
             ],
             test.WaiterState.WaitCalls);
     }
@@ -269,8 +269,8 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(
             [
-                TimeSpan.FromMilliseconds(4),
-                TimeSpan.FromMilliseconds(1),
+                GetExpectedPressureDelay(availableSnapshots: 4, capacity: test.SnapshotPoolCapacity),
+                GetPoolRetryWait(),
             ],
             test.WaiterState.WaitCalls);
     }
@@ -294,9 +294,9 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Equal(2, test.Accessor.CurrentTick);
         Assert.Equal(
             [
-                TimeSpan.FromMilliseconds(8),
-                TimeSpan.FromMilliseconds(16),
-                TimeSpan.FromMilliseconds(1),
+                GetExpectedPressureDelay(availableSnapshots: 3, capacity: test.SnapshotPoolCapacity),
+                GetExpectedPressureDelay(availableSnapshots: 2, capacity: test.SnapshotPoolCapacity),
+                GetPoolRetryWait(),
             ],
             test.WaiterState.WaitCalls);
     }
@@ -324,9 +324,20 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds, accumulator);
         Assert.Equal(
-            [ TimeSpan.FromMilliseconds(4) ],
+            [ GetExpectedPressureDelay(availableSnapshots: 4, capacity: test.SnapshotPoolCapacity) ],
             test.WaiterState.WaitCalls);
     }
+
+    private static TimeSpan GetPoolRetryWait() =>
+        TimeSpan.FromTicks(SimulationConstants.PoolEmptyRetryNanoseconds / 100);
+
+    private static TimeSpan GetExpectedPressureDelay(int availableSnapshots, int capacity) =>
+        TimeSpan.FromTicks(
+            SimulationPressure.ComputeDelay(
+                available: availableSnapshots,
+                capacity: capacity,
+                baseNanoseconds: SimulationConstants.PressureBaseDelayNanoseconds,
+                maxNanoseconds: SimulationConstants.PressureMaxDelayNanoseconds) / 100);
 
     private static class SimulationLoopTestContext
     {
@@ -386,6 +397,10 @@ public sealed class SimulationLoopAdditionalTests
         public WaiterState WaiterState { get; }
 
         public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
+
+        public int SnapshotPoolCapacity => Memory.SnapshotPoolCapacity;
+
+        public int ImagePoolCapacity => Memory.SnapshotPoolCapacity;
 
         public List<WorldImage> DrainImages()
         {

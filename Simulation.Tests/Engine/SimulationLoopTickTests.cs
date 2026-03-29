@@ -75,8 +75,9 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Tick(CancellationToken.None);
 
-        Assert.Single(test.WaiterState.WaitCalls);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
     }
@@ -96,8 +97,9 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Tick(CancellationToken.None);
 
-        Assert.Single(test.WaiterState.WaitCalls);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
         Assert.Equal(imagesAvailableBefore - 1, test.CountAvailableImages());
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
@@ -125,8 +127,12 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Tick(CancellationToken.None);
 
-        Assert.Equal(2, test.WaiterState.WaitCalls.Count);
-        Assert.All(test.WaiterState.WaitCalls, wait => Assert.Equal(TimeSpan.FromMilliseconds(1), wait));
+        Assert.Equal(
+            [
+                GetPoolRetryWait(),
+                GetPoolRetryWait(),
+            ],
+            test.WaiterState.WaitCalls);
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
     }
@@ -142,16 +148,18 @@ public sealed class SimulationLoopTickTests
 
         WorldSnapshot latestBefore = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
         int imagesAvailableBefore = test.CountAvailableImages();
+        int snapshotsAvailableBefore = test.CountAvailableSnapshots();
         List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
 
-        Assert.Equal(5, drainedSnapshots.Count);
+        Assert.Equal(snapshotsAvailableBefore, drainedSnapshots.Count);
 
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.Tick(CancellationToken.None);
 
-        Assert.Single(test.WaiterState.WaitCalls);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
         Assert.Equal(3, test.Accessor.CurrentTick);
         Assert.Equal(3, test.Accessor.CurrentSnapshot!.Image.TickNumber);
         Assert.NotSame(latestBefore, test.Accessor.CurrentSnapshot);
@@ -178,7 +186,9 @@ public sealed class SimulationLoopTickTests
         Assert.Same(initialSnapshot, test.Accessor.CurrentSnapshot);
         Assert.Same(initialSnapshot, test.Shared.LatestSnapshot);
         Assert.Equal(0, initialSnapshot.Image.TickNumber);
-        Assert.Single(test.WaiterState.WaitCalls);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
     }
 
     [Fact]
@@ -313,8 +323,9 @@ public sealed class SimulationLoopTickTests
 
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds - 1, accumulator);
-        Assert.Single(test.WaiterState.WaitCalls);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
     }
 
     [Fact]
@@ -331,7 +342,9 @@ public sealed class SimulationLoopTickTests
 
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(0, accumulator);
-        Assert.Single(test.WaiterState.WaitCalls);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
     }
 
     [Fact]
@@ -351,8 +364,9 @@ public sealed class SimulationLoopTickTests
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
         Assert.Equal(0, test.Accessor.CurrentTick);
-        Assert.Single(test.WaiterState.WaitCalls);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(
+            [ GetPoolRetryWait() ],
+            test.WaiterState.WaitCalls);
     }
 
     [Fact]
@@ -371,8 +385,8 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(123, accumulator);
         Assert.Equal(
             [
-                TimeSpan.FromMilliseconds(1),
-                TimeSpan.FromMilliseconds(1),
+                GetExpectedPressureDelay(availableSnapshots: 6, capacity: test.SnapshotPoolCapacity),
+                GetPoolRetryWait(),
             ],
             test.WaiterState.WaitCalls);
     }
@@ -394,10 +408,22 @@ public sealed class SimulationLoopTickTests
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
         Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Single(test.WaiterState.WaitCalls);
-        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(
+            [ GetExpectedPressureDelay(availableSnapshots: 6, capacity: test.SnapshotPoolCapacity) ],
+            test.WaiterState.WaitCalls);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds + 123, accumulator);
     }
+
+    private static TimeSpan GetPoolRetryWait() =>
+        TimeSpan.FromTicks(SimulationConstants.PoolEmptyRetryNanoseconds / 100);
+
+    private static TimeSpan GetExpectedPressureDelay(int availableSnapshots, int capacity) =>
+        TimeSpan.FromTicks(
+            SimulationPressure.ComputeDelay(
+                available: availableSnapshots,
+                capacity: capacity,
+                baseNanoseconds: SimulationConstants.PressureBaseDelayNanoseconds,
+                maxNanoseconds: SimulationConstants.PressureMaxDelayNanoseconds) / 100);
 
     private static class SimulationLoopTestContext
     {
@@ -461,6 +487,8 @@ public sealed class SimulationLoopTickTests
 
         public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
 
+        public int SnapshotPoolCapacity => Memory.SnapshotPoolCapacity;
+
         public List<WorldImage> DrainImages()
         {
             var drained = new List<WorldImage>();
@@ -494,6 +522,19 @@ public sealed class SimulationLoopTickTests
 
             foreach (WorldImage image in rented)
                 Memory.ReturnImage(image);
+
+            return rented.Count;
+        }
+
+        public int CountAvailableSnapshots()
+        {
+            var rented = new List<WorldSnapshot>();
+
+            while (Memory.RentSnapshot() is WorldSnapshot snapshot)
+                rented.Add(snapshot);
+
+            foreach (WorldSnapshot snapshot in rented)
+                Memory.ReturnSnapshot(snapshot);
 
             return rented.Count;
         }
