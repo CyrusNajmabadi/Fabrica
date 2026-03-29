@@ -75,6 +75,241 @@ public sealed class LoopHarnessExampleTests
         Assert.Equal(2, test.Shared.ConsumptionEpoch);
     }
 
+    [Fact]
+    public void UnpinnedSnapshot_IsReclaimedAfterConsumptionAdvancesPastIt()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // publish tick 1
+        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        WorldImage tick1Image = tick1Snapshot.Image;
+
+        test.ConsumptionLoop.RunIteration(); // consume tick 1
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // publish tick 2
+        Assert.False(tick1Snapshot.IsUnreferenced);
+
+        test.ConsumptionLoop.RunIteration(); // consume tick 2
+        Assert.Equal(2, test.Shared.ConsumptionEpoch);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // publish tick 3, reclaim tick 1
+
+        Assert.True(tick1Snapshot.IsUnreferenced);
+        Assert.Equal(0, tick1Image.TickNumber);
+        Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
+    }
+
+    [Fact]
+    public void SimulationIterationBeforeConsumptionIteration_PublishesNewestSnapshotForConsumption()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 2
+
+        test.ConsumptionLoop.RunIteration();
+
+        Assert.Equal([2], test.Renderer.RenderedTicks);
+        Assert.Equal(2, test.Shared.ConsumptionEpoch);
+    }
+
+    [Fact]
+    public void SaveInFlight_PreventsAdditionalSaveDispatchAcrossMultipleConsumptionIterations()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 1;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+
+        test.ConsumptionLoop.RunIteration(); // starts save
+        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
+        Assert.True(test.Pins.IsPinned(1));
+
+        test.ConsumptionLoop.RunIteration(); // same snapshot again
+        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 2
+        test.ConsumptionLoop.RunIteration(); // newer snapshot, save still in flight
+
+        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
+        Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
+        Assert.Equal(2, test.Shared.ConsumptionEpoch);
+        Assert.Equal(0, test.Shared.NextSaveAtTick);
+
+        test.Save.CompletePendingSave();
+        Assert.False(test.Pins.IsPinned(1));
+        Assert.Equal(1 + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+    }
+
+    [Fact]
+    public void SaveCompletion_AllowsLaterSaveOnceScheduleIsReachedAgain()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 1;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+        test.ConsumptionLoop.RunIteration(); // start/save tick 1
+        test.Save.CompletePendingSave();
+
+        test.Shared.NextSaveAtTick = 3;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 2
+        test.ConsumptionLoop.RunIteration(); // below threshold
+        Assert.Equal(0, test.ConsumptionLoop.PendingSaveCount);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 3
+        test.ConsumptionLoop.RunIteration(); // reaches threshold again
+
+        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
+        Assert.True(test.Pins.IsPinned(3));
+        Assert.Equal(3, test.Shared.ConsumptionEpoch);
+    }
+
+    [Fact]
+    public void RenderFailureAfterSaveDispatch_AllowsLaterRecoveryOnTheSameSnapshot()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 1;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+
+        test.Renderer.FailWith(new InvalidOperationException("render failed"));
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => test.ConsumptionLoop.RunIteration());
+
+        Assert.Equal("render failed", exception.Message);
+        Assert.Equal(1, test.Save.PendingSaveCount);
+        Assert.True(test.Pins.IsPinned(1));
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Equal(0, test.Shared.NextSaveAtTick);
+        Assert.Empty(test.Renderer.RenderedTicks);
+
+        test.Save.CompletePendingSave();
+
+        Assert.False(test.Pins.IsPinned(1));
+        Assert.Equal(1 + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+
+        test.Renderer.ClearFailure();
+        test.ConsumptionLoop.RunIteration();
+
+        Assert.Equal([1], test.Renderer.RenderedTicks);
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+        Assert.Equal(0, test.Save.PendingSaveCount);
+    }
+
+    [Fact]
+    public void SaveRunnerDispatchFailure_AllowsLaterRetryOnTheSamePublishedSnapshot()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 1;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+
+        test.Save.FailDispatchWith(new InvalidOperationException("dispatch failed"));
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => test.ConsumptionLoop.RunIteration());
+
+        Assert.Equal("dispatch failed", exception.Message);
+        Assert.Equal(0, test.Save.PendingSaveCount);
+        Assert.False(test.Pins.IsPinned(1));
+        Assert.Equal(1, test.Shared.NextSaveAtTick);
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Empty(test.Renderer.RenderedTicks);
+
+        test.Save.ClearDispatchFailure();
+        test.ConsumptionLoop.RunIteration();
+
+        Assert.Equal([1], test.Renderer.RenderedTicks);
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+        Assert.Equal(1, test.Save.PendingSaveCount);
+        Assert.True(test.Pins.IsPinned(1));
+    }
+
+    [Fact]
+    public void ConsumptionCatchesUpLate_AndSavesOnlyTheNewestPublishedSnapshot()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 1;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 2
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 3
+
+        test.ConsumptionLoop.RunIteration();
+
+        Assert.Equal([3], test.Renderer.RenderedTicks);
+        Assert.Equal(3, test.Shared.ConsumptionEpoch);
+        Assert.Equal(1, test.Save.PendingSaveCount);
+        Assert.True(test.Pins.IsPinned(3));
+        Assert.False(test.Pins.IsPinned(1));
+        Assert.False(test.Pins.IsPinned(2));
+        Assert.Equal(0, test.Shared.NextSaveAtTick);
+
+        test.Save.CompletePendingSave();
+
+        Assert.False(test.Pins.IsPinned(3));
+        Assert.Equal(3 + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+    }
+
+    [Fact]
+    public void NoSaveConfigured_AllowsSimulationCleanupToProceedNormally()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 0;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 1
+        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        WorldImage tick1Image = tick1Snapshot.Image;
+
+        test.ConsumptionLoop.RunIteration(); // epoch 1, no save
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 2
+        test.ConsumptionLoop.RunIteration(); // epoch 2
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // tick 3, cleanup can reclaim tick 1
+
+        Assert.True(tick1Snapshot.IsUnreferenced);
+        Assert.Equal(0, tick1Image.TickNumber);
+        Assert.Equal(0, test.ConsumptionLoop.PendingSaveCount);
+    }
+
     private sealed class LoopHarness
     {
         private readonly SimulationLoop<RecordingClock, NoWaiter>.TestAccessor _simulationAccessor;
@@ -87,6 +322,7 @@ public sealed class LoopHarnessExampleTests
             SharedState shared,
             ClockState clockState,
             SaveRunnerState saveRunnerState,
+            SaverState saverState,
             RendererState rendererState,
             SimulationLoop<RecordingClock, NoWaiter> simulationLoop,
             ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer> consumptionLoop)
@@ -95,7 +331,7 @@ public sealed class LoopHarnessExampleTests
             Shared = shared;
             Clock = new ClockController(clockState);
             Pins = new PinController(memory.PinnedVersions);
-            Save = new SaveController(saveRunnerState);
+            Save = new SaveController(saveRunnerState, saverState);
             ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor(), saveRunnerState);
             SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
             Renderer = new RendererController(rendererState);
@@ -148,6 +384,7 @@ public sealed class LoopHarnessExampleTests
                 shared,
                 clockState,
                 saveRunnerState,
+                saverState,
                 rendererState,
                 simulationLoop,
                 consumptionLoop);
@@ -200,7 +437,7 @@ public sealed class LoopHarnessExampleTests
                 _saveRunnerState = saveRunnerState;
             }
 
-            public int PendingSaveCount => _saveRunnerState.RunCalls.Count;
+            public int PendingSaveCount => _saveRunnerState.PendingInvocations.Count;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
@@ -234,16 +471,26 @@ public sealed class LoopHarnessExampleTests
         public sealed class SaveController
         {
             private readonly SaveRunnerState _state;
+            private readonly SaverState _saverState;
 
-            public SaveController(SaveRunnerState state)
+            public SaveController(SaveRunnerState state, SaverState saverState)
             {
                 _state = state;
+                _saverState = saverState;
             }
+
+            public int PendingSaveCount => _state.PendingInvocations.Count;
+
+            public IReadOnlyList<(int imageTick, int tick)> SaveCalls => _saverState.SaveCalls;
+
+            public void FailDispatchWith(Exception exception) => _state.ExceptionToThrow = exception;
+
+            public void ClearDispatchFailure() => _state.ExceptionToThrow = null;
 
             public void CompletePendingSave()
             {
-                SaveInvocation invocation = Assert.Single(_state.RunCalls);
-                _state.RunCalls.Clear();
+                SaveInvocation invocation = Assert.Single(_state.PendingInvocations);
+                _state.PendingInvocations.Clear();
                 _state.Complete(invocation);
             }
         }
@@ -258,6 +505,10 @@ public sealed class LoopHarnessExampleTests
             }
 
             public IReadOnlyList<int> RenderedTicks => _state.RenderedTicks;
+
+            public void FailWith(Exception exception) => _state.ExceptionToThrow = exception;
+
+            public void ClearFailure() => _state.ExceptionToThrow = null;
         }
     }
 
@@ -290,7 +541,10 @@ public sealed class LoopHarnessExampleTests
 
     private sealed class SaveRunnerState
     {
-        public readonly List<SaveInvocation> RunCalls = [];
+        public readonly List<SaveInvocation> DispatchHistory = [];
+        public readonly List<SaveInvocation> PendingInvocations = [];
+
+        public Exception? ExceptionToThrow { get; set; }
 
         public void Complete(SaveInvocation invocation)
         {
@@ -309,7 +563,12 @@ public sealed class LoopHarnessExampleTests
 
         public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
         {
-            _state.RunCalls.Add(new SaveInvocation(image, tick, saveAction));
+            if (_state.ExceptionToThrow is Exception exception)
+                throw exception;
+
+            var invocation = new SaveInvocation(image, tick, saveAction);
+            _state.DispatchHistory.Add(invocation);
+            _state.PendingInvocations.Add(invocation);
         }
     }
 
@@ -336,6 +595,8 @@ public sealed class LoopHarnessExampleTests
     private sealed class RendererState
     {
         public readonly List<int> RenderedTicks = [];
+
+        public Exception? ExceptionToThrow { get; set; }
     }
 
     private readonly struct RecordingRenderer : IRenderer
@@ -349,6 +610,8 @@ public sealed class LoopHarnessExampleTests
 
         public void Render(WorldSnapshot snapshot)
         {
+            if (_state.ExceptionToThrow is Exception exception)
+                throw exception;
             _state.RenderedTicks.Add(snapshot.Image.TickNumber);
         }
     }

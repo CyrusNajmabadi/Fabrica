@@ -112,6 +112,29 @@ public sealed class SimulationLoopRunTests
             test.WaiterState.WaitCalls);
     }
 
+    [Fact]
+    public void Run_WhenAlreadyCancelled_BootstrapsThenExitsWithoutWaiting()
+    {
+        var clockState = new ClockState { NowNanoseconds = 0 };
+        var waiterState = new WaiterState();
+        var test = SimulationLoopTestContext.Create(
+            clock: new RecordingClock(clockState),
+            waiter: new RecordingWaiter(waiterState),
+            waiterState: waiterState);
+
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        test.Loop.Run(cancellationSource.Token);
+
+        WorldSnapshot snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        Assert.Equal(0, test.Accessor.CurrentTick);
+        Assert.Same(snapshot, test.Accessor.OldestSnapshot);
+        Assert.Same(snapshot, test.Shared.LatestSnapshot);
+        Assert.Equal(0, snapshot.Image.TickNumber);
+        Assert.Empty(test.WaiterState.WaitCalls);
+    }
+
     private static class SimulationLoopTestContext
     {
         public static SimulationLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(

@@ -193,6 +193,46 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
+    public void RendererFailure_WhenNoSaveIsDue_LeavesEpochAndSaveStateUnchanged()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick: 7);
+        test.Shared.NextSaveAtTick = 0;
+        test.RendererState.ExceptionToThrow = new InvalidOperationException("render failed");
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => test.Accessor.RunOneIteration(CancellationToken.None));
+
+        Assert.Equal("render failed", exception.Message);
+        Assert.Empty(test.SaveRunnerState.RunCalls);
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.Equal(0, test.Shared.NextSaveAtTick);
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Empty(test.RendererState.RenderedTicks);
+    }
+
+    [Fact]
+    public void RendererFailureAfterSaveDispatch_AllowsLaterSuccessfulRenderOfTheSameSnapshot()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick: SimulationConstants.SaveIntervalTicks);
+        test.RendererState.ExceptionToThrow = new InvalidOperationException("render failed");
+
+        Assert.Throws<InvalidOperationException>(() => test.Accessor.RunOneIteration(CancellationToken.None));
+        SaveInvocation invocation = Assert.Single(test.SaveRunnerState.RunCalls);
+
+        test.SaveRunnerState.Complete(invocation);
+        test.RendererState.ExceptionToThrow = null;
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.Equal([snapshot.Image.TickNumber], test.RendererState.RenderedTicks);
+        Assert.Equal(snapshot.Image.TickNumber, test.Shared.ConsumptionEpoch);
+        Assert.Equal(snapshot.Image.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+        Assert.Single(test.SaveRunnerState.RunCalls);
+    }
+
+    [Fact]
     public void SaveIsPinnedBeforeDispatchAndEpochAdvancesAfterRender()
     {
         var test = ConsumptionLoopTestContext.Create();
