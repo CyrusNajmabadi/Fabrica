@@ -215,6 +215,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         public WorldSnapshot? OldestSnapshot => _loop._oldestSnapshot;
 
         public int PinnedQueueCount => _loop._pinnedQueue.Count;
+
+        public void SetOldestSnapshotForTesting(WorldSnapshot snapshot) => _loop._oldestSnapshot = snapshot;
     }
 }
 

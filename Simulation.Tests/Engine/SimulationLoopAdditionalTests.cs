@@ -143,6 +143,114 @@ public sealed class SimulationLoopAdditionalTests
     }
 
     [Fact]
+    public void Cleanup_KeepsStillPinnedQueuedSnapshots_AndDrainsOnlyReleasedOnes()
+    {
+        var test = SimulationLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick(CancellationToken.None);
+
+        WorldSnapshot tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        WorldSnapshot tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
+        WorldSnapshot tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+
+        test.Memory.PinnedVersions.Pin(tick0.Image.TickNumber);
+        test.Memory.PinnedVersions.Pin(tick1.Image.TickNumber);
+        test.Shared.ConsumptionEpoch = 3;
+
+        test.Accessor.CleanupStaleSnapshots();
+
+        Assert.Equal(2, test.Accessor.PinnedQueueCount);
+
+        test.Memory.PinnedVersions.Unpin(tick0.Image.TickNumber);
+        test.Accessor.CleanupStaleSnapshots();
+
+        Assert.Equal(1, test.Accessor.PinnedQueueCount);
+        Assert.True(tick0.IsUnreferenced);
+        Assert.False(tick1.IsUnreferenced);
+        Assert.Same(tick3, test.Accessor.OldestSnapshot);
+
+        test.Memory.PinnedVersions.Unpin(tick1.Image.TickNumber);
+        test.Accessor.CleanupStaleSnapshots();
+
+        Assert.Equal(0, test.Accessor.PinnedQueueCount);
+        Assert.True(tick1.IsUnreferenced);
+    }
+
+    [Fact]
+    public void Cleanup_ThrowsWhenTheSamePinnedSnapshotWouldBeQueuedTwice()
+    {
+        var test = SimulationLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick(CancellationToken.None);
+
+        WorldSnapshot tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        WorldSnapshot tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
+
+        test.Memory.PinnedVersions.Pin(tick0.Image.TickNumber);
+        test.Shared.ConsumptionEpoch = 2;
+        test.Accessor.CleanupStaleSnapshots();
+
+        Assert.Equal(1, test.Accessor.PinnedQueueCount);
+
+        test.Accessor.SetOldestSnapshotForTesting(tick0);
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            test.Accessor.CleanupStaleSnapshots);
+
+        Assert.Contains("more than once", exception.Message);
+        Assert.Equal(3, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).Image.TickNumber);
+    }
+
+    [Fact]
+    public void RunOneIteration_WithBucketZeroPressure_OnlyPerformsTheFinalIdleWait()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
+
+        test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(1, test.Accessor.CurrentTick);
+        Assert.Equal(
+            [ TimeSpan.FromMilliseconds(1) ],
+            test.WaiterState.WaitCalls);
+    }
+
+    [Fact]
+    public void RunOneIteration_WithFirstPressureBucket_WaitsOneMillisecondThenIdleWait()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+        List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
+
+        while (test.CountAvailableSnapshots() < 6)
+            test.ReturnOneSnapshot(drainedSnapshots);
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
+
+        test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(1, test.Accessor.CurrentTick);
+        Assert.Equal(
+            [
+                TimeSpan.FromMilliseconds(1),
+                TimeSpan.FromMilliseconds(1),
+            ],
+            test.WaiterState.WaitCalls);
+    }
+
+    [Fact]
     public void RunOneIteration_UsesPressureDelayBeforeTick_ThenIdleWait()
     {
         var test = SimulationLoopTestContext.CreateManual();
