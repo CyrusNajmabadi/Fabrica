@@ -51,21 +51,24 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
     public void Run(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
+            RunOneIteration(cancellationToken);
+    }
+
+    private void RunOneIteration(CancellationToken cancellationToken)
+    {
+        long frameStart = _clock.NowNanoseconds;
+
+        WorldSnapshot? snapshot = _shared.LatestSnapshot;
+        if (snapshot is not null)
         {
-            long frameStart = _clock.NowNanoseconds;
+            MaybeStartSave(snapshot);
+            Render(snapshot);
 
-            WorldSnapshot? snapshot = _shared.LatestSnapshot;
-            if (snapshot is not null)
-            {
-                MaybeStartSave(snapshot);
-                Render(snapshot);
-
-                // Advance epoch: simulation may now free anything strictly before this tick.
-                _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
-            }
-
-            ThrottleToFrameRate(frameStart, cancellationToken);
+            // Advance epoch: simulation may now free anything strictly before this tick.
+            _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
         }
+
+        ThrottleToFrameRate(frameStart, cancellationToken);
     }
 
     // ── Save coordination ────────────────────────────────────────────────────
