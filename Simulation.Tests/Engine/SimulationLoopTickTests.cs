@@ -272,6 +272,7 @@ public sealed class SimulationLoopTickTests
     public void Cleanup_DetachesPinnedSnapshotsUntilTheyAreUnpinned()
     {
         var test = SimulationLoopTestContext.Create();
+        object pinOwner = new();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick(CancellationToken.None);
@@ -280,7 +281,7 @@ public sealed class SimulationLoopTickTests
         WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
         WorldSnapshot latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Memory.PinnedVersions.Pin(firstSnapshot.Image.TickNumber);
+        test.Memory.PinnedVersions.Pin(firstSnapshot.Image.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.CleanupStaleSnapshots();
@@ -289,7 +290,7 @@ public sealed class SimulationLoopTickTests
         Assert.Same(latestSnapshot, test.Accessor.CurrentSnapshot);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
 
-        test.Memory.PinnedVersions.Unpin(firstSnapshot.Image.TickNumber);
+        test.Memory.PinnedVersions.Unpin(firstSnapshot.Image.TickNumber, pinOwner);
 
         test.Accessor.CleanupStaleSnapshots();
 
@@ -300,6 +301,7 @@ public sealed class SimulationLoopTickTests
     public void Cleanup_PinnedMiddleSnapshot_DoesNotBlockLaterSnapshotsFromBeingFreed()
     {
         var test = SimulationLoopTestContext.Create();
+        object pinOwner = new();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick(CancellationToken.None); // tick 1
@@ -311,7 +313,7 @@ public sealed class SimulationLoopTickTests
         WorldSnapshot tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
         WorldSnapshot tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Memory.PinnedVersions.Pin(tick1.Image.TickNumber);
+        test.Memory.PinnedVersions.Pin(tick1.Image.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 3;
 
         test.Accessor.CleanupStaleSnapshots();
@@ -323,7 +325,7 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(1, tick1.Image.TickNumber);
         Assert.Equal(3, tick3.Image.TickNumber);
 
-        test.Memory.PinnedVersions.Unpin(tick1.Image.TickNumber);
+        test.Memory.PinnedVersions.Unpin(tick1.Image.TickNumber, pinOwner);
         test.Accessor.CleanupStaleSnapshots();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
@@ -469,7 +471,7 @@ public sealed class SimulationLoopTickTests
             TClock clock,
             TWaiter waiter,
             WaiterState waiterState,
-            int poolSize = 8)
+            int poolSize = SimulationConstants.PressureBucketCount)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {

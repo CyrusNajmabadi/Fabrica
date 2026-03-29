@@ -50,6 +50,51 @@ public sealed class LoopHarnessExampleTests
     }
 
     [Fact]
+    public void SavePinAndExternalPin_BothMustClearBeforeSimulationCanReclaim()
+    {
+        var test = LoopHarness.Create();
+        object externalOwner = new();
+
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 1;
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        WorldImage tick1Image = tick1Snapshot.Image;
+
+        test.ConsumptionLoop.RunIteration();
+        test.Pins.Pin(1, externalOwner);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+        test.ConsumptionLoop.RunIteration();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+
+        Assert.True(test.Pins.IsPinned(1));
+        Assert.False(tick1Snapshot.IsUnreferenced);
+        Assert.Equal(1, test.SimulationLoop.PinnedQueueCount);
+
+        test.Save.CompletePendingSave();
+
+        Assert.True(test.Pins.IsPinned(1));
+        Assert.False(tick1Snapshot.IsUnreferenced);
+        Assert.Equal(1, test.SimulationLoop.PinnedQueueCount);
+
+        test.Pins.Unpin(1, externalOwner);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+
+        Assert.False(test.Pins.IsPinned(1));
+        Assert.True(tick1Snapshot.IsUnreferenced);
+        Assert.Equal(0, tick1Image.TickNumber);
+        Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
+    }
+
+    [Fact]
     public void ConsumptionIterationBeforeSimulationIteration_SeesThePreviouslyPublishedSnapshot()
     {
         var test = LoopHarness.Create();
@@ -356,7 +401,7 @@ public sealed class LoopHarnessExampleTests
 
         public ConsumptionLoopController ConsumptionLoop { get; }
 
-        public static LoopHarness Create(int poolSize = 8)
+        public static LoopHarness Create(int poolSize = SimulationConstants.PressureBucketCount)
         {
             var memory = new MemorySystem(poolSize);
             var shared = new SharedState();
@@ -464,6 +509,10 @@ public sealed class LoopHarnessExampleTests
             {
                 _pins = pins;
             }
+
+            public void Pin(int tick, object owner) => _pins.Pin(tick, owner);
+
+            public void Unpin(int tick, object owner) => _pins.Unpin(tick, owner);
 
             public bool IsPinned(int tick) => _pins.IsPinned(tick);
         }

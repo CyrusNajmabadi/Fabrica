@@ -27,6 +27,8 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     where TSaver : struct, ISaver
     where TRenderer : struct, IRenderer
 {
+    private readonly object _savePinOwner = new();
+
     private readonly MemorySystem _memory;
     private readonly SharedState _shared;
     private readonly TClock _clock;
@@ -55,6 +57,8 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     public void Run(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         while (!cancellationToken.IsCancellationRequested)
             RunOneIteration(cancellationToken);
     }
@@ -91,7 +95,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         // Pin the snapshot so the simulation will not reclaim it while saving.
         // Safe: ConsumptionEpoch has not yet advanced past tickToSave (we advance it
         // after Render below), so the simulation already holds this snapshot alive.
-        _memory.PinnedVersions.Pin(tickToSave);
+        _memory.PinnedVersions.Pin(tickToSave, _savePinOwner);
 
         WorldImage imageToSave = snapshot.Image;
         try
@@ -100,7 +104,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         }
         catch
         {
-            _memory.PinnedVersions.Unpin(tickToSave);
+            _memory.PinnedVersions.Unpin(tickToSave, _savePinOwner);
             _shared.NextSaveAtTick = tickToSave;
             throw;
         }
@@ -115,7 +119,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         finally
         {
             // Always unpin - even on failure - so the simulation is never permanently stalled.
-            _memory.PinnedVersions.Unpin(tick);
+            _memory.PinnedVersions.Unpin(tick, _savePinOwner);
 
             // Schedule the next save relative to the tick we just saved.
             _shared.NextSaveAtTick = tick + SimulationConstants.SaveIntervalTicks;

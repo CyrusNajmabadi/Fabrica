@@ -113,7 +113,7 @@ public sealed class SimulationLoopRunTests
     }
 
     [Fact]
-    public void Run_WhenAlreadyCancelled_BootstrapsThenExitsWithoutWaiting()
+    public void Run_WhenAlreadyCancelled_ThrowsWithoutBootstrapping()
     {
         var clockState = new ClockState { NowNanoseconds = 0 };
         var waiterState = new WaiterState();
@@ -125,13 +125,12 @@ public sealed class SimulationLoopRunTests
         using var cancellationSource = new CancellationTokenSource();
         cancellationSource.Cancel();
 
-        test.Loop.Run(cancellationSource.Token);
+        Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        WorldSnapshot snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        Assert.Null(test.Accessor.CurrentSnapshot);
+        Assert.Null(test.Accessor.OldestSnapshot);
+        Assert.Null(test.Shared.LatestSnapshot);
         Assert.Equal(0, test.Accessor.CurrentTick);
-        Assert.Same(snapshot, test.Accessor.OldestSnapshot);
-        Assert.Same(snapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(0, snapshot.Image.TickNumber);
         Assert.Empty(test.WaiterState.WaitCalls);
     }
 
@@ -141,7 +140,7 @@ public sealed class SimulationLoopRunTests
             TClock clock,
             TWaiter waiter,
             WaiterState waiterState,
-            int poolSize = 8)
+            int poolSize = SimulationConstants.PressureBucketCount)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {

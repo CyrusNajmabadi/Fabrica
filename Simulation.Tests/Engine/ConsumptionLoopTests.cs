@@ -319,6 +319,38 @@ public sealed class ConsumptionLoopTests
         Assert.Equal([5], test.RendererState.RenderedTicks);
     }
 
+    [Fact]
+    public void Run_WhenAlreadyCancelled_DoesNothing()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedSnapshot(tick: 5);
+
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
+
+        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.SaveRunnerState.RunCalls);
+        Assert.Empty(test.WaiterState.WaitCalls);
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+    }
+
+    [Fact]
+    public void RepeatedIterations_RenderTheSameLatestSnapshotUntilSimulationPublishesANewerOne()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedSnapshot(tick: 5);
+        test.Shared.NextSaveAtTick = 0;
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.Equal([5, 5], test.RendererState.RenderedTicks);
+        Assert.Equal(5, test.Shared.ConsumptionEpoch);
+        Assert.Empty(test.SaveRunnerState.RunCalls);
+    }
+
     private static TimeSpan GetRenderInterval() =>
         TimeSpan.FromTicks(SimulationConstants.RenderIntervalNanoseconds / 100);
 
@@ -356,7 +388,7 @@ public sealed class ConsumptionLoopTests
             SaveRunnerState saveRunnerState,
             SaverState saverState,
             RendererState rendererState,
-            int poolSize = 8)
+            int poolSize = SimulationConstants.PressureBucketCount)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
             where TSaveRunner : struct, ISaveRunner

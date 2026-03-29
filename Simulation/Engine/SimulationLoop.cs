@@ -39,6 +39,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     public void Run(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         Bootstrap();
 
         long lastTime    = _clock.NowNanoseconds;

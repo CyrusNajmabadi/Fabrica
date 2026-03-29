@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 
 namespace Simulation.Memory;
 
@@ -14,9 +15,43 @@ namespace Simulation.Memory;
 /// </summary>
 internal sealed class PinnedVersions
 {
-    private readonly ConcurrentDictionary<int, byte> _pinned = new();
+    private readonly ConcurrentDictionary<int, ConcurrentDictionary<object, byte>> _pinned = new();
 
-    public void Pin(int tick)      => _pinned.TryAdd(tick, 0);
-    public void Unpin(int tick)    => _pinned.TryRemove(tick, out _);
-    public bool IsPinned(int tick) => _pinned.ContainsKey(tick);
+    public void Pin(int tick, object owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        ConcurrentDictionary<object, byte> owners = _pinned.GetOrAdd(
+            tick,
+            _ => new ConcurrentDictionary<object, byte>(ReferenceOwnerComparer.Instance));
+
+        if (!owners.TryAdd(owner, 0))
+            throw new InvalidOperationException("The same owner pinned the same tick more than once.");
+    }
+
+    public void Unpin(int tick, object owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        if (!_pinned.TryGetValue(tick, out ConcurrentDictionary<object, byte>? owners))
+            throw new InvalidOperationException("Attempted to unpin a tick that is not currently pinned.");
+
+        if (!owners.TryRemove(owner, out _))
+            throw new InvalidOperationException("Attempted to unpin a tick for an owner that is not currently pinned.");
+
+        if (owners.IsEmpty)
+            _pinned.TryRemove(new KeyValuePair<int, ConcurrentDictionary<object, byte>>(tick, owners));
+    }
+
+    public bool IsPinned(int tick) =>
+        _pinned.TryGetValue(tick, out ConcurrentDictionary<object, byte>? owners) && !owners.IsEmpty;
+
+    private sealed class ReferenceOwnerComparer : IEqualityComparer<object>
+    {
+        public static readonly ReferenceOwnerComparer Instance = new();
+
+        public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
+    }
 }
