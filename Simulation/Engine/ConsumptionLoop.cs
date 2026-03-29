@@ -11,6 +11,7 @@ namespace Simulation.Engine;
 /// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
 /// Generic on <typeparamref name="TWaiter"/> for the same reason.
 /// Generic on <typeparamref name="TSaveRunner"/> for the same reason.
+/// Generic on <typeparamref name="TSaver"/> for the same reason.
 ///
 /// Epoch discipline:
 ///   - ConsumptionEpoch is advanced only AFTER rendering is complete.
@@ -18,29 +19,33 @@ namespace Simulation.Engine;
 ///     still covers that snapshot — the simulation cannot reclaim it.
 ///   - The save task clears the pin only after it has finished reading the snapshot.
 /// </summary>
-internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner>
+internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
     where TSaveRunner : struct, ISaveRunner
+    where TSaver : struct, ISaver
 {
     private readonly MemorySystem _memory;
     private readonly SharedState  _shared;
     private readonly TClock       _clock;
     private readonly TWaiter      _waiter;
     private readonly TSaveRunner  _saveRunner;
+    private readonly TSaver       _saver;
 
     public ConsumptionLoop(
         MemorySystem memory,
         SharedState shared,
         TClock clock,
         TWaiter waiter,
-        TSaveRunner saveRunner)
+        TSaveRunner saveRunner,
+        TSaver saver)
     {
         _memory = memory;
         _shared = shared;
         _clock  = clock;
         _waiter = waiter;
         _saveRunner = saveRunner;
+        _saver = saver;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -90,7 +95,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner>
     {
         try
         {
-            Save(image, tick);
+            _saver.Save(image, tick);
         }
         finally
         {
@@ -108,14 +113,6 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner>
     {
         // TODO: actual rendering — interpolation between snapshot N and N+1 goes here.
         Console.WriteLine($"[Render] tick={snapshot.Image.TickNumber}");
-    }
-
-    private static void Save(WorldImage image, int tick)
-    {
-        // TODO: actual serialisation.
-        Console.WriteLine($"[Save]   tick={tick} — saving...");
-        Thread.Sleep(1000); // placeholder for real I/O
-        Console.WriteLine($"[Save]   tick={tick} — done.");
     }
 
     // ── Frame timing ─────────────────────────────────────────────────────────

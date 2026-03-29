@@ -4,4 +4,8 @@ using Simulation.Engine;
 using var cancellationSource = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellationSource.Cancel(); };
 
-Engine<SystemClock, ThreadWaiter>.Create(new SystemClock(), new ThreadWaiter()).Run(cancellationSource.Token);
+Engine<SystemClock, ThreadWaiter, TaskSaveRunner, ConsoleSaver>.Create(
+    new SystemClock(),
+    new ThreadWaiter(),
+    new TaskSaveRunner(),
+    new ConsoleSaver()).Run(cancellationSource.Token);

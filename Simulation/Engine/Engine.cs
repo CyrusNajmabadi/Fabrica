@@ -9,16 +9,18 @@ namespace Simulation.Engine;
 /// Use <see cref="Create"/> for the default production configuration.
 /// Use the explicit constructor to inject custom loops (e.g. in tests).
 /// </summary>
-internal sealed class Engine<TClock, TWaiter>
+internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
+    where TSaveRunner : struct, ISaveRunner
+    where TSaver : struct, ISaver
 {
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
-    private readonly ConsumptionLoop<TClock, TWaiter, TaskSaveRunner> _consumptionLoop;
+    private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver> _consumptionLoop;
 
     public Engine(
         SimulationLoop<TClock, TWaiter> simulationLoop,
-        ConsumptionLoop<TClock, TWaiter, TaskSaveRunner> consumptionLoop)
+        ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver> consumptionLoop)
     {
         _simulationLoop  = simulationLoop;
         _consumptionLoop = consumptionLoop;
@@ -27,19 +29,24 @@ internal sealed class Engine<TClock, TWaiter>
     /// <summary>
     /// Builds a fully wired engine with default pool sizes and the supplied clock.
     /// </summary>
-    public static Engine<TClock, TWaiter> Create(TClock clock, TWaiter waiter)
+    public static Engine<TClock, TWaiter, TSaveRunner, TSaver> Create(
+        TClock clock,
+        TWaiter waiter,
+        TSaveRunner saveRunner,
+        TSaver saver)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
 
-        return new Engine<TClock, TWaiter>(
+        return new Engine<TClock, TWaiter, TSaveRunner, TSaver>(
             new SimulationLoop<TClock, TWaiter>(memory, shared, clock, waiter),
-            new ConsumptionLoop<TClock, TWaiter, TaskSaveRunner>(
+            new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>(
                 memory,
                 shared,
                 clock,
                 waiter,
-                new TaskSaveRunner()));
+                saveRunner,
+                saver));
     }
 
     /// <summary>
