@@ -96,8 +96,6 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     private void Tick(CancellationToken cancellationToken)
     {
-        _currentTick++;
-
         WorldImage?    image    = null;
         WorldSnapshot? snapshot = null;
 
@@ -114,6 +112,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             }
         }
 
+        _currentTick++;
         image!.TickNumber = _currentTick;
         // TODO: advance world state into image
 
@@ -208,6 +207,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         public WorldSnapshot? CurrentSnapshot => _loop._currentSnapshot;
 
         public WorldSnapshot? OldestSnapshot => _loop._oldestSnapshot;
+
+        public int PinnedQueueCount => _loop._pinnedQueue.Count;
     }
 }
 
