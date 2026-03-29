@@ -59,11 +59,27 @@ public sealed class SimulationPressureTests
     }
 
     [Fact]
-    public void ComputeDelay_ReturnsMaximum_WhenCapacityIsNonPositive()
+    public void ComputeDelay_ThrowsForNonPositiveCapacity()
     {
-        Assert.Equal(64, SimulationPressure.ComputeDelay(
+        Assert.Throws<ArgumentOutOfRangeException>(() => SimulationPressure.ComputeDelay(
             available: 0,
             capacity: 0,
+            baseNanoseconds: 1,
+            maxNanoseconds: 64));
+    }
+
+    [Fact]
+    public void ComputeDelay_ThrowsWhenAvailableIsOutsideCapacityRange()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => SimulationPressure.ComputeDelay(
+            available: -1,
+            capacity: 16,
+            baseNanoseconds: 1,
+            maxNanoseconds: 64));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => SimulationPressure.ComputeDelay(
+            available: 17,
+            capacity: 16,
             baseNanoseconds: 1,
             maxNanoseconds: 64));
     }

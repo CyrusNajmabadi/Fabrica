@@ -22,9 +22,10 @@ internal static class SimulationConstants
     // Backpressure — delay inserted before each tick when pool is under pressure.
     // Delay doubles for each additional halving of available slots (binary exponential).
     // Applied when available slots fall below SnapshotPoolSize / 2.
-    public const long PressureBaseDelayNanoseconds = 5_000_000L;  //  5 ms
-    public const long PressureMaxDelayNanoseconds  = 50_000_000L; // 50 ms
-    public const long PoolEmptyRetryNanoseconds    = 1_000_000L;  //  1 ms
+    public const int PressureBucketCount = 8;
+    public const long PressureBaseDelayNanoseconds = 1_000_000L;  //  1 ms
+    public const long PressureMaxDelayNanoseconds = 64_000_000L; // 64 ms
+    public const long PoolEmptyRetryNanoseconds = 1_000_000L;  //  1 ms
 
     // Save system
     public const int SaveIntervalTicks = TicksPerSecond * 60 * 5; // every 5 minutes

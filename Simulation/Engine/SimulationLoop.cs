@@ -206,9 +206,12 @@ internal static class SimulationPressure
         long maxNanoseconds)
     {
         if (capacity <= 0)
-            return maxNanoseconds;
+            throw new ArgumentOutOfRangeException(nameof(capacity));
 
-        int used = Math.Clamp(capacity - available, 0, capacity);
+        if (available < 0 || available > capacity)
+            throw new ArgumentOutOfRangeException(nameof(available));
+
+        int used = capacity - available;
         int bucket = used == 0
             ? 0
             : Math.Min(
