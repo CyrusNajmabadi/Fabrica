@@ -11,6 +11,11 @@ internal readonly struct ThreadWaiter : IWaiter
         if (duration <= TimeSpan.Zero)
             return;
 
-        cancellationToken.WaitHandle.WaitOne(duration);
+        int signaled = WaitHandle.WaitAny(
+            [cancellationToken.WaitHandle],
+            duration);
+
+        if (signaled == 0 && cancellationToken.IsCancellationRequested)
+            throw new OperationCanceledException(cancellationToken);
     }
 }
