@@ -8,29 +8,32 @@ namespace Simulation.Engine;
 /// triggers a save task.
 ///
 /// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
-/// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
+/// calls are devirtualised and inlined by the JIT/AOT - no interface dispatch.
 /// Generic on <typeparamref name="TWaiter"/> for the same reason.
 /// Generic on <typeparamref name="TSaveRunner"/> for the same reason.
 /// Generic on <typeparamref name="TSaver"/> for the same reason.
+/// Generic on <typeparamref name="TRenderer"/> for the same reason.
 ///
 /// Epoch discipline:
 ///   - ConsumptionEpoch is advanced only AFTER rendering is complete.
 ///   - The save pin is set BEFORE handing off to the save task, while the epoch
-///     still covers that snapshot — the simulation cannot reclaim it.
+///     still covers that snapshot - the simulation cannot reclaim it.
 ///   - The save task clears the pin only after it has finished reading the snapshot.
 /// </summary>
-internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
+internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
     where TSaveRunner : struct, ISaveRunner
     where TSaver : struct, ISaver
+    where TRenderer : struct, IRenderer
 {
     private readonly MemorySystem _memory;
-    private readonly SharedState  _shared;
-    private readonly TClock       _clock;
-    private readonly TWaiter      _waiter;
-    private readonly TSaveRunner  _saveRunner;
-    private readonly TSaver       _saver;
+    private readonly SharedState _shared;
+    private readonly TClock _clock;
+    private readonly TWaiter _waiter;
+    private readonly TSaveRunner _saveRunner;
+    private readonly TSaver _saver;
+    private readonly TRenderer _renderer;
 
     public ConsumptionLoop(
         MemorySystem memory,
@@ -38,14 +41,16 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
         TClock clock,
         TWaiter waiter,
         TSaveRunner saveRunner,
-        TSaver saver)
+        TSaver saver,
+        TRenderer renderer)
     {
         _memory = memory;
         _shared = shared;
-        _clock  = clock;
+        _clock = clock;
         _waiter = waiter;
         _saveRunner = saveRunner;
         _saver = saver;
+        _renderer = renderer;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -62,7 +67,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
         if (snapshot is not null)
         {
             MaybeStartSave(snapshot);
-            Render(snapshot);
+            _renderer.Render(snapshot);
 
             // Advance epoch: simulation may now free anything strictly before this tick.
             _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
@@ -70,8 +75,6 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
 
         ThrottleToFrameRate(frameStart, cancellationToken);
     }
-
-    // ── Save coordination ────────────────────────────────────────────────────
 
     private void MaybeStartSave(WorldSnapshot snapshot)
     {
@@ -102,7 +105,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
         }
         finally
         {
-            // Always unpin — even on failure — so the simulation is never permanently stalled.
+            // Always unpin - even on failure - so the simulation is never permanently stalled.
             _memory.PinnedVersions.Unpin(tick);
 
             // Schedule the next save relative to the tick we just saved.
@@ -110,21 +113,32 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver>
         }
     }
 
-    // ── Rendering ────────────────────────────────────────────────────────────
-
-    private static void Render(WorldSnapshot snapshot)
-    {
-        // TODO: actual rendering — interpolation between snapshot N and N+1 goes here.
-        Console.WriteLine($"[Render] tick={snapshot.Image.TickNumber}");
-    }
-
-    // ── Frame timing ─────────────────────────────────────────────────────────
-
     private void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken)
     {
-        long elapsed   = _clock.NowNanoseconds - frameStart;
+        long elapsed = _clock.NowNanoseconds - frameStart;
         long remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
         if (remaining > 0)
             _waiter.Wait(new TimeSpan(remaining / 100), cancellationToken);
+    }
+
+    internal TestAccessor GetTestAccessor() => new(this);
+
+    internal readonly struct TestAccessor
+    {
+        private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _loop;
+
+        public TestAccessor(ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> loop)
+        {
+            _loop = loop;
+        }
+
+        public void RunOneIteration(CancellationToken cancellationToken) => _loop.RunOneIteration(cancellationToken);
+
+        public void MaybeStartSave(WorldSnapshot snapshot) => _loop.MaybeStartSave(snapshot);
+
+        public void RunSaveTask(WorldImage image, int tick) => _loop.RunSaveTask(image, tick);
+
+        public void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken) =>
+            _loop.ThrottleToFrameRate(frameStart, cancellationToken);
     }
 }
