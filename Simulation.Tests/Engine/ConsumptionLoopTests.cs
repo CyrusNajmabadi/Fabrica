@@ -28,7 +28,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick: 12);
         int epochAtRender = -1;
-        test.RendererState.BeforeRender = _ => epochAtRender = test.Shared.ConsumptionEpoch;
+        test.RendererState.BeforeRender = (_, _) => epochAtRender = test.Shared.ConsumptionEpoch;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -255,7 +255,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: 5);
         test.ClockState.NowNanoseconds = 0;
-        test.RendererState.BeforeRender = _ => test.ClockState.NowNanoseconds = 5_000_000;
+        test.RendererState.BeforeRender = (_, _) => test.ClockState.NowNanoseconds = 5_000_000;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -270,7 +270,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: 5);
         test.RendererState.BeforeRender =
-            _ => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
+            (_, _) => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -579,7 +579,7 @@ public sealed class ConsumptionLoopTests
     {
         public readonly List<int> RenderedTicks = [];
 
-        public Action<WorldSnapshot>? BeforeRender { get; set; }
+        public Action<WorldSnapshot?, WorldSnapshot>? BeforeRender { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -593,12 +593,12 @@ public sealed class ConsumptionLoopTests
             _state = state;
         }
 
-        public void Render(WorldSnapshot snapshot)
+        public void Render(WorldSnapshot? previous, WorldSnapshot current)
         {
-            _state.BeforeRender?.Invoke(snapshot);
+            _state.BeforeRender?.Invoke(previous, current);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(snapshot.Image.TickNumber);
+            _state.RenderedTicks.Add(current.Image.TickNumber);
         }
     }
 }

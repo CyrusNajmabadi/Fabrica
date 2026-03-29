@@ -29,6 +29,12 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 {
     private readonly object _savePinOwner = new();
 
+    // The snapshot passed as 'current' on the most recent successful Render call.
+    // Null before the first render.
+    // Passed as 'previous' on the next Render call so the renderer can diff the two.
+    // Only touched by the consumption thread — no synchronisation needed.
+    private WorldSnapshot? _lastRendered;
+
     private readonly MemorySystem _memory;
     private readonly SharedState _shared;
     private readonly TClock _clock;
@@ -71,10 +77,16 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         if (snapshot is not null)
         {
             MaybeStartSave(snapshot);
-            _renderer.Render(snapshot);
+
+            // Render is called every frame regardless of whether the simulation has
+            // published a new snapshot since the last call.  When it has not,
+            // _lastRendered and snapshot are the same object reference.
+            // See IRenderer.Render for the full same-snapshot semantics.
+            _renderer.Render(_lastRendered, snapshot);
 
             // Advance epoch: simulation may now free anything strictly before this tick.
             _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
+            _lastRendered = snapshot;
         }
 
         ThrottleToFrameRate(frameStart, cancellationToken);

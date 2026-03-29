@@ -6,7 +6,9 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:medium.com)",
       "Bash(dotnet build:*)",
-      "Bash(timeout 3 dotnet run)"
+      "Bash(timeout 3 dotnet run)",
+      "Bash(dotnet test:*)",
+      "Bash(powershell -Command \"Remove-Item ''C:\\\\Users\\\\cyrus\\\\GoogleDrive\\\\My Drive\\\\Projects\\\\Fabrica\\\\.git\\\\index.lock'' -Force\")"
     ]
   }
 }
