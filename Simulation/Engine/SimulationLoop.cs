@@ -11,12 +11,16 @@ namespace Simulation.Engine;
 ///
 /// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
 /// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
+/// Generic on <typeparamref name="TWaiter"/> for the same reason.
 /// </summary>
-internal sealed class SimulationLoop<TClock> where TClock : struct, IClock
+internal sealed class SimulationLoop<TClock, TWaiter>
+    where TClock : struct, IClock
+    where TWaiter : struct, IWaiter
 {
     private readonly MemorySystem _memory;
     private readonly SharedState  _shared;
     private readonly TClock       _clock;
+    private readonly TWaiter      _waiter;
 
     private int            _currentTick;
     private WorldSnapshot? _currentSnapshot;
@@ -26,11 +30,12 @@ internal sealed class SimulationLoop<TClock> where TClock : struct, IClock
     // HashSet gives O(1) add, O(1) remove-per-item, and prevents accidental duplicates.
     private readonly HashSet<WorldSnapshot> _pinnedQueue = new();
 
-    public SimulationLoop(MemorySystem memory, SharedState shared, TClock clock)
+    public SimulationLoop(MemorySystem memory, SharedState shared, TClock clock, TWaiter waiter)
     {
         _memory = memory;
         _shared = shared;
         _clock  = clock;
+        _waiter = waiter;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -56,8 +61,7 @@ internal sealed class SimulationLoop<TClock> where TClock : struct, IClock
             }
 
             // Brief yield while waiting for the next tick window.
-            // TODO: replace Thread.Sleep with an injected IDelayService for testability.
-            Thread.Sleep(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100));
+            _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
         }
     }
 
@@ -96,8 +100,7 @@ internal sealed class SimulationLoop<TClock> where TClock : struct, IClock
             {
                 if (image is not null) { _memory.ReturnImage(image); image = null; }
                 CleanupStaleSnapshots();
-                // TODO: replace with IDelayService
-                Thread.Sleep(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100));
+                _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), CancellationToken.None);
             }
         }
 
@@ -169,8 +172,7 @@ internal sealed class SimulationLoop<TClock> where TClock : struct, IClock
             SimulationConstants.PressureMaxDelayNanoseconds);
 
         if (delay > 0)
-            // TODO: replace with IDelayService
-            Thread.Sleep(new TimeSpan(delay / 100));
+            _waiter.Wait(new TimeSpan(delay / 100), CancellationToken.None);
     }
 }
 

@@ -13,11 +13,11 @@ internal sealed class Engine<TClock, TWaiter>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly SimulationLoop<TClock>          _simulationLoop;
+    private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
     private readonly ConsumptionLoop<TClock, TWaiter> _consumptionLoop;
 
     public Engine(
-        SimulationLoop<TClock> simulationLoop,
+        SimulationLoop<TClock, TWaiter> simulationLoop,
         ConsumptionLoop<TClock, TWaiter> consumptionLoop)
     {
         _simulationLoop  = simulationLoop;
@@ -33,7 +33,7 @@ internal sealed class Engine<TClock, TWaiter>
         var shared = new SharedState();
 
         return new Engine<TClock, TWaiter>(
-            new SimulationLoop<TClock>(memory, shared, clock),
+            new SimulationLoop<TClock, TWaiter>(memory, shared, clock, waiter),
             new ConsumptionLoop<TClock, TWaiter>(memory, shared, clock, waiter));
     }
 
