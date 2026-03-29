@@ -276,6 +276,73 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(0, accessor.PinnedQueueCount);
     }
 
+    [Fact]
+    public void RunOneIteration_DoesNotTick_WhenAccumulatorIsBelowThreshold()
+    {
+        var memory = new MemorySystem(poolSize: 8);
+        var shared = new SharedState();
+        var waiterState = new WaiterState();
+        var waiter = new RecordingWaiter(waiterState);
+        var loop = new SimulationLoop<ManualClock, RecordingWaiter>(memory, shared, new ManualClock(), waiter);
+        var accessor = loop.GetTestAccessor();
+
+        accessor.Bootstrap();
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds - 1;
+
+        accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(0, accessor.CurrentTick);
+        Assert.Equal(SimulationConstants.TickDurationNanoseconds - 1, accumulator);
+        Assert.Single(waiterState.WaitCalls);
+        Assert.Equal(TimeSpan.FromMilliseconds(1), waiterState.WaitCalls[0]);
+    }
+
+    [Fact]
+    public void RunOneIteration_TicksOnce_WhenAccumulatorReachesThreshold()
+    {
+        var memory = new MemorySystem(poolSize: 8);
+        var shared = new SharedState();
+        var waiterState = new WaiterState();
+        var waiter = new RecordingWaiter(waiterState);
+        var loop = new SimulationLoop<ManualClock, RecordingWaiter>(memory, shared, new ManualClock(), waiter);
+        var accessor = loop.GetTestAccessor();
+
+        accessor.Bootstrap();
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
+
+        accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(1, accessor.CurrentTick);
+        Assert.Equal(0, accumulator);
+        Assert.Single(waiterState.WaitCalls);
+    }
+
+    [Fact]
+    public void RunOneIteration_ProcessesMultipleTicks_AndPreservesLeftoverAccumulator()
+    {
+        var memory = new MemorySystem(poolSize: 8);
+        var shared = new SharedState();
+        var waiterState = new WaiterState();
+        var waiter = new RecordingWaiter(waiterState);
+        var loop = new SimulationLoop<ManualClock, RecordingWaiter>(memory, shared, new ManualClock(), waiter);
+        var accessor = loop.GetTestAccessor();
+
+        accessor.Bootstrap();
+
+        long lastTime = 0;
+        long accumulator = (SimulationConstants.TickDurationNanoseconds * 2) + 123;
+
+        accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(2, accessor.CurrentTick);
+        Assert.Equal(123, accumulator);
+        Assert.Single(waiterState.WaitCalls);
+    }
+
     private static List<WorldImage> DrainImages(MemorySystem memory)
     {
         var drained = new List<WorldImage>();
@@ -330,6 +397,11 @@ public sealed class SimulationLoopTickTests
     }
 
     internal readonly struct FakeClock : IClock
+    {
+        public long NowNanoseconds => 0;
+    }
+
+    internal readonly struct ManualClock : IClock
     {
         public long NowNanoseconds => 0;
     }

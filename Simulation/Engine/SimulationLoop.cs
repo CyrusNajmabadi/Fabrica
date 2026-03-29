@@ -202,6 +202,12 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
         public void CleanupStaleSnapshots() => _loop.CleanupStaleSnapshots();
 
+        public void RunOneIteration(
+            CancellationToken cancellationToken,
+            ref long lastTime,
+            ref long accumulator) =>
+            _loop.RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
+
         public int CurrentTick => _loop._currentTick;
 
         public WorldSnapshot? CurrentSnapshot => _loop._currentSnapshot;
