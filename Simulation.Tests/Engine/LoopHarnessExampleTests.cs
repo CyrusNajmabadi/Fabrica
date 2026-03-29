@@ -41,11 +41,38 @@ public sealed class LoopHarnessExampleTests
         test.Save.CompletePendingSave();
         Assert.False(test.Pins.IsPinned(1));
 
-        test.SimulationLoop.Cleanup();
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
 
         Assert.True(tick1Snapshot.IsUnreferenced);
         Assert.Equal(0, tick1Image.TickNumber);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
+    }
+
+    [Fact]
+    public void ConsumptionIterationBeforeSimulationIteration_SeesThePreviouslyPublishedSnapshot()
+    {
+        var test = LoopHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // publish tick 1
+
+        test.ConsumptionLoop.RunIteration(); // consume tick 1
+        Assert.Equal([1], test.Renderer.RenderedTicks);
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+
+        test.ConsumptionLoop.RunIteration(); // still consume tick 1
+        Assert.Equal([1, 1], test.Renderer.RenderedTicks);
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // publish tick 2
+
+        test.ConsumptionLoop.RunIteration(); // now see tick 2
+        Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
+        Assert.Equal(2, test.Shared.ConsumptionEpoch);
     }
 
     private sealed class LoopHarness
@@ -158,7 +185,6 @@ public sealed class LoopHarnessExampleTests
                     ref _owner._simulationAccumulator);
             }
 
-            public void Cleanup() => _accessor.CleanupStaleSnapshots();
         }
 
         public sealed class ConsumptionLoopController
