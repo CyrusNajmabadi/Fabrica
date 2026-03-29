@@ -2,29 +2,30 @@ using Simulation;
 using Simulation.Engine;
 using Simulation.Memory;
 
-var memory = new MemorySystem(SimConstants.SnapshotPoolSize);
+var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
 var shared = new SharedState();
+var clock  = new SystemClock();
 
-var simLoop         = new SimulationLoop(memory, shared);
-var consumptionLoop = new ConsumptionLoop(shared, memory);
+var simulationLoop  = new SimulationLoop(memory, shared, clock);
+var consumptionLoop = new ConsumptionLoop(memory, shared, clock);
 
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+using var cancellationSource = new CancellationTokenSource();
+Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellationSource.Cancel(); };
 
-var simThread = new Thread(() => simLoop.Run(cts.Token))
+var simulationThread = new Thread(() => simulationLoop.Run(cancellationSource.Token))
 {
     Name         = "Simulation",
     IsBackground = false,
 };
 
-var consumptionThread = new Thread(() => consumptionLoop.Run(cts.Token))
+var consumptionThread = new Thread(() => consumptionLoop.Run(cancellationSource.Token))
 {
     Name         = "Consumption",
     IsBackground = false,
 };
 
-simThread.Start();
+simulationThread.Start();
 consumptionThread.Start();
 
-simThread.Join();
+simulationThread.Join();
 consumptionThread.Join();

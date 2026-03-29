@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Simulation.Memory;
 using Simulation.World;
 
@@ -9,34 +8,37 @@ namespace Simulation.Engine;
 /// triggers a save task.
 ///
 /// Epoch discipline:
-///   - RendererEpoch is advanced AFTER rendering is complete.
-///   - The save pin is set BEFORE handing off to the save task (while epoch still covers it).
+///   - RendererEpoch is advanced only AFTER rendering is complete.
+///   - The save pin is set BEFORE handing off to the save task, while the epoch
+///     still covers that snapshot — so the simulation cannot reclaim it.
 ///   - The save task clears the pin only after it has finished reading the snapshot.
 /// </summary>
 internal sealed class ConsumptionLoop
 {
-    private readonly SharedState  _shared;
     private readonly MemorySystem _memory;
+    private readonly SharedState  _shared;
+    private readonly IClock       _clock;
 
-    public ConsumptionLoop(SharedState shared, MemorySystem memory)
+    public ConsumptionLoop(MemorySystem memory, SharedState shared, IClock clock)
     {
-        _shared = shared;
         _memory = memory;
+        _shared = shared;
+        _clock  = clock;
     }
 
-    public void Run(CancellationToken ct)
+    public void Run(CancellationToken cancellationToken)
     {
-        while (!ct.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            var frameStart = Stopwatch.GetTimestamp();
+            long frameStart = _clock.NowNanoseconds;
 
-            var snapshot = _shared.LatestSnapshot;
+            WorldSnapshot? snapshot = _shared.LatestSnapshot;
             if (snapshot is not null)
             {
                 MaybeStartSave(snapshot);
                 Render(snapshot);
 
-                // Epoch advance: simulation may now free anything strictly before this tick.
+                // Advance epoch: simulation may now free anything strictly before this tick.
                 _shared.RendererEpoch = snapshot.Image.TickNumber;
             }
 
@@ -50,7 +52,7 @@ internal sealed class ConsumptionLoop
     {
         int nextSaveAt = _shared.NextSaveAtTick;
 
-        // 0 = no save scheduled.  Otherwise, wait until simulation has reached that tick.
+        // 0 = no save scheduled; otherwise wait until the simulation reaches that tick.
         if (nextSaveAt == 0 || snapshot.Image.TickNumber < nextSaveAt)
             return;
 
@@ -59,13 +61,14 @@ internal sealed class ConsumptionLoop
         // Clear the timer BEFORE firing so the save task controls the next trigger.
         _shared.NextSaveAtTick = 0;
 
-        // Pin the snapshot so the simulation won't reclaim it while saving.
-        // Safe: our RendererEpoch hasn't advanced past tickToSave yet, so the
-        // simulation is already holding it alive.
+        // Pin the snapshot so the simulation will not reclaim it while saving.
+        // Safe: RendererEpoch has not yet advanced past tickToSave (we advance it after
+        // Render below), so the simulation is already holding this snapshot alive.
         _memory.PinnedVersions.Pin(tickToSave);
 
-        // Hand off to a background task.  We capture only what the task needs.
-        Task.Run(() => RunSaveTask(snapshot.Image, tickToSave));
+        // Capture only what the task needs; avoid holding the WorldSnapshot shell.
+        WorldImage imageToSave = snapshot.Image;
+        Task.Run(() => RunSaveTask(imageToSave, tickToSave));
     }
 
     private void RunSaveTask(WorldImage image, int tick)
@@ -76,12 +79,11 @@ internal sealed class ConsumptionLoop
         }
         finally
         {
-            // Always unpin, even if save throws — prevents the simulation from
-            // being blocked forever by a failed save.
+            // Always unpin — even on failure — so the simulation is never permanently blocked.
             _memory.PinnedVersions.Unpin(tick);
 
             // Schedule the next save relative to the tick we just saved.
-            _shared.NextSaveAtTick = tick + SimConstants.SaveIntervalTicks;
+            _shared.NextSaveAtTick = tick + SimulationConstants.SaveIntervalTicks;
         }
     }
 
@@ -103,11 +105,11 @@ internal sealed class ConsumptionLoop
 
     // ── Frame timing ─────────────────────────────────────────────────────────
 
-    private static void ThrottleToFrameRate(long frameStart)
+    private void ThrottleToFrameRate(long frameStart)
     {
-        double elapsedMs = (Stopwatch.GetTimestamp() - frameStart) * 1000.0 / Stopwatch.Frequency;
-        int remainingMs  = SimConstants.RenderIntervalMs - (int)elapsedMs;
-        if (remainingMs > 0)
-            Thread.Sleep(remainingMs);
+        long elapsed   = _clock.NowNanoseconds - frameStart;
+        long remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
+        if (remaining > 0)
+            Thread.Sleep(new TimeSpan(remaining / 100));
     }
 }
