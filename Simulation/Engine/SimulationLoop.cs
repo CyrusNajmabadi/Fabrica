@@ -59,6 +59,14 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         lastTime   = now;
         accumulator += delta;
 
+        ProcessAvailableTicks(cancellationToken, ref accumulator);
+
+        // Brief yield while waiting for the next tick window.
+        _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
+    }
+
+    private void ProcessAvailableTicks(CancellationToken cancellationToken, ref long accumulator)
+    {
         while (accumulator >= SimulationConstants.TickDurationNanoseconds)
         {
             ApplyPressureDelay(cancellationToken);
@@ -66,9 +74,6 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             CleanupStaleSnapshots();
             accumulator -= SimulationConstants.TickDurationNanoseconds;
         }
-
-        // Brief yield while waiting for the next tick window.
-        _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
     }
 
     // ── Initialisation ───────────────────────────────────────────────────────
