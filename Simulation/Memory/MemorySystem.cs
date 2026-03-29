@@ -16,6 +16,14 @@ internal sealed class MemorySystem
 
     public MemorySystem(int poolSize)
     {
+        if (poolSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(poolSize));
+
+        if (poolSize % SimulationConstants.PressureBucketCount != 0)
+            throw new ArgumentException(
+                $"Pool size must be a multiple of {SimulationConstants.PressureBucketCount}.",
+                nameof(poolSize));
+
         _snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
         _imagePool    = new ObjectPool<WorldImage>(poolSize);
     }

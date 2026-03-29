@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Numerics;
 using Simulation.Memory;
 using Simulation.World;
 
@@ -196,9 +195,9 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 internal static class SimulationPressure
 {
     /// <summary>
-    /// Returns the nanosecond delay to insert before a tick given current pool pressure.
-    /// Returns 0 when available slots are at or above the high-water mark (50% of capacity).
-    /// Each halving of available slots doubles the delay (binary exponential), capped at max.
+    /// Returns the nanosecond delay to insert before a tick given current pool occupancy.
+    /// The pool is divided into 8 occupancy buckets with delays:
+    ///   0, 1, 2, 4, 8, 16, 32, 64 ms.
     /// </summary>
     internal static long ComputeDelay(
         int  available,
@@ -206,16 +205,20 @@ internal static class SimulationPressure
         long baseNanoseconds,
         long maxNanoseconds)
     {
-        int threshold = capacity / 2;
-        if (available >= threshold) return 0;
+        if (capacity <= 0)
+            return maxNanoseconds;
 
-        // level = how many times available has halved below threshold
-        int level = BitOperations.Log2((uint)threshold)
-                  - BitOperations.Log2((uint)Math.Max(1, available));
+        int used = Math.Clamp(capacity - available, 0, capacity);
+        int bucket = used == 0
+            ? 0
+            : Math.Min(
+                SimulationConstants.PressureBucketCount - 1,
+                (used - 1) * SimulationConstants.PressureBucketCount / capacity);
 
-        if (level >= 63) return maxNanoseconds;
+        if (bucket == 0)
+            return 0;
 
-        long delay = baseNanoseconds << level;
+        long delay = baseNanoseconds << (bucket - 1);
         return delay > maxNanoseconds ? maxNanoseconds : delay;
     }
 }

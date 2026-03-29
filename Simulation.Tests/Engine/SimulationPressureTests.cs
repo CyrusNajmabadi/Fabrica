@@ -6,59 +6,65 @@ namespace Simulation.Tests.Engine;
 public sealed class SimulationPressureTests
 {
     [Fact]
-    public void ComputeDelay_ReturnsZero_AtOrAboveThreshold()
+    public void ComputeDelay_UsesExpectedBuckets_ForEveryAvailabilityValue()
     {
-        Assert.Equal(0, SimulationPressure.ComputeDelay(
-            available: 8,
-            capacity: 16,
-            baseNanoseconds: 5,
-            maxNanoseconds: 50));
+        long[] expectedDelays =
+        [
+            0,  // 16 available
+            0,  // 15 available
+            0,  // 14 available
+            1,  // 13 available
+            1,  // 12 available
+            2,  // 11 available
+            2,  // 10 available
+            4,  // 9 available
+            4,  // 8 available
+            8,  // 7 available
+            8,  // 6 available
+            16, // 5 available
+            16, // 4 available
+            32, // 3 available
+            32, // 2 available
+            64, // 1 available
+            64, // 0 available
+        ];
 
-        Assert.Equal(0, SimulationPressure.ComputeDelay(
-            available: 16,
-            capacity: 16,
-            baseNanoseconds: 5,
-            maxNanoseconds: 50));
-    }
+        for (int available = 16; available >= 0; available--)
+        {
+            long expected = expectedDelays[16 - available];
+            long actual = SimulationPressure.ComputeDelay(
+                available: available,
+                capacity: 16,
+                baseNanoseconds: 1,
+                maxNanoseconds: 64);
 
-    [Fact]
-    public void ComputeDelay_DoublesEachTimeAvailabilityHalves()
-    {
-        const long baseDelay = 5;
-        const long maxDelay = 100;
-
-        Assert.Equal(10, SimulationPressure.ComputeDelay(
-            available: 4,
-            capacity: 16,
-            baseNanoseconds: baseDelay,
-            maxNanoseconds: maxDelay));
-
-        Assert.Equal(20, SimulationPressure.ComputeDelay(
-            available: 2,
-            capacity: 16,
-            baseNanoseconds: baseDelay,
-            maxNanoseconds: maxDelay));
-
-        Assert.Equal(40, SimulationPressure.ComputeDelay(
-            available: 1,
-            capacity: 16,
-            baseNanoseconds: baseDelay,
-            maxNanoseconds: maxDelay));
+            Assert.Equal(expected, actual);
+        }
     }
 
     [Fact]
     public void ComputeDelay_IsCappedAtMaximum()
     {
-        Assert.Equal(50, SimulationPressure.ComputeDelay(
+        Assert.Equal(64, SimulationPressure.ComputeDelay(
             available: 1,
             capacity: 1024,
-            baseNanoseconds: 5,
-            maxNanoseconds: 50));
+            baseNanoseconds: 1,
+            maxNanoseconds: 64));
 
-        Assert.Equal(50, SimulationPressure.ComputeDelay(
+        Assert.Equal(64, SimulationPressure.ComputeDelay(
             available: 0,
             capacity: 1024,
-            baseNanoseconds: 5,
-            maxNanoseconds: 50));
+            baseNanoseconds: 1,
+            maxNanoseconds: 64));
+    }
+
+    [Fact]
+    public void ComputeDelay_ReturnsMaximum_WhenCapacityIsNonPositive()
+    {
+        Assert.Equal(64, SimulationPressure.ComputeDelay(
+            available: 0,
+            capacity: 0,
+            baseNanoseconds: 1,
+            maxNanoseconds: 64));
     }
 }
