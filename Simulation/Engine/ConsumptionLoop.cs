@@ -94,7 +94,16 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         _memory.PinnedVersions.Pin(tickToSave);
 
         WorldImage imageToSave = snapshot.Image;
-        _saveRunner.RunSave(imageToSave, tickToSave, RunSaveTask);
+        try
+        {
+            _saveRunner.RunSave(imageToSave, tickToSave, RunSaveTask);
+        }
+        catch
+        {
+            _memory.PinnedVersions.Unpin(tickToSave);
+            _shared.NextSaveAtTick = tickToSave;
+            throw;
+        }
     }
 
     private void RunSaveTask(WorldImage image, int tick)
@@ -115,7 +124,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     private void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken)
     {
-        long elapsed = _clock.NowNanoseconds - frameStart;
+        long elapsed = Math.Max(0, _clock.NowNanoseconds - frameStart);
         long remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
         if (remaining > 0)
             _waiter.Wait(new TimeSpan(remaining / 100), cancellationToken);

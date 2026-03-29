@@ -86,6 +86,23 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
+    public void RunOneIteration_StartsSave_WhenLatestTickHasAdvancedPastThreshold()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        int tick = SimulationConstants.SaveIntervalTicks + 17;
+        WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick);
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        SaveInvocation invocation = Assert.Single(test.SaveRunnerState.RunCalls);
+        Assert.Same(snapshot.Image, invocation.Image);
+        Assert.Equal(tick, invocation.Tick);
+        Assert.True(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
+        Assert.Equal(0, test.Shared.NextSaveAtTick);
+        Assert.Equal(tick, test.Shared.ConsumptionEpoch);
+    }
+
+    [Fact]
     public void RunOneIteration_DoesNotStartSecondSave_WhileFirstIsInFlight()
     {
         var test = ConsumptionLoopTestContext.Create();
@@ -135,6 +152,47 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
+    public void SaveRunnerFailure_UnpinsAndRestoresImmediateRetryState()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick: SimulationConstants.SaveIntervalTicks);
+        test.SaveRunnerState.ExceptionToThrow = new InvalidOperationException("dispatch failed");
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => test.Accessor.RunOneIteration(CancellationToken.None));
+
+        Assert.Equal("dispatch failed", exception.Message);
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.Equal(snapshot.Image.TickNumber, test.Shared.NextSaveAtTick);
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.SaverState.SaveCalls);
+    }
+
+    [Fact]
+    public void RendererFailure_AfterSaveDispatch_LeavesEpochUnadvancedUntilSaveCompletes()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick: SimulationConstants.SaveIntervalTicks);
+        test.RendererState.ExceptionToThrow = new InvalidOperationException("render failed");
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => test.Accessor.RunOneIteration(CancellationToken.None));
+
+        Assert.Equal("render failed", exception.Message);
+        SaveInvocation invocation = Assert.Single(test.SaveRunnerState.RunCalls);
+        Assert.True(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Equal(0, test.Shared.NextSaveAtTick);
+        Assert.Empty(test.RendererState.RenderedTicks);
+
+        test.SaveRunnerState.Complete(invocation);
+
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.Equal(snapshot.Image.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+    }
+
+    [Fact]
     public void SaveIsPinnedBeforeDispatchAndEpochAdvancesAfterRender()
     {
         var test = ConsumptionLoopTestContext.Create();
@@ -177,6 +235,19 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Empty(test.WaiterState.WaitCalls);
+    }
+
+    [Fact]
+    public void ThrottleToFrameRate_ClampsNegativeElapsedTimeToZero()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        test.ClockState.NowNanoseconds = 50;
+
+        test.Accessor.ThrottleToFrameRate(frameStart: 100, CancellationToken.None);
+
+        Assert.Equal(
+            [ GetRenderInterval() ],
+            test.WaiterState.WaitCalls);
     }
 
     [Fact]
@@ -380,6 +451,8 @@ public sealed class ConsumptionLoopTests
 
         public Action<SaveInvocation>? BeforeDispatch { get; set; }
 
+        public Exception? ExceptionToThrow { get; set; }
+
         public void Complete(SaveInvocation invocation)
         {
             invocation.SaveAction(invocation.Image, invocation.Tick);
@@ -399,6 +472,8 @@ public sealed class ConsumptionLoopTests
         {
             var invocation = new SaveInvocation(image, tick, saveAction);
             _state.RunCalls.Add(invocation);
+            if (_state.ExceptionToThrow is Exception exception)
+                throw exception;
             _state.BeforeDispatch?.Invoke(invocation);
         }
     }
@@ -433,6 +508,8 @@ public sealed class ConsumptionLoopTests
         public readonly List<int> RenderedTicks = [];
 
         public Action<WorldSnapshot>? BeforeRender { get; set; }
+
+        public Exception? ExceptionToThrow { get; set; }
     }
 
     private readonly struct RecordingRenderer : IRenderer
@@ -447,6 +524,8 @@ public sealed class ConsumptionLoopTests
         public void Render(WorldSnapshot snapshot)
         {
             _state.BeforeRender?.Invoke(snapshot);
+            if (_state.ExceptionToThrow is Exception exception)
+                throw exception;
             _state.RenderedTicks.Add(snapshot.Image.TickNumber);
         }
     }

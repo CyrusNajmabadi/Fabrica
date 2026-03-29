@@ -63,6 +63,31 @@ public sealed class SimulationLoopRunTests
     }
 
     [Fact]
+    public void RunOneIteration_ClampsNegativeClockDeltaToZero()
+    {
+        var clockState = new ClockState { NowNanoseconds = 50 };
+        var waiterState = new WaiterState();
+        var test = SimulationLoopTestContext.Create(
+            clock: new RecordingClock(clockState),
+            waiter: new RecordingWaiter(waiterState),
+            waiterState: waiterState);
+
+        test.Accessor.Bootstrap();
+
+        long lastTime = 100;
+        long accumulator = 123;
+
+        test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(50, lastTime);
+        Assert.Equal(123, accumulator);
+        Assert.Equal(0, test.Accessor.CurrentTick);
+        Assert.Equal(
+            [ TimeSpan.FromMilliseconds(1) ],
+            test.WaiterState.WaitCalls);
+    }
+
+    [Fact]
     public void Run_BootstrapsAndThrowsWhenCancelledDuringTheFirstIdleWait()
     {
         var clockState = new ClockState { NowNanoseconds = 0 };

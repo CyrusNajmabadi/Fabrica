@@ -213,6 +213,26 @@ public sealed class SimulationLoopTickTests
     }
 
     [Fact]
+    public void Cleanup_ResetsFreedImageBeforeItCanBeReused()
+    {
+        var test = SimulationLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick(CancellationToken.None);
+
+        WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        WorldImage firstImage = firstSnapshot.Image;
+
+        test.Shared.ConsumptionEpoch = 2;
+
+        test.Accessor.CleanupStaleSnapshots();
+
+        Assert.True(firstSnapshot.IsUnreferenced);
+        Assert.Equal(0, firstImage.TickNumber);
+    }
+
+    [Fact]
     public void Cleanup_DoesNotFreeTheCurrentSnapshot_EvenWhenConsumptionEpochIsPastIt()
     {
         var test = SimulationLoopTestContext.Create();

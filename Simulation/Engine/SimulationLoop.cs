@@ -54,7 +54,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         ref long accumulator)
     {
         long now   = _clock.NowNanoseconds;
-        long delta = now - lastTime;
+        long delta = Math.Max(0, now - lastTime);
         lastTime   = now;
         accumulator += delta;
 
