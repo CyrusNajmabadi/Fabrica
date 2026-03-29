@@ -71,6 +71,62 @@ namespace Simulation.Engine;
 ///  task.  Pinning only happens at save boundaries (≈every 5 minutes of game
 ///  time), so it is not on the hot path.  See PinnedVersions for details.
 ///
+/// ══════════════════════════ PARALLELISM OPPORTUNITIES ═══════════════════════
+///
+///  MULTITHREADED SIMULATION (future)
+///    _currentSnapshot is never freed by cleanup (it is explicitly excluded by
+///    the _oldestSnapshot != _currentSnapshot guard).  Its WorldImage is fully
+///    immutable once published.  The simulation can therefore spawn any number
+///    of worker threads to read the current image and compute parts of the next
+///    world state in parallel — all workers read immutable data, and their
+///    output goes into a fresh WorldImage not yet visible to any other thread.
+///    No locks or atomics are required between workers and the owning thread
+///    beyond a final join/await before publishing the new snapshot.
+///
+///  MULTITHREADED RENDERING (future)
+///    During a Render call both 'previous' and 'current' are guaranteed alive:
+///      • 'current' is at tick M; ConsumptionEpoch has not advanced past M yet.
+///      • 'previous' is at tick N ≤ M; epoch = N, and cleanup frees only
+///        tick &lt; N (strictly less than), so tick N itself is never freed.
+///    Both images are fully immutable.  The renderer can safely spawn worker
+///    threads to read either snapshot without any synchronization.
+///    Constraint: all workers must finish accessing the snapshots before Render
+///    returns, because ConsumptionEpoch advances immediately afterward and the
+///    simulation may then reclaim 'previous' on the very next cleanup pass.
+///
+///  TEMPORAL DECOUPLING
+///    Rendering always operates on already-computed, immutable snapshots.
+///    The simulation is concurrently producing ticks further ahead.  The two
+///    threads are temporally decoupled: rendering is always at a point in the
+///    past relative to the latest simulated state, and neither thread blocks the
+///    other's internal parallelism.
+///
+/// ══════════════════════════════ THROTTLING ═══════════════════════════════════
+///
+///  SIMULATION SELF-THROTTLING (wall time)
+///    The simulation uses a fixed-timestep accumulator (see SimulationLoop).
+///    If each tick is cheap, the loop yields for most of each 25 ms window.
+///    If a tick takes longer than 25 ms of wall time, the accumulator falls
+///    behind and game time runs slower than real time — the simulation always
+///    runs as fast as it can, never artificially fast and never artificially
+///    throttled just to hit a fixed Hz when it cannot sustain it.
+///
+///  CONSUMPTION → SIMULATION BACK-PRESSURE (pool pressure)
+///    Because consumption always reads LatestSnapshot (the most recent tick),
+///    a slow consumption frame rate does not by itself cause pool pressure:
+///    each frame still advances the epoch to the latest tick and allows
+///    cleanup to reclaim the entire backlog in one pass.
+///
+///    Pool pressure builds only when the consumption thread stalls long enough
+///    for simulation to produce more snapshots than the pool can hold.  With
+///    a 256-slot pool at 40 Hz, simulation can run unimpeded for ≈6.4 seconds
+///    before the pool fills.  Beyond that:
+///      • Each 1/8 capacity bucket filled adds an exponential pre-tick delay
+///        (1 ms → 2 ms → 4 ms → … → 64 ms).
+///      • Full pool exhaustion blocks Tick() entirely until a slot is freed.
+///    This ensures the simulation never silently allocates unboundedly and
+///    instead applies explicit back-pressure that scales with the stall depth.
+///
 /// ════════════════════════════════════════════════════════════════════════════
 ///
 /// Use <see cref="Create"/> for the default production configuration.
