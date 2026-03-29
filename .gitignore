@@ -63,10 +63,12 @@ wwwroot/
 *.azurePubxml
 *.pubxml
 *.publishproj
+!Simulation/Properties/PublishProfiles/*.pubxml
 
 # Deployment artifacts
 publish/
 PublishScripts/
+Published/
 
 # Unit test results
 TestResult.xml
