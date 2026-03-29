@@ -54,8 +54,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
             while (accumulator >= SimulationConstants.TickDurationNanoseconds)
             {
-                ApplyPressureDelay();
-                Tick();
+                ApplyPressureDelay(cancellationToken);
+                Tick(cancellationToken);
                 CleanupStaleSnapshots();
                 accumulator -= SimulationConstants.TickDurationNanoseconds;
             }
@@ -84,7 +84,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     // ── Tick ─────────────────────────────────────────────────────────────────
 
-    private void Tick()
+    private void Tick(CancellationToken cancellationToken)
     {
         _currentTick++;
 
@@ -100,7 +100,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             {
                 if (image is not null) { _memory.ReturnImage(image); image = null; }
                 CleanupStaleSnapshots();
-                _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), CancellationToken.None);
+                _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
             }
         }
 
@@ -163,7 +163,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     // ── Backpressure ─────────────────────────────────────────────────────────
 
-    private void ApplyPressureDelay()
+    private void ApplyPressureDelay(CancellationToken cancellationToken)
     {
         long delay = SimulationPressure.ComputeDelay(
             _memory.SnapshotsAvailable,
@@ -172,7 +172,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             SimulationConstants.PressureMaxDelayNanoseconds);
 
         if (delay > 0)
-            _waiter.Wait(new TimeSpan(delay / 100), CancellationToken.None);
+            _waiter.Wait(new TimeSpan(delay / 100), cancellationToken);
     }
 }
 
