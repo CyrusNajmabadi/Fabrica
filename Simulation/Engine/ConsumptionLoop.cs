@@ -9,6 +9,7 @@ namespace Simulation.Engine;
 ///
 /// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
 /// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
+/// Generic on <typeparamref name="TWaiter"/> for the same reason.
 ///
 /// Epoch discipline:
 ///   - ConsumptionEpoch is advanced only AFTER rendering is complete.
@@ -16,17 +17,21 @@ namespace Simulation.Engine;
 ///     still covers that snapshot — the simulation cannot reclaim it.
 ///   - The save task clears the pin only after it has finished reading the snapshot.
 /// </summary>
-internal sealed class ConsumptionLoop<TClock> where TClock : struct, IClock
+internal sealed class ConsumptionLoop<TClock, TWaiter>
+    where TClock : struct, IClock
+    where TWaiter : struct, IWaiter
 {
     private readonly MemorySystem _memory;
     private readonly SharedState  _shared;
     private readonly TClock       _clock;
+    private readonly TWaiter      _waiter;
 
-    public ConsumptionLoop(MemorySystem memory, SharedState shared, TClock clock)
+    public ConsumptionLoop(MemorySystem memory, SharedState shared, TClock clock, TWaiter waiter)
     {
         _memory = memory;
         _shared = shared;
         _clock  = clock;
+        _waiter = waiter;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -45,7 +50,7 @@ internal sealed class ConsumptionLoop<TClock> where TClock : struct, IClock
                 _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
             }
 
-            ThrottleToFrameRate(frameStart);
+            ThrottleToFrameRate(frameStart, cancellationToken);
         }
     }
 
@@ -106,12 +111,11 @@ internal sealed class ConsumptionLoop<TClock> where TClock : struct, IClock
 
     // ── Frame timing ─────────────────────────────────────────────────────────
 
-    private void ThrottleToFrameRate(long frameStart)
+    private void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken)
     {
         long elapsed   = _clock.NowNanoseconds - frameStart;
         long remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
         if (remaining > 0)
-            // TODO: replace with IDelayService
-            Thread.Sleep(new TimeSpan(remaining / 100));
+            _waiter.Wait(new TimeSpan(remaining / 100), cancellationToken);
     }
 }

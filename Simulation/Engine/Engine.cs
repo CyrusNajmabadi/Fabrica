@@ -9,12 +9,16 @@ namespace Simulation.Engine;
 /// Use <see cref="Create"/> for the default production configuration.
 /// Use the explicit constructor to inject custom loops (e.g. in tests).
 /// </summary>
-internal sealed class Engine<TClock> where TClock : struct, IClock
+internal sealed class Engine<TClock, TWaiter>
+    where TClock : struct, IClock
+    where TWaiter : struct, IWaiter
 {
-    private readonly SimulationLoop<TClock>  _simulationLoop;
-    private readonly ConsumptionLoop<TClock> _consumptionLoop;
+    private readonly SimulationLoop<TClock>          _simulationLoop;
+    private readonly ConsumptionLoop<TClock, TWaiter> _consumptionLoop;
 
-    public Engine(SimulationLoop<TClock> simulationLoop, ConsumptionLoop<TClock> consumptionLoop)
+    public Engine(
+        SimulationLoop<TClock> simulationLoop,
+        ConsumptionLoop<TClock, TWaiter> consumptionLoop)
     {
         _simulationLoop  = simulationLoop;
         _consumptionLoop = consumptionLoop;
@@ -23,14 +27,14 @@ internal sealed class Engine<TClock> where TClock : struct, IClock
     /// <summary>
     /// Builds a fully wired engine with default pool sizes and the supplied clock.
     /// </summary>
-    public static Engine<TClock> Create(TClock clock)
+    public static Engine<TClock, TWaiter> Create(TClock clock, TWaiter waiter)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
 
-        return new Engine<TClock>(
+        return new Engine<TClock, TWaiter>(
             new SimulationLoop<TClock>(memory, shared, clock),
-            new ConsumptionLoop<TClock>(memory, shared, clock));
+            new ConsumptionLoop<TClock, TWaiter>(memory, shared, clock, waiter));
     }
 
     /// <summary>
