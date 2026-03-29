@@ -3,9 +3,34 @@ using System.Diagnostics;
 namespace Simulation.World;
 
 /// <summary>
-/// Thin shell wrapping a WorldImage with a forward pointer to the next snapshot.
-/// Ref-counted to support future tree-node structural sharing cleanup cascades.
-/// All AddRef/Release calls happen exclusively on the simulation thread — no atomics needed.
+/// A node in the snapshot chain.  Wraps one WorldImage and holds a forward pointer
+/// to the next (newer) snapshot.
+///
+/// CHAIN STRUCTURE
+///   The simulation builds a singly-linked forward chain, oldest → newest:
+///
+///     [tick 0] → [tick 1] → [tick 2] → … → [tick N]
+///      _oldest                                _current / LatestSnapshot
+///
+///   Only the simulation thread reads or writes the chain.  The Next pointer and
+///   ref-count are therefore not synchronised — no atomics, no locks needed.
+///
+/// REF COUNTING
+///   Each snapshot starts with refcount = 1 (set by Initialize).  AddRef and
+///   Release exist to support future structural sharing: if two consecutive
+///   snapshots point to the same WorldImage subtree node, that node will carry
+///   a refcount > 1 and must not be freed until the last snapshot drops its
+///   reference.  Currently every snapshot has refcount 1 throughout its lifetime
+///   and FreeSnapshot frees it via a single Release() call.
+///   All ref-count operations are on the simulation thread — no atomics needed.
+///
+/// PINNED EXTRACTION AND ClearNext
+///   When CleanupStaleSnapshots encounters a pinned snapshot it cannot yet free,
+///   it calls ClearNext() before moving the snapshot to _pinnedQueue.  Severing
+///   the forward pointer is necessary so that _oldestSnapshot can advance past
+///   the pinned node: without it, the chain walk would stop there and all
+///   subsequent snapshots would be blocked from reclamation for the duration of
+///   the save.
 /// </summary>
 internal sealed class WorldSnapshot
 {

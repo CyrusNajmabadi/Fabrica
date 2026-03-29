@@ -4,8 +4,22 @@ namespace Simulation.Memory;
 
 /// <summary>
 /// Single-threaded, pre-allocated object pool backed by a flat array used as a stack.
-/// All Rent/Return calls must originate from the same thread.
-/// Zero allocation after construction — never falls back to new T() on Rent.
+///
+/// DESIGN GOALS
+///   Zero allocation after construction: all T instances are created upfront in
+///   the constructor.  Rent returns null rather than falling back to new T() when
+///   exhausted.  This gives the caller explicit control over pool pressure — the
+///   simulation loop uses a null return to trigger backpressure and cleanup rather
+///   than silently over-allocating and stressing the GC.
+///
+///   Single-threaded: all Rent/Return calls must come from the owning thread.
+///   In production this is always the simulation thread.  The #if DEBUG thread-ID
+///   assertion detects accidental cross-thread access in tests early, before it
+///   causes data races.
+///
+///   Flat array as stack: the top-of-stack index (_count) makes Rent and Return
+///   O(1) with no heap allocation.  LIFO reuse order gives recently-returned
+///   objects the best chance of still being in CPU cache.
 /// </summary>
 internal sealed class ObjectPool<T> where T : class, new()
 {

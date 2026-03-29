@@ -5,12 +5,49 @@ using Simulation.World;
 namespace Simulation.Engine;
 
 /// <summary>
-/// The simulation thread: advances world state one tick at a time and reclaims
-/// snapshots that all consumers have moved past.
+/// The simulation ("producer") thread.  Advances world state one tick at a time,
+/// maintains the snapshot chain, and reclaims snapshots the consumption thread
+/// has finished with.
 ///
-/// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
-/// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
-/// Generic on <typeparamref name="TWaiter"/> for the same reason.
+/// SNAPSHOT CHAIN
+///   Every tick appends a new WorldSnapshot to a singly-linked forward chain:
+///
+///     _oldestSnapshot → [tick 1] → [tick 2] → … → [tick N] ← _currentSnapshot
+///                                                             (= LatestSnapshot)
+///
+///   The simulation is the sole writer to the chain.  WorldImage data is written
+///   before the volatile-write to LatestSnapshot (a release fence), so the
+///   consumption thread always sees fully-initialised image data (acquire fence
+///   on the matching read).
+///
+/// EPOCH-BASED RECLAMATION
+///   After each tick, CleanupStaleSnapshots() reads ConsumptionEpoch (volatile
+///   acquire) and walks _oldestSnapshot forward, freeing every snapshot whose
+///   tick is strictly less than the epoch and is not pinned for saving.
+///
+///   Safety argument: ConsumptionEpoch = N means the consumption thread has
+///   successfully completed Render(…, tickN) and set _lastRendered = tickN.
+///   The simulation reads this volatile value; if it sees a stale (lower) epoch
+///   it merely retains a snapshot one extra cleanup pass — never frees prematurely.
+///
+/// PINNED SNAPSHOTS AND THE PINNED QUEUE
+///   A snapshot being saved must not be reclaimed while the save task reads it.
+///   When CleanupStaleSnapshots encounters a pinned snapshot it cannot free, it
+///   calls ClearNext() to sever the snapshot from the live chain and parks it in
+///   _pinnedQueue.  This lets _oldestSnapshot advance past the pinned node so
+///   that everything after it can still be freed normally.
+///   The pinned queue is drained each cleanup pass once the pin is released.
+///
+/// BACKPRESSURE
+///   When the snapshot pool drops below roughly half capacity, ApplyPressureDelay()
+///   inserts an exponentially growing delay before each tick.  This slows
+///   the simulation, giving the consumption thread time to advance its epoch and
+///   allow cleanup to reclaim more snapshots.  If the pool is fully exhausted,
+///   Tick() retries with a 1 ms sleep per attempt.
+///
+/// Generic on <typeparamref name="TClock"/> and <typeparamref name="TWaiter"/>
+/// (both constrained to struct) so the JIT/AOT devirtualises all calls —
+/// zero interface-dispatch overhead in the hot path.
 /// </summary>
 internal sealed class SimulationLoop<TClock, TWaiter>
     where TClock : struct, IClock
@@ -79,6 +116,11 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     // ── Initialisation ───────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Allocates the tick-0 snapshot, anchors both _oldestSnapshot and
+    /// _currentSnapshot to it, and publishes it via LatestSnapshot so the
+    /// consumption thread has something to render before the first tick completes.
+    /// </summary>
     private void Bootstrap()
     {
         WorldImage    image    = _memory.RentImage()    ?? throw new InvalidOperationException("Image pool empty at startup.");
@@ -102,6 +144,20 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     // ── Tick ─────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Advances the world by one tick.
+    ///
+    /// Rents a fresh image and snapshot, writes the new world state, links the
+    /// snapshot onto the chain via SetNext, and volatile-writes it to
+    /// LatestSnapshot (release fence — makes all image writes visible to the
+    /// consumption thread's subsequent acquire-read).
+    ///
+    /// Pool retry: if either object is unavailable, CleanupStaleSnapshots() is
+    /// called immediately to reclaim what it can, then the thread sleeps 1 ms
+    /// before retrying.  This tight loop is the last resort — backpressure
+    /// (ApplyPressureDelay) should slow the tick rate long before this path
+    /// is reached under normal conditions.
+    /// </summary>
     private void Tick(CancellationToken cancellationToken)
     {
         WorldImage?    image    = null;
@@ -133,6 +189,24 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     // ── Cleanup ──────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Reclaims snapshots the consumption thread has moved past.
+    ///
+    /// Pass 1 — live chain walk:
+    ///   Reads ConsumptionEpoch once (volatile acquire).  Walks _oldestSnapshot
+    ///   forward while tick &lt; epoch and node != _currentSnapshot.  Each node:
+    ///     - Not pinned → FreeSnapshot immediately.
+    ///     - Pinned → ClearNext (severs from chain) then park in _pinnedQueue.
+    ///   Severing a pinned node lets _oldestSnapshot advance past it so the
+    ///   snapshots after it are not blocked from reclamation.
+    ///
+    /// Pass 2 — pinned queue drain:
+    ///   Scans _pinnedQueue and frees any snapshot whose pin has since cleared.
+    ///
+    /// Invariant: _currentSnapshot is never freed here.  The loop guard
+    /// (_oldestSnapshot != _currentSnapshot) always leaves the latest published
+    /// snapshot alive regardless of the epoch value.
+    /// </summary>
     private void CleanupStaleSnapshots()
     {
         int consumptionEpoch = _shared.ConsumptionEpoch; // volatile read
@@ -181,6 +255,11 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     // ── Backpressure ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Inserts a delay before each tick proportional to pool pressure.
+    /// No delay when the pool is lightly used; up to 64 ms when nearly full.
+    /// See <see cref="SimulationPressure.ComputeDelay"/> for the bucket schedule.
+    /// </summary>
     private void ApplyPressureDelay(CancellationToken cancellationToken)
     {
         long delay = SimulationPressure.ComputeDelay(
@@ -232,14 +311,27 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
 /// <summary>
 /// Pure pressure-delay calculations for the simulation loop.
-/// No dependencies — safe to unit-test in isolation.
+/// No dependencies — extracted so it can be unit-tested in isolation.
 /// </summary>
 internal static class SimulationPressure
 {
     /// <summary>
-    /// Returns the nanosecond delay to insert before a tick given current pool occupancy.
-    /// The pool is divided into 8 occupancy buckets with delays:
-    ///   0, 1, 2, 4, 8, 16, 32, 64 ms.
+    /// Returns the nanosecond delay to insert before a tick given current pool pressure.
+    ///
+    /// The pool capacity is divided into 8 equal buckets by usage fraction.
+    /// Bucket 0 (pool mostly empty = light use) incurs no delay.  Each subsequent
+    /// bucket doubles the previous delay (binary-exponential):
+    ///
+    ///   Bucket:  0    1    2    3    4     5     6     7
+    ///   Delay:   0ms  1ms  2ms  4ms  8ms  16ms  32ms  64ms
+    ///
+    /// Binary-exponential was chosen because:
+    ///   • It is computed with a single integer bit-shift — no floating-point.
+    ///   • It responds sharply when the pool is nearly exhausted, giving the
+    ///     consumption thread time to advance its epoch before the simulation
+    ///     fills the pool completely.
+    ///   • Delay is capped at maxNanoseconds so the simulation never stalls
+    ///     indefinitely due to backpressure alone.
     /// </summary>
     internal static long ComputeDelay(
         int  available,

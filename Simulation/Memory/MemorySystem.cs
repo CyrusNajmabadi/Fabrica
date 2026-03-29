@@ -4,8 +4,24 @@ namespace Simulation.Memory;
 
 /// <summary>
 /// Owns all object pools and the cross-thread pinned-versions set.
-/// Pool access (Rent/Return) is single-threaded (simulation thread only).
-/// <see cref="PinnedVersions"/> is thread-safe and may be accessed from any thread.
+///
+/// SINGLE-THREAD POOL OWNERSHIP
+///   Both ObjectPool instances (snapshots and images) are accessed exclusively
+///   from the simulation thread.  This is intentional: the simulation is the sole
+///   memory manager, which eliminates all locking, atomic operations, and ABA
+///   hazards from the allocation fast path.
+///
+///   Other threads (consumption, save task) interact with memory only indirectly:
+///   the consumption thread reads the WorldSnapshot reference published by the
+///   simulation; the save task reads the WorldImage inside that snapshot.  Neither
+///   ever calls Rent or Return — the objects are always reclaimed by the simulation
+///   after both threads have finished with them.
+///
+/// EXCEPTION — PinnedVersions
+///   PinnedVersions is thread-safe and may be called from any thread.  It is the
+///   only part of the memory system that crosses thread boundaries with mutable
+///   state.  See PinnedVersions for the full explanation of why concurrent access
+///   is required there and why the overhead is still negligible.
 /// </summary>
 internal sealed class MemorySystem
 {
