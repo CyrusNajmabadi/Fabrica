@@ -1,0 +1,98 @@
+## .NET Core
+*.swp
+*.*~
+project.lock.json
+.DS_Store
+*.pyc
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.nuget.cache
+nuget.config
+
+# Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
+
+# User-specific files (MonoDevelop/Xamarin Studio)
+*.userprefs
+
+# Mono auto generated files
+mono_crash.*
+
+# Build results of an Angular project reside in the wwwroot folder
+wwwroot/
+
+# Publish Web Output
+*.[Pp]ublish.xml
+*.azurePubxml
+*.pubxml
+*.publishproj
+
+# Deployment artifacts
+publish/
+PublishScripts/
+
+# Unit test results
+TestResult.xml
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+[Tt]est[Rr]esult*/
+nunit-*.xml
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Caches
+.sass-cache/
+
+# Coverage results
+coverage*/
+*.coveragexml
+
+# Backup & temp files
+*.bak
+*.tmp
+*~
+
+# Crash dumps
+*.mdmp
