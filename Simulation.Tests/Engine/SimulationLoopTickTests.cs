@@ -28,6 +28,22 @@ public sealed class SimulationLoopTickTests
     }
 
     [Fact]
+    public void Bootstrap_PublishesTickZeroSnapshot_AsCurrentAndOldest()
+    {
+        var test = SimulationLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+
+        WorldSnapshot snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+
+        Assert.Equal(0, test.Accessor.CurrentTick);
+        Assert.Same(snapshot, test.Accessor.OldestSnapshot);
+        Assert.Same(snapshot, test.Shared.LatestSnapshot);
+        Assert.Equal(0, snapshot.Image.TickNumber);
+        Assert.Null(snapshot.Next);
+    }
+
+    [Fact]
     public void Tick_PublishesNextSnapshot_WhenImageAndSnapshotAreImmediatelyAvailable()
     {
         var test = SimulationLoopTestContext.Create();
@@ -114,6 +130,35 @@ public sealed class SimulationLoopTickTests
     }
 
     [Fact]
+    public void Tick_CleanupOnRetry_CanFreeStaleSnapshotsAndAllowProgress()
+    {
+        var test = SimulationLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick(CancellationToken.None);
+
+        WorldSnapshot latestBefore = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        int imagesAvailableBefore = test.CountAvailableImages();
+        List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
+
+        Assert.Equal(5, drainedSnapshots.Count);
+
+        test.Shared.ConsumptionEpoch = 2;
+
+        test.Accessor.Tick(CancellationToken.None);
+
+        Assert.Single(test.WaiterState.WaitCalls);
+        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(3, test.Accessor.CurrentTick);
+        Assert.Equal(3, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.NotSame(latestBefore, test.Accessor.CurrentSnapshot);
+        Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
+        Assert.Equal(imagesAvailableBefore - 1, test.CountAvailableImages());
+    }
+
+
+    [Fact]
     public void Tick_DoesNotAdvanceState_WhenCancelledDuringRetryWait()
     {
         var test = SimulationLoopTestContext.Create();
@@ -153,6 +198,24 @@ public sealed class SimulationLoopTickTests
 
         Assert.NotSame(firstSnapshot, test.Accessor.OldestSnapshot);
         Assert.Same(secondSnapshot, test.Accessor.CurrentSnapshot);
+        Assert.Equal(0, test.Accessor.PinnedQueueCount);
+    }
+
+    [Fact]
+    public void Cleanup_DoesNotFreeTheCurrentSnapshot_EvenWhenConsumptionEpochIsPastIt()
+    {
+        var test = SimulationLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+        WorldSnapshot currentSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+
+        test.Shared.ConsumptionEpoch = 100;
+
+        test.Accessor.CleanupStaleSnapshots();
+
+        Assert.Same(currentSnapshot, test.Accessor.CurrentSnapshot);
+        Assert.Same(currentSnapshot, test.Accessor.OldestSnapshot);
+        Assert.Same(currentSnapshot, test.Shared.LatestSnapshot);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -271,6 +334,27 @@ public sealed class SimulationLoopTickTests
     }
 
     [Fact]
+    public void RunOneIteration_ThrowsWhenCancelledDuringIdleWait()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+
+        long lastTime = 0;
+        long accumulator = 0;
+
+        using var cancellationSource = new CancellationTokenSource();
+        test.WaiterState.BeforeWait = cancellationSource.Cancel;
+
+        Assert.Throws<OperationCanceledException>(
+            () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
+
+        Assert.Equal(0, test.Accessor.CurrentTick);
+        Assert.Single(test.WaiterState.WaitCalls);
+        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+    }
+
+    [Fact]
     public void RunOneIteration_ProcessesMultipleTicks_AndPreservesLeftoverAccumulator()
     {
         var test = SimulationLoopTestContext.CreateManual();
@@ -290,6 +374,28 @@ public sealed class SimulationLoopTickTests
                 TimeSpan.FromMilliseconds(1),
             ],
             test.WaiterState.WaitCalls);
+    }
+
+    [Fact]
+    public void RunOneIteration_ThrowsWhenCancelledDuringPressureDelayBeforeSecondTick()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+
+        long lastTime = 0;
+        long accumulator = (SimulationConstants.TickDurationNanoseconds * 2) + 123;
+
+        using var cancellationSource = new CancellationTokenSource();
+        test.WaiterState.BeforeWait = cancellationSource.Cancel;
+
+        Assert.Throws<OperationCanceledException>(
+            () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
+
+        Assert.Equal(1, test.Accessor.CurrentTick);
+        Assert.Single(test.WaiterState.WaitCalls);
+        Assert.Equal(TimeSpan.FromMilliseconds(1), test.WaiterState.WaitCalls[0]);
+        Assert.Equal(SimulationConstants.TickDurationNanoseconds + 123, accumulator);
     }
 
     private static class SimulationLoopTestContext
