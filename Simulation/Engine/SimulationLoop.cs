@@ -48,6 +48,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
     }
 
+    internal TestAccessor GetTestAccessor() => new(this);
+
     private void RunOneIteration(
         CancellationToken cancellationToken,
         ref long lastTime,
@@ -183,6 +185,28 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
         if (delay > 0)
             _waiter.Wait(new TimeSpan(delay / 100), cancellationToken);
+    }
+
+    internal readonly struct TestAccessor
+    {
+        private readonly SimulationLoop<TClock, TWaiter> _loop;
+
+        public TestAccessor(SimulationLoop<TClock, TWaiter> loop)
+        {
+            _loop = loop;
+        }
+
+        public void Bootstrap() => _loop.Bootstrap();
+
+        public void Tick(CancellationToken cancellationToken) => _loop.Tick(cancellationToken);
+
+        public void CleanupStaleSnapshots() => _loop.CleanupStaleSnapshots();
+
+        public int CurrentTick => _loop._currentTick;
+
+        public WorldSnapshot? CurrentSnapshot => _loop._currentSnapshot;
+
+        public WorldSnapshot? OldestSnapshot => _loop._oldestSnapshot;
     }
 }
 
