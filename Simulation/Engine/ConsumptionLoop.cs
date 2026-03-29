@@ -10,6 +10,7 @@ namespace Simulation.Engine;
 /// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
 /// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
 /// Generic on <typeparamref name="TWaiter"/> for the same reason.
+/// Generic on <typeparamref name="TSaveRunner"/> for the same reason.
 ///
 /// Epoch discipline:
 ///   - ConsumptionEpoch is advanced only AFTER rendering is complete.
@@ -17,21 +18,29 @@ namespace Simulation.Engine;
 ///     still covers that snapshot — the simulation cannot reclaim it.
 ///   - The save task clears the pin only after it has finished reading the snapshot.
 /// </summary>
-internal sealed class ConsumptionLoop<TClock, TWaiter>
+internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
+    where TSaveRunner : struct, ISaveRunner
 {
     private readonly MemorySystem _memory;
     private readonly SharedState  _shared;
     private readonly TClock       _clock;
     private readonly TWaiter      _waiter;
+    private readonly TSaveRunner  _saveRunner;
 
-    public ConsumptionLoop(MemorySystem memory, SharedState shared, TClock clock, TWaiter waiter)
+    public ConsumptionLoop(
+        MemorySystem memory,
+        SharedState shared,
+        TClock clock,
+        TWaiter waiter,
+        TSaveRunner saveRunner)
     {
         _memory = memory;
         _shared = shared;
         _clock  = clock;
         _waiter = waiter;
+        _saveRunner = saveRunner;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -74,7 +83,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter>
         _memory.PinnedVersions.Pin(tickToSave);
 
         WorldImage imageToSave = snapshot.Image;
-        Task.Run(() => RunSaveTask(imageToSave, tickToSave));
+        _saveRunner.RunSave(imageToSave, tickToSave, RunSaveTask);
     }
 
     private void RunSaveTask(WorldImage image, int tick)

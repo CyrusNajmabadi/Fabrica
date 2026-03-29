@@ -14,11 +14,11 @@ internal sealed class Engine<TClock, TWaiter>
     where TWaiter : struct, IWaiter
 {
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
-    private readonly ConsumptionLoop<TClock, TWaiter> _consumptionLoop;
+    private readonly ConsumptionLoop<TClock, TWaiter, TaskSaveRunner> _consumptionLoop;
 
     public Engine(
         SimulationLoop<TClock, TWaiter> simulationLoop,
-        ConsumptionLoop<TClock, TWaiter> consumptionLoop)
+        ConsumptionLoop<TClock, TWaiter, TaskSaveRunner> consumptionLoop)
     {
         _simulationLoop  = simulationLoop;
         _consumptionLoop = consumptionLoop;
@@ -34,7 +34,12 @@ internal sealed class Engine<TClock, TWaiter>
 
         return new Engine<TClock, TWaiter>(
             new SimulationLoop<TClock, TWaiter>(memory, shared, clock, waiter),
-            new ConsumptionLoop<TClock, TWaiter>(memory, shared, clock, waiter));
+            new ConsumptionLoop<TClock, TWaiter, TaskSaveRunner>(
+                memory,
+                shared,
+                clock,
+                waiter,
+                new TaskSaveRunner()));
     }
 
     /// <summary>
