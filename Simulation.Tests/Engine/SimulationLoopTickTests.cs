@@ -21,10 +21,12 @@ public sealed class SimulationLoopTickTests
     public void Bootstrap_ThrowsWhenSnapshotPoolIsEmpty()
     {
         var test = SimulationLoopTestContext.Create();
+        int imagesAvailableBefore = test.CountAvailableImages();
 
         test.DrainSnapshots();
 
         Assert.Throws<InvalidOperationException>(test.Accessor.Bootstrap);
+        Assert.Equal(imagesAvailableBefore, test.CountAvailableImages());
     }
 
     [Fact]

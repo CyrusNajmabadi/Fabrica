@@ -80,7 +80,13 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     private void Bootstrap()
     {
         WorldImage    image    = _memory.RentImage()    ?? throw new InvalidOperationException("Image pool empty at startup.");
-        WorldSnapshot snapshot = _memory.RentSnapshot() ?? throw new InvalidOperationException("Snapshot pool empty at startup.");
+        WorldSnapshot? snapshot = _memory.RentSnapshot();
+
+        if (snapshot is null)
+        {
+            _memory.ReturnImage(image);
+            throw new InvalidOperationException("Snapshot pool empty at startup.");
+        }
 
         image.TickNumber = 0;
         snapshot.Initialize(image);
