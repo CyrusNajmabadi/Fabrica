@@ -7,19 +7,22 @@ namespace Simulation.Engine;
 /// The consumption thread: renders the latest snapshot at ~60 fps and periodically
 /// triggers a save task.
 ///
+/// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
+/// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
+///
 /// Epoch discipline:
-///   - RendererEpoch is advanced only AFTER rendering is complete.
+///   - ConsumptionEpoch is advanced only AFTER rendering is complete.
 ///   - The save pin is set BEFORE handing off to the save task, while the epoch
-///     still covers that snapshot — so the simulation cannot reclaim it.
+///     still covers that snapshot — the simulation cannot reclaim it.
 ///   - The save task clears the pin only after it has finished reading the snapshot.
 /// </summary>
-internal sealed class ConsumptionLoop
+internal sealed class ConsumptionLoop<TClock> where TClock : struct, IClock
 {
     private readonly MemorySystem _memory;
     private readonly SharedState  _shared;
-    private readonly IClock       _clock;
+    private readonly TClock       _clock;
 
-    public ConsumptionLoop(MemorySystem memory, SharedState shared, IClock clock)
+    public ConsumptionLoop(MemorySystem memory, SharedState shared, TClock clock)
     {
         _memory = memory;
         _shared = shared;
@@ -39,7 +42,7 @@ internal sealed class ConsumptionLoop
                 Render(snapshot);
 
                 // Advance epoch: simulation may now free anything strictly before this tick.
-                _shared.RendererEpoch = snapshot.Image.TickNumber;
+                _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
             }
 
             ThrottleToFrameRate(frameStart);
@@ -52,7 +55,6 @@ internal sealed class ConsumptionLoop
     {
         int nextSaveAt = _shared.NextSaveAtTick;
 
-        // 0 = no save scheduled; otherwise wait until the simulation reaches that tick.
         if (nextSaveAt == 0 || snapshot.Image.TickNumber < nextSaveAt)
             return;
 
@@ -62,11 +64,10 @@ internal sealed class ConsumptionLoop
         _shared.NextSaveAtTick = 0;
 
         // Pin the snapshot so the simulation will not reclaim it while saving.
-        // Safe: RendererEpoch has not yet advanced past tickToSave (we advance it after
-        // Render below), so the simulation is already holding this snapshot alive.
+        // Safe: ConsumptionEpoch has not yet advanced past tickToSave (we advance it
+        // after Render below), so the simulation already holds this snapshot alive.
         _memory.PinnedVersions.Pin(tickToSave);
 
-        // Capture only what the task needs; avoid holding the WorldSnapshot shell.
         WorldImage imageToSave = snapshot.Image;
         Task.Run(() => RunSaveTask(imageToSave, tickToSave));
     }
@@ -79,7 +80,7 @@ internal sealed class ConsumptionLoop
         }
         finally
         {
-            // Always unpin — even on failure — so the simulation is never permanently blocked.
+            // Always unpin — even on failure — so the simulation is never permanently stalled.
             _memory.PinnedVersions.Unpin(tick);
 
             // Schedule the next save relative to the tick we just saved.
@@ -110,6 +111,7 @@ internal sealed class ConsumptionLoop
         long elapsed   = _clock.NowNanoseconds - frameStart;
         long remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
         if (remaining > 0)
+            // TODO: replace with IDelayService
             Thread.Sleep(new TimeSpan(remaining / 100));
     }
 }

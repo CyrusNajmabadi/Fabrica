@@ -9,26 +9,24 @@ namespace Simulation.Engine;
 /// The simulation thread: advances world state one tick at a time and reclaims
 /// snapshots that all consumers have moved past.
 ///
-/// Responsibilities:
-///   1. Tick loop with nanosecond accumulator (wall-clock agnostic, deterministic tick count)
-///   2. Backpressure: logarithmic delay before each tick when pool is under pressure
-///   3. Cleanup pass: free snapshots the renderer epoch has passed, excepting pinned ones
+/// Generic on <typeparamref name="TClock"/> (constrained to struct) so that clock
+/// calls are devirtualised and inlined by the JIT/AOT — no interface dispatch.
 /// </summary>
-internal sealed class SimulationLoop
+internal sealed class SimulationLoop<TClock> where TClock : struct, IClock
 {
     private readonly MemorySystem _memory;
     private readonly SharedState  _shared;
-    private readonly IClock       _clock;
+    private readonly TClock       _clock;
 
     private int            _currentTick;
     private WorldSnapshot? _currentSnapshot;
     private WorldSnapshot? _oldestSnapshot;
 
     // Snapshots extracted from the live chain because they are pinned (e.g. for saving).
-    // Held here until the pin is released, then freed on the next cleanup pass.
-    private readonly List<WorldSnapshot> _pinnedQueue = new();
+    // HashSet gives O(1) add, O(1) remove-per-item, and prevents accidental duplicates.
+    private readonly HashSet<WorldSnapshot> _pinnedQueue = new();
 
-    public SimulationLoop(MemorySystem memory, SharedState shared, IClock clock)
+    public SimulationLoop(MemorySystem memory, SharedState shared, TClock clock)
     {
         _memory = memory;
         _shared = shared;
@@ -57,7 +55,8 @@ internal sealed class SimulationLoop
                 accumulator -= SimulationConstants.TickDurationNanoseconds;
             }
 
-            // Yield briefly rather than busy-spinning while waiting for the next tick window.
+            // Brief yield while waiting for the next tick window.
+            // TODO: replace Thread.Sleep with an injected IDelayService for testability.
             Thread.Sleep(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100));
         }
     }
@@ -85,8 +84,6 @@ internal sealed class SimulationLoop
     {
         _currentTick++;
 
-        // Rent from pools, retrying if momentarily exhausted.
-        // Cleanup is attempted each retry to free whatever the consumers have released.
         WorldImage?    image    = null;
         WorldSnapshot? snapshot = null;
 
@@ -99,6 +96,7 @@ internal sealed class SimulationLoop
             {
                 if (image is not null) { _memory.ReturnImage(image); image = null; }
                 CleanupStaleSnapshots();
+                // TODO: replace with IDelayService
                 Thread.Sleep(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100));
             }
         }
@@ -117,22 +115,22 @@ internal sealed class SimulationLoop
 
     private void CleanupStaleSnapshots()
     {
-        int rendererEpoch = _shared.RendererEpoch; // volatile read
+        int consumptionEpoch = _shared.ConsumptionEpoch; // volatile read
 
-        // Walk the chain forward, freeing every snapshot the renderer has moved past.
-        // When a pinned snapshot is encountered, sever its Next pointer and park it in
-        // _pinnedQueue — this lets the snapshots after it be freed normally, rather than
-        // keeping the entire tail of the chain alive just because one snapshot is pinned.
+        // Walk the chain, freeing every snapshot the consumption side has moved past.
+        // Pinned snapshots are severed from the chain and parked in _pinnedQueue so
+        // the snapshots after them can still be freed — avoiding the old behaviour of
+        // keeping the entire tail alive whenever a single snapshot is pinned.
         while (_oldestSnapshot is not null
                && _oldestSnapshot != _currentSnapshot
-               && _oldestSnapshot.Image.TickNumber < rendererEpoch)
+               && _oldestSnapshot.Image.TickNumber < consumptionEpoch)
         {
             WorldSnapshot toProcess = _oldestSnapshot;
             _oldestSnapshot = toProcess.Next;
 
             if (_memory.PinnedVersions.IsPinned(toProcess.Image.TickNumber))
             {
-                toProcess.ClearNext(); // decouple from rest of chain
+                toProcess.ClearNext();
                 _pinnedQueue.Add(toProcess);
             }
             else
@@ -141,16 +139,14 @@ internal sealed class SimulationLoop
             }
         }
 
-        // Drain pinned snapshots whose pins have since been released.
-        for (int index = _pinnedQueue.Count - 1; index >= 0; index--)
+        // Drain any pinned snapshots whose pins have since been released.
+        _pinnedQueue.RemoveWhere(snapshot =>
         {
-            WorldSnapshot snapshot = _pinnedQueue[index];
-            if (!_memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber))
-            {
-                _pinnedQueue.RemoveAt(index);
-                FreeSnapshot(snapshot);
-            }
-        }
+            if (_memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber))
+                return false;
+            FreeSnapshot(snapshot);
+            return true;
+        });
     }
 
     private void FreeSnapshot(WorldSnapshot snapshot)
@@ -164,28 +160,49 @@ internal sealed class SimulationLoop
 
     // ── Backpressure ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Inserts a delay before each tick proportional to pool pressure using
-    /// integer bit-arithmetic to approximate log₂ without floating-point.
-    /// Each halving of available slots doubles the delay, capped at the maximum.
-    /// Slows wall-clock tick rate without skipping or duplicating ticks.
-    /// </summary>
     private void ApplyPressureDelay()
     {
-        int available = _memory.SnapshotsAvailable;
-        int threshold = _memory.SnapshotPoolCapacity / 2; // high-water mark: 50 %
+        long delay = SimulationPressure.ComputeDelay(
+            _memory.SnapshotsAvailable,
+            _memory.SnapshotPoolCapacity,
+            SimulationConstants.PressureBaseDelayNanoseconds,
+            SimulationConstants.PressureMaxDelayNanoseconds);
 
-        if (available >= threshold) return;
+        if (delay > 0)
+            // TODO: replace with IDelayService
+            Thread.Sleep(new TimeSpan(delay / 100));
+    }
+}
 
-        // level = floor(log2(threshold)) - floor(log2(max(1, available)))
-        // Each unit of level represents one additional halving of available slots.
+// ── Pressure math (extracted for independent testability) ────────────────────
+
+/// <summary>
+/// Pure pressure-delay calculations for the simulation loop.
+/// No dependencies — safe to unit-test in isolation.
+/// </summary>
+internal static class SimulationPressure
+{
+    /// <summary>
+    /// Returns the nanosecond delay to insert before a tick given current pool pressure.
+    /// Returns 0 when available slots are at or above the high-water mark (50% of capacity).
+    /// Each halving of available slots doubles the delay (binary exponential), capped at max.
+    /// </summary>
+    internal static long ComputeDelay(
+        int  available,
+        int  capacity,
+        long baseNanoseconds,
+        long maxNanoseconds)
+    {
+        int threshold = capacity / 2;
+        if (available >= threshold) return 0;
+
+        // level = how many times available has halved below threshold
         int level = BitOperations.Log2((uint)threshold)
                   - BitOperations.Log2((uint)Math.Max(1, available));
 
-        long delayNanoseconds = SimulationConstants.PressureBaseDelayNanoseconds << level;
-        if (delayNanoseconds > SimulationConstants.PressureMaxDelayNanoseconds || level >= 63)
-            delayNanoseconds = SimulationConstants.PressureMaxDelayNanoseconds;
+        if (level >= 63) return maxNanoseconds;
 
-        Thread.Sleep(new TimeSpan(delayNanoseconds / 100));
+        long delay = baseNanoseconds << level;
+        return delay > maxNanoseconds ? maxNanoseconds : delay;
     }
 }
