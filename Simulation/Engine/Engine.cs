@@ -27,7 +27,7 @@ namespace Simulation.Engine;
 ///    • Volatile-read LatestSnapshot                (acquire fence)
 ///    • MaybeStartSave(): if a save is due, pin the snapshot and hand it
 ///      off to the save task before advancing the epoch
-///    • Render(previous, current): always called, even if snapshot unchanged
+///    • Render(previous, latest): always called, even if snapshot unchanged
 ///    • Volatile-write ConsumptionEpoch = tick      (release fence)
 ///    • ThrottleToFrameRate()
 ///
@@ -87,12 +87,13 @@ namespace Simulation.Engine;
 ///    When a <see cref="RenderCoordinator"/> is provided, the consumption loop
 ///    dispatches each frame to parallel render workers instead of calling
 ///    <see cref="IRenderer.Render"/> directly.  During a dispatch, both
-///    'previous' and 'current' snapshots are guaranteed alive:
-///      • 'current' is at tick M; ConsumptionEpoch has not advanced past M yet.
+///    'previous' and 'latest' snapshots — and the entire chain between them —
+///    are guaranteed alive:
+///      • 'latest' is at tick M; ConsumptionEpoch has not advanced past M yet.
 ///      • 'previous' is at tick N ≤ M; epoch = N, and cleanup frees only
 ///        tick &lt; N (strictly less than), so tick N itself is never freed.
-///    Both images are fully immutable.  Render workers can safely read either
-///    snapshot without any synchronization.
+///    All images are fully immutable.  Render workers can safely read any
+///    snapshot in the chain without synchronization.
 ///    Constraint: all workers must finish before DispatchFrame returns, because
 ///    ConsumptionEpoch advances immediately afterward and the simulation may
 ///    then reclaim 'previous' on the very next cleanup pass.

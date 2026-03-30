@@ -7,5 +7,5 @@ internal readonly struct ConsoleRenderer : IRenderer
 {
     public void Render(in RenderFrame frame) =>
         // TODO: actual rendering and interpolation.
-        Console.WriteLine($"[Render] tick={frame.Current.TickNumber} elapsed={frame.Interpolation.ElapsedNanoseconds}ns");
+        Console.WriteLine($"[Render] tick={frame.Latest.TickNumber} elapsed={frame.Interpolation.ElapsedNanoseconds}ns");
 }

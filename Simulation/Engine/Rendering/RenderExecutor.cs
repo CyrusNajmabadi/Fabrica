@@ -21,7 +21,7 @@ internal struct RenderExecutor : IThreadExecutor<RenderDispatchState>
     public void Execute(in RenderDispatchState state, CancellationToken cancellationToken)
     {
         // TODO: actual per-worker render computation.
-        // Read state.Frame.Current and state.Frame.Previous (immutable snapshots),
+        // Read state.Frame.Latest and state.Frame.Previous (immutable snapshots),
         // compute this worker's portion of the frame output.
         // Check cancellationToken for early exit during engine shutdown.
     }

@@ -12,37 +12,39 @@ namespace Simulation.Engine;
 ///   1. DrainSaveEvents: process any completed save results from the threadpool.
 ///   2. Volatile-read LatestSnapshot (acquire fence: all image writes by the
 ///      simulation thread are now visible).
-///   3. Rotate the render pair if a new snapshot has arrived (see below).
+///   3. Rotate the snapshot pair if a new snapshot has arrived (see below).
 ///   4. MaybeStartSave: if a save is due and not in flight, pin the snapshot
 ///      and dispatch to the save task.
 ///   5. Build RenderFrame (snapshots + interpolation factor + engine status).
 ///   6. Render(frame): the renderer uses the snapshots for the duration of the
 ///      call only — it must not store them.
-///   7. ConsumptionEpoch = _renderPrevious.TickNumber (or _renderCurrent's if
-///      no previous exists yet).  This keeps both held snapshots alive.
+///   7. ConsumptionEpoch = _previous.TickNumber (or _latest's if no previous
+///      exists yet).  This keeps both held snapshots alive.
 ///   8. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
 ///
-/// "ONE TICK BEHIND" INTERPOLATION MODEL
-///   The loop holds two distinct snapshot references: _renderPrevious and
-///   _renderCurrent.  When LatestSnapshot changes (a new tick), the pair
-///   rotates: old current becomes previous, new snapshot becomes current.
-///   Between rotations the pair is stable.
+/// PREVIOUS / LATEST MODEL
+///   The loop holds two distinct snapshot references: _previous and _latest.
+///   When LatestSnapshot changes (new ticks published), the pair rotates:
+///   old latest becomes previous, new snapshot becomes latest.  Between
+///   rotations the pair is stable.
+///
+///   The full forward-linked chain from _previous to _latest is guaranteed
+///   alive during the Render call.  When the simulation publishes multiple
+///   ticks between render frames, _previous and _latest may be several ticks
+///   apart — the renderer can walk Previous.Next to visit every intermediate
+///   snapshot if desired, or simply interpolate between the two endpoints.
 ///
 ///   The interpolation factor progresses from 0 (show previous) to 1 (show
-///   current) over one tick duration, based on wall-clock time elapsed since
-///   current was published.  This gives the renderer two real simulation
+///   latest) over one tick duration, based on wall-clock time elapsed since
+///   latest was published.  This gives the renderer two real simulation
 ///   endpoints to blend between — no extrapolation needed.
 ///
-///   Visual latency: ~one tick (25 ms at 40 Hz).  Imperceptible for a factory
-///   simulation where events occur on timescales of seconds.
-///
 /// EPOCH ADVANCEMENT
-///   The epoch is set to _renderPrevious.TickNumber when both snapshots exist,
-///   or _renderCurrent.TickNumber on the first frame (no previous yet).
-///   This advances one tick behind the latest consumed snapshot, keeping both
-///   held snapshots alive: previous at tick N is safe (N is not &lt; N), and
-///   current at tick &gt; N is safe.  The simulation retains one extra snapshot
-///   compared to the old model — negligible with a 256-slot pool.
+///   The epoch is set to _previous.TickNumber when both snapshots exist,
+///   or _latest.TickNumber on the first frame (no previous yet).
+///   Cleanup frees strictly below the epoch, so both _previous (tick N,
+///   not &lt; N) and _latest (tick &gt; N) remain alive — along with the entire
+///   chain between them.
 ///
 /// SAVE PIN DISCIPLINE
 ///   The ordering within a save-triggering frame is load-bearing:
@@ -74,9 +76,9 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     // The two snapshots the renderer interpolates between.
     // Only touched by the consumption thread — no synchronisation needed.
-    // _renderPrevious is null before two distinct snapshots have been observed.
-    private WorldSnapshot? _renderPrevious;
-    private WorldSnapshot? _renderCurrent;
+    // _previous is null before two distinct snapshots have been observed.
+    private WorldSnapshot? _previous;
+    private WorldSnapshot? _latest;
 
     // Local save tracking — written only by the consumption thread (after draining
     // the concurrent queue), so no synchronisation needed for reads.
@@ -129,21 +131,21 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         var latestSnapshot = _shared.LatestSnapshot;
         if (latestSnapshot is not null)
         {
-            if (!ReferenceEquals(latestSnapshot, _renderCurrent))
+            if (!ReferenceEquals(latestSnapshot, _latest))
             {
-                _renderPrevious = _renderCurrent;
-                _renderCurrent = latestSnapshot;
+                _previous = _latest;
+                _latest = latestSnapshot;
             }
 
-            this.MaybeStartSave(_renderCurrent!);
+            this.MaybeStartSave(_latest!);
 
             var frame = new RenderFrame
             {
-                Previous = _renderPrevious,
-                Current = _renderCurrent!,
+                Previous = _previous,
+                Latest = _latest!,
                 Interpolation = new InterpolationClock
                 {
-                    ElapsedNanoseconds = frameStart - _renderCurrent!.PublishTimeNanoseconds,
+                    ElapsedNanoseconds = frameStart - _latest!.PublishTimeNanoseconds,
                     TickDurationNanoseconds = SimulationConstants.TickDurationNanoseconds,
                 },
                 EngineStatus = new EngineStatus
@@ -159,11 +161,12 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
             _renderCoordinator.DispatchFrame(in frame, cancellationToken);
             _renderer.Render(in frame);
 
-            // Epoch protects both held snapshots.  When we have a previous,
-            // set epoch to its tick — cleanup frees strictly below, so both
-            // previous (tick N, not < N) and current (tick > N) remain alive.
-            _shared.ConsumptionEpoch = _renderPrevious?.TickNumber
-                                       ?? _renderCurrent!.TickNumber;
+            // Epoch protects both held snapshots and the entire chain between
+            // them.  Cleanup frees strictly below the epoch, so _previous
+            // (tick N, not < N), _latest (tick > N), and all intermediate
+            // nodes remain alive.
+            _shared.ConsumptionEpoch = _previous?.TickNumber
+                                       ?? _latest!.TickNumber;
         }
 
         this.ThrottleToFrameRate(frameStart, cancellationToken);

@@ -263,7 +263,7 @@ public sealed class ConcurrencyStressTests
     {
         private long _framesRendered;
         private int _maxTickObserved;
-        private int _lastCurrentTick = -1;
+        private int _lastLatestTick = -1;
         private volatile string? _invariantViolation;
 
         public long FramesRendered => Volatile.Read(ref _framesRendered);
@@ -274,26 +274,26 @@ public sealed class ConcurrencyStressTests
         {
             Interlocked.Increment(ref _framesRendered);
 
-            var currentTick = frame.Current.TickNumber;
+            var latestTick = frame.Latest.TickNumber;
 
-            // Current tick must be monotonically non-decreasing across frames.
-            var previousCurrentTick = _lastCurrentTick;
-            if (currentTick < previousCurrentTick)
+            // Latest tick must be monotonically non-decreasing across frames.
+            var previousLatestTick = _lastLatestTick;
+            if (latestTick < previousLatestTick)
             {
-                _invariantViolation ??= $"Current tick went backwards: {currentTick} < {previousCurrentTick}";
+                _invariantViolation ??= $"Latest tick went backwards: {latestTick} < {previousLatestTick}";
                 return;
             }
-            _lastCurrentTick = currentTick;
+            _lastLatestTick = latestTick;
 
-            // Previous tick (when present) must be <= current tick.
-            if (frame.Previous is not null && frame.Previous.TickNumber > currentTick)
+            // Previous tick (when present) must be <= latest tick.
+            if (frame.Previous is not null && frame.Previous.TickNumber > latestTick)
             {
-                _invariantViolation ??= $"Previous tick ({frame.Previous.TickNumber}) > current tick ({currentTick})";
+                _invariantViolation ??= $"Previous tick ({frame.Previous.TickNumber}) > latest tick ({latestTick})";
                 return;
             }
 
             // Track highest tick observed.
-            UpdateMax(ref _maxTickObserved, currentTick);
+            UpdateMax(ref _maxTickObserved, latestTick);
         }
 
         private static void UpdateMax(ref int location, int value)
