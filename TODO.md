@@ -12,10 +12,10 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 ## Engine / Architecture
 
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
-- [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationWorker.ExecuteTick()` (thread machinery and dispatch cycle are in place)
+- [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationExecutor.Execute()` (generic `ThreadWorker`/`WorkerGroup` infrastructure and dispatch cycle are in place)
+- [ ] Multi-threaded rendering — wire real per-worker render computation into `RenderExecutor.Execute()` (`RenderCoordinator`/`WorkerGroup` infrastructure is in place; consumption loop dispatches through it when provided)
 - [ ] Thread pinning on macOS — current `ThreadPinning` supports Windows/Linux; macOS needs `thread_policy_set` with `THREAD_AFFINITY_POLICY` for hint-based co-location
 - [ ] Thread pinning for >64 cores (low priority) — workers beyond index 63 simply run unpinned; would need `SetThreadGroupAffinity` on Windows, larger `cpu_set_t` on Linux
-- [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
 
 ## Testing
 
@@ -46,6 +46,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [x] Time-based backpressure — tick-epoch gap measured in nanoseconds with a 100ms low water mark (soft exponential delay) and a 2s hard ceiling (simulation blocks until consumption catches up); replaces pool-availability-based throttling ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] SimulationWorker stub — design placeholder documenting per-worker pools, created-nodes list for deferred ref-counting, and the threading contract for future multi-threaded simulation ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] Save overlap — analyzed and confirmed as a non-issue: `NextSaveAtTick` is set to 0 before dispatch and only rescheduled in the save task's `finally` block, so no second save can trigger while one is in flight
+- [x] Generic `ThreadWorker<TState, TExecutor>` refactor — extracted thread park/signal loop, shutdown, and pinning into reusable generic infrastructure (`ThreadWorker`, `WorkerGroup`, `IThreadExecutor`); `SimulationWorker` deleted and replaced by `SimulationExecutor` + generic worker; `RenderCoordinator`/`RenderExecutor` built on the same infrastructure for parallel rendering
 
 ## Testing
 

@@ -4,13 +4,13 @@ using Simulation.Engine;
 using var cancellationSource = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellationSource.Cancel(); };
 
-// Reserve one core for the consumption thread (renderer + save coordinator).
+// Split available cores between simulation workers and render workers,
+// reserving one core for the consumption thread (renderer + save coordinator).
 // The simulation loop thread itself is idle while workers run (parked on
-// WaitForCompletion), so it doesn't need a dedicated core.  Giving workers
-// access to all remaining cores lets them saturate available parallelism;
-// backpressure ensures the simulation slows down if rendering needs to
-// catch up, so the two never fight over CPU in practice.
-var workerCount = Math.Max(1, Environment.ProcessorCount - 1);
+// WaitForCompletion), so it doesn't need a dedicated core.
+var availableCores = Math.Max(2, Environment.ProcessorCount - 1);
+var simulationWorkerCount = Math.Max(1, availableCores / 2);
+var renderWorkerCount = Math.Max(1, availableCores - simulationWorkerCount);
 
 Engine<SystemClock, ThreadWaiter, TaskSaveRunner, ConsoleSaver, ConsoleRenderer>.Create(
     new SystemClock(),
@@ -18,4 +18,5 @@ Engine<SystemClock, ThreadWaiter, TaskSaveRunner, ConsoleSaver, ConsoleRenderer>
     new TaskSaveRunner(),
     new ConsoleSaver(),
     new ConsoleRenderer(),
-    workerCount).Run(cancellationSource.Token);
+    simulationWorkerCount,
+    renderWorkerCount).Run(cancellationSource.Token);

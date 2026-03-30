@@ -83,16 +83,21 @@ namespace Simulation.Engine;
 ///    No locks or atomics are required between workers and the owning thread
 ///    beyond a final join/await before publishing the new snapshot.
 ///
-///  MULTITHREADED RENDERING (future)
-///    During a Render call both 'previous' and 'current' are guaranteed alive:
+///  MULTITHREADED RENDERING
+///    When a <see cref="RenderCoordinator"/> is provided, the consumption loop
+///    dispatches each frame to parallel render workers instead of calling
+///    <see cref="IRenderer.Render"/> directly.  During a dispatch, both
+///    'previous' and 'current' snapshots are guaranteed alive:
 ///      • 'current' is at tick M; ConsumptionEpoch has not advanced past M yet.
 ///      • 'previous' is at tick N ≤ M; epoch = N, and cleanup frees only
 ///        tick &lt; N (strictly less than), so tick N itself is never freed.
-///    Both images are fully immutable.  The renderer can safely spawn worker
-///    threads to read either snapshot without any synchronization.
-///    Constraint: all workers must finish accessing the snapshots before Render
-///    returns, because ConsumptionEpoch advances immediately afterward and the
-///    simulation may then reclaim 'previous' on the very next cleanup pass.
+///    Both images are fully immutable.  Render workers can safely read either
+///    snapshot without any synchronization.
+///    Constraint: all workers must finish before DispatchFrame returns, because
+///    ConsumptionEpoch advances immediately afterward and the simulation may
+///    then reclaim 'previous' on the very next cleanup pass.
+///    Render workers are pinned to cores starting after the simulation workers
+///    (offset = simulationWorkerCount) to avoid overlap.
 ///
 ///  TEMPORAL DECOUPLING
 ///    Rendering always operates on already-computed, immutable snapshots.
@@ -140,15 +145,18 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     where TRenderer : struct, IRenderer
 {
     private readonly Simulator _simulator;
+    private readonly RenderCoordinator _renderCoordinator;
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
     private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _consumptionLoop;
 
     public Engine(
         Simulator simulator,
+        RenderCoordinator renderCoordinator,
         SimulationLoop<TClock, TWaiter> simulationLoop,
         ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
     {
         _simulator = simulator;
+        _renderCoordinator = renderCoordinator;
         _simulationLoop = simulationLoop;
         _consumptionLoop = consumptionLoop;
     }
@@ -162,14 +170,17 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         TSaveRunner saveRunner,
         TSaver saver,
         TRenderer renderer,
-        int workerCount)
+        int simulationWorkerCount,
+        int renderWorkerCount)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
-        var simulator = new Simulator(workerCount);
+        var simulator = new Simulator(simulationWorkerCount);
+        var renderCoordinator = new RenderCoordinator(renderWorkerCount, coreIndexOffset: simulationWorkerCount);
 
         return new Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
             simulator,
+            renderCoordinator,
             new SimulationLoop<TClock, TWaiter>(memory, shared, simulator, clock, waiter),
             new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
                 memory,
@@ -178,7 +189,8 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
                 waiter,
                 saveRunner,
                 saver,
-                renderer));
+                renderer,
+                renderCoordinator));
     }
 
     /// <summary>
@@ -208,6 +220,7 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         }
         finally
         {
+            _renderCoordinator.Dispose();
             _simulator.Dispose();
         }
     }

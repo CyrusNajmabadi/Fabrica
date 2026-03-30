@@ -414,7 +414,8 @@ public sealed class ConsumptionLoopTests
                 waiter,
                 saveRunner,
                 saver,
-                renderer);
+                renderer,
+                new RenderCoordinator(1));
             return new ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
                 memory,
                 shared,
