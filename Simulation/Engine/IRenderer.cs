@@ -24,7 +24,9 @@ internal interface IRenderer
     /// CHAIN ACCESS:
     ///   The full forward-linked chain from Previous to Latest is alive during
     ///   this call.  The renderer may walk <c>Previous.Next</c> to visit every
-    ///   intermediate snapshot between the two endpoints.
+    ///   intermediate snapshot between the two endpoints.  <c>Latest.Next</c>
+    ///   MUST NOT be read — the simulation may concurrently link a new node,
+    ///   making the pointer unreliable.
     ///
     /// INTERPOLATION:
     ///   Under normal operation, <see cref="RenderFrame.Previous"/> and

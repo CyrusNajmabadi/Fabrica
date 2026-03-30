@@ -361,6 +361,114 @@ public sealed class ConsumptionLoopTests
         Assert.Empty(test.SaveRunnerState.RunCalls);
     }
 
+    [Fact]
+    public void RunOneIteration_WhenSimulationPublishesMultipleTicks_RendererReceivesFullChain()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+
+        // First iteration: establish _latest as tick 1 (single snapshot, no chain).
+        var tick1 = test.CreatePublishedSnapshot(tick: 1);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        // Simulation publishes ticks 2–6 as a chain, then sets LatestSnapshot = tick 6.
+        var chain = test.CreatePublishedChain(startTick: 2, endTick: 6);
+        tick1.SetNext(chain[0]);
+
+        RenderFrame? capturedFrame = null;
+        test.RendererState.BeforeRender = frame => capturedFrame = frame;
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.NotNull(capturedFrame);
+        var rendered = capturedFrame.Value;
+
+        // Previous should be tick 1, Latest should be tick 6.
+        Assert.NotNull(rendered.Previous);
+        Assert.Equal(1, rendered.Previous!.TickNumber);
+        Assert.Equal(6, rendered.Latest.TickNumber);
+
+        // Walk the chain from Previous → Latest and verify every tick is present.
+        var ticks = new List<int>();
+        for (var node = rendered.Previous; node is not null; node = node.Next)
+        {
+            ticks.Add(node.TickNumber);
+            if (ReferenceEquals(node, rendered.Latest))
+                break;
+        }
+
+        Assert.Equal([1, 2, 3, 4, 5, 6], ticks);
+    }
+
+    [Fact]
+    public void RunOneIteration_LatestNextIsNull_WhenNoFurtherSnapshotsAreLinked()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+
+        // Chain: tick 1 → 2 → 3.  Tick 3 is the tail — nothing linked after it.
+        var tick0 = test.CreatePublishedSnapshot(tick: 0);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        var chain = test.CreatePublishedChain(startTick: 1, endTick: 3);
+        tick0.SetNext(chain[0]);
+
+        RenderFrame? capturedFrame = null;
+        test.RendererState.BeforeRender = frame => capturedFrame = frame;
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.NotNull(capturedFrame);
+        Assert.Null(capturedFrame.Value.Latest.Next);
+    }
+
+    [Fact]
+    public void RunOneIteration_PreviousAndLatestAreAlwaysDistinctReferences_WhenBothNonNull()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+
+        // Frame 1: tick 1 → Previous=null, Latest=tick1.
+        test.CreatePublishedSnapshot(tick: 1);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        // Frame 2: same snapshot, no rotation → Previous still null, Latest still tick1.
+        RenderFrame? frame2 = null;
+        test.RendererState.BeforeRender = frame => frame2 = frame;
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.NotNull(frame2);
+        Assert.Null(frame2.Value.Previous);
+
+        // Frame 3: new snapshot published → rotation happens.
+        test.CreatePublishedSnapshot(tick: 2);
+        RenderFrame? frame3 = null;
+        test.RendererState.BeforeRender = frame => frame3 = frame;
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.NotNull(frame3);
+        Assert.NotNull(frame3.Value.Previous);
+        Assert.NotSame(frame3.Value.Previous, frame3.Value.Latest);
+        Assert.Equal(1, frame3.Value.Previous!.TickNumber);
+        Assert.Equal(2, frame3.Value.Latest.TickNumber);
+    }
+
+    [Fact]
+    public void RunOneIteration_EpochProtectsEntireChainFromPreviousToLatest()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+
+        // Establish _latest as tick 1.
+        test.CreatePublishedSnapshot(tick: 1);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        // Simulate: ticks 2–10 published as a chain.
+        var chain = test.CreatePublishedChain(startTick: 2, endTick: 10);
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        // Epoch should be set to _previous.TickNumber (tick 1), which keeps
+        // tick 1 and all nodes through tick 10 alive (cleanup frees strictly < epoch).
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+    }
+
     private static TimeSpan GetRenderInterval() =>
         TimeSpan.FromTicks(SimulationConstants.RenderIntervalNanoseconds / 100);
 
@@ -481,6 +589,28 @@ public sealed class ConsumptionLoopTests
             snapshot.Initialize(image, tick);
             this.Shared.LatestSnapshot = snapshot;
             return snapshot;
+        }
+
+        /// <summary>
+        /// Builds a forward-linked chain of snapshots [startTick → startTick+1 → … → endTick]
+        /// and publishes the last one as LatestSnapshot.  Returns the full array (index 0 = startTick).
+        /// </summary>
+        public WorldSnapshot[] CreatePublishedChain(int startTick, int endTick)
+        {
+            var count = endTick - startTick + 1;
+            var chain = new WorldSnapshot[count];
+            for (var i = 0; i < count; i++)
+            {
+                var image = Assert.IsType<WorldImage>(this.Memory.RentImage());
+                var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
+                snapshot.Initialize(image, startTick + i);
+                if (i > 0)
+                    chain[i - 1].SetNext(snapshot);
+                chain[i] = snapshot;
+            }
+
+            this.Shared.LatestSnapshot = chain[^1];
+            return chain;
         }
     }
 
