@@ -11,7 +11,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Engine / Architecture
 
-- [ ] Observe `Task.Run` results in `TaskSaveRunner` — currently fire-and-forget; exceptions become unobserved task exceptions rather than surfacing to the consumption loop
+- [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
 - [ ] Consider what happens when saves are slow enough to overlap with the next save interval (save-in-flight already prevented, but worth thinking about as real save logic arrives)
 - [ ] Multi-threaded simulation — worker pool for tick computation (architecture already supports this; needs implementation)
 - [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
@@ -36,3 +36,11 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 - [ ] Architecture diagram (the mermaid-style flow in `Engine.cs` comments could become a standalone doc)
 - [ ] Onboarding notes for the threading model — the doc comments are thorough but scattered across files
+
+---
+
+# Completed
+
+## Engine / Architecture
+
+- [x] Observe `Task.Run` results in `TaskSaveRunner` — save exceptions are now captured via `ConcurrentQueue<SaveEvent>` and surfaced through `EngineStatus` in the `RenderFrame` ([ea8ae2d](https://github.com/CyrusNajmabadi/Fabrica/commit/ea8ae2d))
