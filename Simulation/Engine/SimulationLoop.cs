@@ -39,11 +39,17 @@ namespace Simulation.Engine;
 ///   The pinned queue is drained each cleanup pass once the pin is released.
 ///
 /// BACKPRESSURE
-///   When the snapshot pool drops below roughly half capacity, ApplyPressureDelay()
-///   inserts an exponentially growing delay before each tick.  This slows
-///   the simulation, giving the consumption thread time to advance its epoch and
-///   allow cleanup to reclaim more snapshots.  If the pool is fully exhausted,
-///   Tick() retries with a 1 ms sleep per attempt.
+    ///   The tick-epoch gap (in nanoseconds) drives two pressure levels:
+    ///
+    ///   1. Soft pressure — when the gap exceeds PressureLowWaterMarkNanoseconds,
+    ///      an exponentially increasing delay (1 ms → 64 ms) is inserted before
+    ///      each tick, slowing the simulation and giving the consumption thread
+    ///      time to advance its epoch.
+    ///
+    ///   2. Hard ceiling — when the gap reaches PressureHardCeilingNanoseconds,
+    ///      the simulation blocks entirely, sleeping PressureMaxDelayNanoseconds
+    ///      per iteration until the gap drops below the ceiling.  This bounds
+    ///      memory growth: the simulation cannot run arbitrarily far ahead.
 ///
 /// Generic on <typeparamref name="TClock"/> and <typeparamref name="TWaiter"/>
 /// (both constrained to struct) so the JIT/AOT devirtualises all calls —
@@ -99,8 +105,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
         ProcessAvailableTicks(cancellationToken, ref accumulator);
 
-        // Brief yield while waiting for the next tick window.
-        _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
+        _waiter.Wait(new TimeSpan(SimulationConstants.IdleYieldNanoseconds / 100), cancellationToken);
     }
 
     private void ProcessAvailableTicks(CancellationToken cancellationToken, ref long accumulator)
@@ -108,7 +113,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         while (accumulator >= SimulationConstants.TickDurationNanoseconds)
         {
             ApplyPressureDelay(cancellationToken);
-            Tick(cancellationToken);
+            Tick();
             CleanupStaleSnapshots();
             accumulator -= SimulationConstants.TickDurationNanoseconds;
         }
@@ -123,14 +128,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// </summary>
     private void Bootstrap()
     {
-        WorldImage    image    = _memory.RentImage()    ?? throw new InvalidOperationException("Image pool empty at startup.");
-        WorldSnapshot? snapshot = _memory.RentSnapshot();
-
-        if (snapshot is null)
-        {
-            _memory.ReturnImage(image);
-            throw new InvalidOperationException("Snapshot pool empty at startup.");
-        }
+        WorldImage    image    = _memory.RentImage();
+        WorldSnapshot snapshot = _memory.RentSnapshot();
 
         snapshot.Initialize(image, tickNumber: 0);
 
@@ -147,39 +146,21 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// <summary>
     /// Advances the world by one tick.
     ///
-    /// Rents a fresh image and snapshot, writes the new world state, links the
-    /// snapshot onto the chain via SetNext, and volatile-writes it to
-    /// LatestSnapshot (release fence — makes all image writes visible to the
-    /// consumption thread's subsequent acquire-read).
-    ///
-    /// Pool retry: if either object is unavailable, CleanupStaleSnapshots() is
-    /// called immediately to reclaim what it can, then the thread sleeps 1 ms
-    /// before retrying.  This tight loop is the last resort — backpressure
-    /// (ApplyPressureDelay) should slow the tick rate long before this path
-    /// is reached under normal conditions.
+    /// Rents a fresh image and snapshot (both always succeed — the pool grows
+    /// on demand), writes the new world state, links the snapshot onto the chain
+    /// via SetNext, and volatile-writes it to LatestSnapshot (release fence —
+    /// makes all image writes visible to the consumption thread's subsequent
+    /// acquire-read).
     /// </summary>
-    private void Tick(CancellationToken cancellationToken)
+    private void Tick()
     {
-        WorldImage?    image    = null;
-        WorldSnapshot? snapshot = null;
-
-        while (snapshot is null)
-        {
-            image    ??= _memory.RentImage();
-            snapshot   = image is not null ? _memory.RentSnapshot() : null;
-
-            if (snapshot is null)
-            {
-                if (image is not null) { _memory.ReturnImage(image); image = null; }
-                CleanupStaleSnapshots();
-                _waiter.Wait(new TimeSpan(SimulationConstants.PoolEmptyRetryNanoseconds / 100), cancellationToken);
-            }
-        }
+        WorldImage    image    = _memory.RentImage();
+        WorldSnapshot snapshot = _memory.RentSnapshot();
 
         _currentTick++;
         // TODO: advance world state into image
 
-        snapshot.Initialize(image!, _currentTick);
+        snapshot.Initialize(image, _currentTick);
         _currentSnapshot!.SetNext(snapshot);
         _currentSnapshot = snapshot;
 
@@ -256,15 +237,35 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     // ── Backpressure ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Inserts a delay before each tick proportional to pool pressure.
-    /// No delay when the pool is lightly used; up to 64 ms when nearly full.
+    /// Two-level backpressure gate called before each tick.
+    ///
+    /// Hard ceiling: if the gap (in nanoseconds) is at or above the hard
+    /// ceiling, the simulation blocks in a sleep loop until consumption
+    /// catches up enough to drop below the ceiling.
+    ///
+    /// Soft pressure: once below the ceiling, an exponentially increasing
+    /// delay is inserted if the gap still exceeds the low water mark.
     /// See <see cref="SimulationPressure.ComputeDelay"/> for the bucket schedule.
     /// </summary>
     private void ApplyPressureDelay(CancellationToken cancellationToken)
     {
+        long gapNanoseconds = (long)(_currentTick - _shared.ConsumptionEpoch)
+                            * SimulationConstants.TickDurationNanoseconds;
+
+        while (gapNanoseconds >= SimulationConstants.PressureHardCeilingNanoseconds)
+        {
+            _waiter.Wait(
+                new TimeSpan(SimulationConstants.PressureMaxDelayNanoseconds / 100),
+                cancellationToken);
+            gapNanoseconds = (long)(_currentTick - _shared.ConsumptionEpoch)
+                           * SimulationConstants.TickDurationNanoseconds;
+        }
+
         long delay = SimulationPressure.ComputeDelay(
-            _memory.SnapshotsAvailable,
-            _memory.SnapshotPoolCapacity,
+            gapNanoseconds,
+            SimulationConstants.PressureLowWaterMarkNanoseconds,
+            SimulationConstants.TickDurationNanoseconds,
+            SimulationConstants.PressureBucketCount,
             SimulationConstants.PressureBaseDelayNanoseconds,
             SimulationConstants.PressureMaxDelayNanoseconds);
 
@@ -285,7 +286,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
         public void Bootstrap() => _loop.Bootstrap();
 
-        public void Tick(CancellationToken cancellationToken) => _loop.Tick(cancellationToken);
+        public void Tick() => _loop.Tick();
 
         public void CleanupStaleSnapshots() => _loop.CleanupStaleSnapshots();
 
@@ -304,58 +305,5 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         public int PinnedQueueCount => _loop._pinnedQueue.Count;
 
         public void SetOldestSnapshotForTesting(WorldSnapshot snapshot) => _loop._oldestSnapshot = snapshot;
-    }
-}
-
-// ── Pressure math (extracted for independent testability) ────────────────────
-
-/// <summary>
-/// Pure pressure-delay calculations for the simulation loop.
-/// No dependencies — extracted so it can be unit-tested in isolation.
-/// </summary>
-internal static class SimulationPressure
-{
-    /// <summary>
-    /// Returns the nanosecond delay to insert before a tick given current pool pressure.
-    ///
-    /// The pool capacity is divided into 8 equal buckets by usage fraction.
-    /// Bucket 0 (pool mostly empty = light use) incurs no delay.  Each subsequent
-    /// bucket doubles the previous delay (binary-exponential):
-    ///
-    ///   Bucket:  0    1    2    3    4     5     6     7
-    ///   Delay:   0ms  1ms  2ms  4ms  8ms  16ms  32ms  64ms
-    ///
-    /// Binary-exponential was chosen because:
-    ///   • It is computed with a single integer bit-shift — no floating-point.
-    ///   • It responds sharply when the pool is nearly exhausted, giving the
-    ///     consumption thread time to advance its epoch before the simulation
-    ///     fills the pool completely.
-    ///   • Delay is capped at maxNanoseconds so the simulation never stalls
-    ///     indefinitely due to backpressure alone.
-    /// </summary>
-    internal static long ComputeDelay(
-        int  available,
-        int  capacity,
-        long baseNanoseconds,
-        long maxNanoseconds)
-    {
-        if (capacity <= 0)
-            throw new ArgumentOutOfRangeException(nameof(capacity));
-
-        if (available < 0 || available > capacity)
-            throw new ArgumentOutOfRangeException(nameof(available));
-
-        int used = capacity - available;
-        int bucket = used == 0
-            ? 0
-            : Math.Min(
-                SimulationConstants.PressureBucketCount - 1,
-                (used - 1) * SimulationConstants.PressureBucketCount / capacity);
-
-        if (bucket == 0)
-            return 0;
-
-        long delay = baseNanoseconds << (bucket - 1);
-        return delay > maxNanoseconds ? maxNanoseconds : delay;
     }
 }

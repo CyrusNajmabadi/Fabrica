@@ -7,27 +7,11 @@ namespace Simulation.Tests.Engine;
 
 public sealed class SimulationLoopTickTests
 {
-    [Fact]
-    public void Bootstrap_ThrowsWhenImagePoolIsEmpty()
-    {
-        var test = SimulationLoopTestContext.Create();
+    private static int LowWaterMarkTicks =>
+        (int)(SimulationConstants.PressureLowWaterMarkNanoseconds / SimulationConstants.TickDurationNanoseconds);
 
-        test.DrainImages();
-
-        Assert.Throws<InvalidOperationException>(test.Accessor.Bootstrap);
-    }
-
-    [Fact]
-    public void Bootstrap_ThrowsWhenSnapshotPoolIsEmpty()
-    {
-        var test = SimulationLoopTestContext.Create();
-        int imagesAvailableBefore = test.CountAvailableImages();
-
-        test.DrainSnapshots();
-
-        Assert.Throws<InvalidOperationException>(test.Accessor.Bootstrap);
-        Assert.Equal(imagesAvailableBefore, test.CountAvailableImages());
-    }
+    private static int HardCeilingTicks =>
+        (int)(SimulationConstants.PressureHardCeilingNanoseconds / SimulationConstants.TickDurationNanoseconds);
 
     [Fact]
     public void Bootstrap_PublishesTickZeroSnapshot_AsCurrentAndOldest()
@@ -46,14 +30,14 @@ public sealed class SimulationLoopTickTests
     }
 
     [Fact]
-    public void Tick_PublishesNextSnapshot_WhenImageAndSnapshotAreImmediatelyAvailable()
+    public void Tick_PublishesNextSnapshot()
     {
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         WorldSnapshot initial = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick();
 
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.NotSame(initial, test.Accessor.CurrentSnapshot);
@@ -63,142 +47,13 @@ public sealed class SimulationLoopTickTests
     }
 
     [Fact]
-    public void Tick_Retries_WhenImageIsInitiallyUnavailable()
-    {
-        var test = SimulationLoopTestContext.Create();
-
-        test.Accessor.Bootstrap();
-
-        List<WorldImage> drainedImages = test.DrainImages();
-
-        test.WaiterState.BeforeWait = () => test.ReturnOneImage(drainedImages);
-
-        test.Accessor.Tick(CancellationToken.None);
-
-        Assert.Equal(
-            [ GetPoolRetryWait() ],
-            test.WaiterState.WaitCalls);
-        Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
-    }
-
-    [Fact]
-    public void Tick_ReturnsImageAndRetries_WhenSnapshotIsInitiallyUnavailable()
-    {
-        var test = SimulationLoopTestContext.Create();
-
-        test.Accessor.Bootstrap();
-
-        List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
-
-        int imagesAvailableBefore = test.CountAvailableImages();
-
-        test.WaiterState.BeforeWait = () => test.ReturnOneSnapshot(drainedSnapshots);
-
-        test.Accessor.Tick(CancellationToken.None);
-
-        Assert.Equal(
-            [ GetPoolRetryWait() ],
-            test.WaiterState.WaitCalls);
-        Assert.Equal(imagesAvailableBefore - 1, test.CountAvailableImages());
-        Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
-    }
-
-    [Fact]
-    public void Tick_RetriesMultipleTimes_UntilImageAndSnapshotBecomeAvailable()
-    {
-        var test = SimulationLoopTestContext.Create();
-
-        test.Accessor.Bootstrap();
-
-        List<WorldImage> drainedImages = test.DrainImages();
-        List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
-
-        int waitCount = 0;
-        test.WaiterState.BeforeWait = () =>
-        {
-            waitCount++;
-            if (waitCount == 1)
-                test.ReturnOneImage(drainedImages);
-            else if (waitCount == 2)
-                test.ReturnOneSnapshot(drainedSnapshots);
-        };
-
-        test.Accessor.Tick(CancellationToken.None);
-
-        Assert.Equal(
-            [
-                GetPoolRetryWait(),
-                GetPoolRetryWait(),
-            ],
-            test.WaiterState.WaitCalls);
-        Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
-    }
-
-    [Fact]
-    public void Tick_CleanupOnRetry_CanFreeStaleSnapshotsAndAllowProgress()
-    {
-        var test = SimulationLoopTestContext.Create();
-
-        test.Accessor.Bootstrap();
-        test.Accessor.Tick(CancellationToken.None);
-        test.Accessor.Tick(CancellationToken.None);
-
-        WorldSnapshot latestBefore = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
-        int imagesAvailableBefore = test.CountAvailableImages();
-        int snapshotsAvailableBefore = test.CountAvailableSnapshots();
-        List<WorldSnapshot> drainedSnapshots = test.DrainSnapshots();
-
-        Assert.Equal(snapshotsAvailableBefore, drainedSnapshots.Count);
-
-        test.Shared.ConsumptionEpoch = 2;
-
-        test.Accessor.Tick(CancellationToken.None);
-
-        Assert.Equal(
-            [ GetPoolRetryWait() ],
-            test.WaiterState.WaitCalls);
-        Assert.Equal(3, test.Accessor.CurrentTick);
-        Assert.Equal(3, test.Accessor.CurrentSnapshot!.TickNumber);
-        Assert.NotSame(latestBefore, test.Accessor.CurrentSnapshot);
-        Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(imagesAvailableBefore + 1, test.CountAvailableImages());
-    }
-
-    [Fact]
-    public void Tick_DoesNotAdvanceState_WhenCancelledDuringRetryWait()
-    {
-        var test = SimulationLoopTestContext.Create();
-
-        test.Accessor.Bootstrap();
-        WorldSnapshot initialSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
-
-        test.DrainImages();
-
-        using var cancellationSource = new CancellationTokenSource();
-        test.WaiterState.BeforeWait = cancellationSource.Cancel;
-
-        Assert.Throws<OperationCanceledException>(() => test.Accessor.Tick(cancellationSource.Token));
-
-        Assert.Equal(0, test.Accessor.CurrentTick);
-        Assert.Same(initialSnapshot, test.Accessor.CurrentSnapshot);
-        Assert.Same(initialSnapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(0, initialSnapshot.TickNumber);
-        Assert.Equal(
-            [ GetPoolRetryWait() ],
-            test.WaiterState.WaitCalls);
-    }
-
-    [Fact]
     public void Cleanup_FreesUnpinnedSnapshotsOlderThanConsumptionEpoch()
     {
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        test.Accessor.Tick(CancellationToken.None);
-        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick();
+        test.Accessor.Tick();
 
         WorldSnapshot secondSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
         WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
@@ -218,8 +73,8 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        test.Accessor.Tick(CancellationToken.None);
-        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick();
+        test.Accessor.Tick();
 
         WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
 
@@ -254,8 +109,8 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        test.Accessor.Tick(CancellationToken.None);
-        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick();
+        test.Accessor.Tick();
 
         test.Shared.ConsumptionEpoch = 1;
 
@@ -273,8 +128,8 @@ public sealed class SimulationLoopTickTests
         object pinOwner = new();
 
         test.Accessor.Bootstrap();
-        test.Accessor.Tick(CancellationToken.None);
-        test.Accessor.Tick(CancellationToken.None);
+        test.Accessor.Tick();
+        test.Accessor.Tick();
 
         WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
         WorldSnapshot latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
@@ -302,9 +157,9 @@ public sealed class SimulationLoopTickTests
         object pinOwner = new();
 
         test.Accessor.Bootstrap();
-        test.Accessor.Tick(CancellationToken.None); // tick 1
-        test.Accessor.Tick(CancellationToken.None); // tick 2
-        test.Accessor.Tick(CancellationToken.None); // tick 3
+        test.Accessor.Tick(); // tick 1
+        test.Accessor.Tick(); // tick 2
+        test.Accessor.Tick(); // tick 3
 
         WorldSnapshot tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
         WorldSnapshot tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
@@ -329,6 +184,8 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
+    // ── RunOneIteration — basic ──────────────────────────────────────────────
+
     [Fact]
     public void RunOneIteration_DoesNotTick_WhenAccumulatorIsBelowThreshold()
     {
@@ -344,7 +201,7 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds - 1, accumulator);
         Assert.Equal(
-            [ GetPoolRetryWait() ],
+            [ GetIdleYieldWait() ],
             test.WaiterState.WaitCalls);
     }
 
@@ -363,7 +220,7 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(0, accumulator);
         Assert.Equal(
-            [ GetPoolRetryWait() ],
+            [ GetIdleYieldWait() ],
             test.WaiterState.WaitCalls);
     }
 
@@ -385,7 +242,7 @@ public sealed class SimulationLoopTickTests
 
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ GetPoolRetryWait() ],
+            [ GetIdleYieldWait() ],
             test.WaiterState.WaitCalls);
     }
 
@@ -404,22 +261,52 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(2, test.Accessor.CurrentTick);
         Assert.Equal(123, accumulator);
         Assert.Equal(
+            [ GetIdleYieldWait() ],
+            test.WaiterState.WaitCalls);
+    }
+
+    // ── RunOneIteration — soft pressure ──────────────────────────────────────
+
+    [Fact]
+    public void RunOneIteration_AppliesPressureDelay_WhenTickEpochGapExceedsLowWaterMark()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+        for (int i = 0; i < LowWaterMarkTicks + 1; i++)
+            test.Accessor.Tick();
+
+        test.WaiterState.WaitCalls.Clear();
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
+
+        test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        int tickBefore = LowWaterMarkTicks + 1;
+        Assert.Equal(tickBefore + 1, test.Accessor.CurrentTick);
+        Assert.Equal(
             [
-                GetExpectedPressureDelay(availableSnapshots: 6, capacity: test.SnapshotPoolCapacity),
-                GetPoolRetryWait(),
+                GetExpectedPressureDelay(outstandingTicks: tickBefore),
+                GetIdleYieldWait(),
             ],
             test.WaiterState.WaitCalls);
     }
 
     [Fact]
-    public void RunOneIteration_ThrowsWhenCancelledDuringPressureDelayBeforeSecondTick()
+    public void RunOneIteration_ThrowsWhenCancelledDuringPressureDelay()
     {
         var test = SimulationLoopTestContext.CreateManual();
 
         test.Accessor.Bootstrap();
+        for (int i = 0; i < LowWaterMarkTicks + 1; i++)
+            test.Accessor.Tick();
+
+        int tickBefore = test.Accessor.CurrentTick;
+        test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        long accumulator = (SimulationConstants.TickDurationNanoseconds * 2) + 123;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
 
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = cancellationSource.Cancel;
@@ -427,21 +314,90 @@ public sealed class SimulationLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(1, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ GetExpectedPressureDelay(availableSnapshots: 6, capacity: test.SnapshotPoolCapacity) ],
+            [ GetExpectedPressureDelay(outstandingTicks: tickBefore) ],
             test.WaiterState.WaitCalls);
-        Assert.Equal(SimulationConstants.TickDurationNanoseconds + 123, accumulator);
+        Assert.Equal(SimulationConstants.TickDurationNanoseconds, accumulator);
     }
 
-    private static TimeSpan GetPoolRetryWait() =>
-        TimeSpan.FromTicks(SimulationConstants.PoolEmptyRetryNanoseconds / 100);
+    // ── RunOneIteration — hard ceiling ───────────────────────────────────────
 
-    private static TimeSpan GetExpectedPressureDelay(int availableSnapshots, int capacity) =>
+    [Fact]
+    public void RunOneIteration_BlocksAtHardCeiling_UntilConsumptionCatchesUp()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+        for (int i = 0; i < HardCeilingTicks; i++)
+            test.Accessor.Tick();
+
+        test.WaiterState.WaitCalls.Clear();
+
+        int waitCount = 0;
+        test.WaiterState.BeforeWait = () =>
+        {
+            waitCount++;
+            if (waitCount == 1)
+                test.Shared.ConsumptionEpoch = 1;
+        };
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
+
+        test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
+
+        Assert.Equal(HardCeilingTicks + 1, test.Accessor.CurrentTick);
+
+        var hardCeilingWait = GetHardCeilingWait();
+        Assert.Equal(hardCeilingWait, test.WaiterState.WaitCalls[0]);
+        Assert.True(test.WaiterState.WaitCalls.Count >= 3,
+            "Expected hard ceiling wait, soft pressure delay, and idle yield");
+        Assert.Equal(GetIdleYieldWait(), test.WaiterState.WaitCalls[^1]);
+    }
+
+    [Fact]
+    public void RunOneIteration_ThrowsWhenCancelledDuringHardCeilingWait()
+    {
+        var test = SimulationLoopTestContext.CreateManual();
+
+        test.Accessor.Bootstrap();
+        for (int i = 0; i < HardCeilingTicks; i++)
+            test.Accessor.Tick();
+
+        int tickBefore = test.Accessor.CurrentTick;
+        test.WaiterState.WaitCalls.Clear();
+
+        using var cancellationSource = new CancellationTokenSource();
+        test.WaiterState.BeforeWait = cancellationSource.Cancel;
+
+        long lastTime = 0;
+        long accumulator = SimulationConstants.TickDurationNanoseconds;
+
+        Assert.Throws<OperationCanceledException>(
+            () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
+
+        Assert.Equal(tickBefore, test.Accessor.CurrentTick);
+        Assert.Equal(
+            [ GetHardCeilingWait() ],
+            test.WaiterState.WaitCalls);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static TimeSpan GetIdleYieldWait() =>
+        TimeSpan.FromTicks(SimulationConstants.IdleYieldNanoseconds / 100);
+
+    private static TimeSpan GetHardCeilingWait() =>
+        TimeSpan.FromTicks(SimulationConstants.PressureMaxDelayNanoseconds / 100);
+
+    private static TimeSpan GetExpectedPressureDelay(int outstandingTicks) =>
         TimeSpan.FromTicks(
             SimulationPressure.ComputeDelay(
-                available: availableSnapshots,
-                capacity: capacity,
+                gapNanoseconds: (long)outstandingTicks * SimulationConstants.TickDurationNanoseconds,
+                lowWaterMarkNanoseconds: SimulationConstants.PressureLowWaterMarkNanoseconds,
+                bucketWidthNanoseconds: SimulationConstants.TickDurationNanoseconds,
+                bucketCount: SimulationConstants.PressureBucketCount,
                 baseNanoseconds: SimulationConstants.PressureBaseDelayNanoseconds,
                 maxNanoseconds: SimulationConstants.PressureMaxDelayNanoseconds) / 100);
 
@@ -469,7 +425,7 @@ public sealed class SimulationLoopTickTests
             TClock clock,
             TWaiter waiter,
             WaiterState waiterState,
-            int poolSize = SimulationConstants.PressureBucketCount)
+            int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
@@ -506,74 +462,6 @@ public sealed class SimulationLoopTickTests
         public SimulationLoop<TClock, TWaiter> Loop { get; }
 
         public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
-
-        public int SnapshotPoolCapacity => Memory.SnapshotPoolCapacity;
-
-        public List<WorldImage> DrainImages()
-        {
-            var drained = new List<WorldImage>();
-
-            while (Memory.RentImage() is WorldImage image)
-            {
-                drained.Add(image);
-            }
-
-            return drained;
-        }
-
-        public List<WorldSnapshot> DrainSnapshots()
-        {
-            var drained = new List<WorldSnapshot>();
-
-            while (Memory.RentSnapshot() is WorldSnapshot snapshot)
-            {
-                drained.Add(snapshot);
-            }
-
-            return drained;
-        }
-
-        public int CountAvailableImages()
-        {
-            var rented = new List<WorldImage>();
-
-            while (Memory.RentImage() is WorldImage image)
-                rented.Add(image);
-
-            foreach (WorldImage image in rented)
-                Memory.ReturnImage(image);
-
-            return rented.Count;
-        }
-
-        public int CountAvailableSnapshots()
-        {
-            var rented = new List<WorldSnapshot>();
-
-            while (Memory.RentSnapshot() is WorldSnapshot snapshot)
-                rented.Add(snapshot);
-
-            foreach (WorldSnapshot snapshot in rented)
-                Memory.ReturnSnapshot(snapshot);
-
-            return rented.Count;
-        }
-
-        public void ReturnOneImage(List<WorldImage> drainedImages)
-        {
-            Assert.NotEmpty(drainedImages);
-            WorldImage image = drainedImages[0];
-            drainedImages.RemoveAt(0);
-            Memory.ReturnImage(image);
-        }
-
-        public void ReturnOneSnapshot(List<WorldSnapshot> drainedSnapshots)
-        {
-            Assert.NotEmpty(drainedSnapshots);
-            WorldSnapshot snapshot = drainedSnapshots[0];
-            drainedSnapshots.RemoveAt(0);
-            Memory.ReturnSnapshot(snapshot);
-        }
     }
 
     internal readonly struct FakeClock : IClock

@@ -6,18 +6,47 @@ namespace Simulation.Tests.Memory;
 public sealed class MemorySystemTests
 {
     [Fact]
-    public void Constructor_RejectsPoolSizesThatAreNotMultiplesOfEight()
+    public void Constructor_RejectsNonPositivePoolSize()
     {
-        var exception = Assert.Throws<ArgumentException>(() => new MemorySystem(poolSize: 10));
-        Assert.Contains("multiple of 8", exception.Message);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem(initialPoolSize: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem(initialPoolSize: -1));
     }
 
     [Fact]
-    public void Constructor_AcceptsPoolSizesThatAreMultiplesOfEight()
+    public void Constructor_AcceptsAnyPositivePoolSize()
     {
-        var memory = new MemorySystem(poolSize: 16);
+        var memory = new MemorySystem(initialPoolSize: 10);
 
-        Assert.Equal(16, memory.SnapshotPoolCapacity);
-        Assert.Equal(16, memory.SnapshotsAvailable);
+        var snapshot = memory.RentSnapshot();
+        var image = memory.RentImage();
+
+        Assert.NotNull(snapshot);
+        Assert.NotNull(image);
+    }
+
+    [Fact]
+    public void RentSnapshot_AlwaysReturnsNonNull()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var first = memory.RentSnapshot();
+        var second = memory.RentSnapshot();
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotSame(first, second);
+    }
+
+    [Fact]
+    public void RentImage_AlwaysReturnsNonNull()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var first = memory.RentImage();
+        var second = memory.RentImage();
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotSame(first, second);
     }
 }

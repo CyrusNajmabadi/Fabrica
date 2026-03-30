@@ -30,32 +30,22 @@ internal sealed class MemorySystem
 
     public PinnedVersions PinnedVersions { get; } = new();
 
-    public MemorySystem(int poolSize)
+    public MemorySystem(int initialPoolSize = SimulationConstants.SnapshotPoolSize)
     {
-        if (poolSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(poolSize));
+        if (initialPoolSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
-        if (poolSize % SimulationConstants.PressureBucketCount != 0)
-            throw new ArgumentException(
-                $"Pool size must be a multiple of {SimulationConstants.PressureBucketCount}.",
-                nameof(poolSize));
-
-        _snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
-        _imagePool    = new ObjectPool<WorldImage>(poolSize);
+        _snapshotPool = new ObjectPool<WorldSnapshot>(initialPoolSize);
+        _imagePool    = new ObjectPool<WorldImage>(initialPoolSize);
     }
 
     // ── Snapshot pool (simulation thread only) ───────────────────────────────
 
-    public WorldSnapshot? RentSnapshot()                  => _snapshotPool.Rent();
-    public void           ReturnSnapshot(WorldSnapshot snapshot) => _snapshotPool.Return(snapshot);
+    public WorldSnapshot RentSnapshot()                        => _snapshotPool.Rent();
+    public void          ReturnSnapshot(WorldSnapshot snapshot) => _snapshotPool.Return(snapshot);
 
     // ── Image pool (simulation thread only) ──────────────────────────────────
 
-    public WorldImage? RentImage()              => _imagePool.Rent();
-    public void        ReturnImage(WorldImage image) { image.ResetForPool(); _imagePool.Return(image); }
-
-    // ── Pool capacity (simulation thread reads) ───────────────────────────────
-
-    public int SnapshotsAvailable    => _snapshotPool.Available;
-    public int SnapshotPoolCapacity  => _snapshotPool.Capacity;
+    public WorldImage RentImage()              => _imagePool.Rent();
+    public void       ReturnImage(WorldImage image) { image.ResetForPool(); _imagePool.Return(image); }
 }

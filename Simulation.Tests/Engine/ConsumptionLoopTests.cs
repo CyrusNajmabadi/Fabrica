@@ -397,7 +397,7 @@ public sealed class ConsumptionLoopTests
             SaveRunnerState saveRunnerState,
             SaverState saverState,
             RendererState rendererState,
-            int poolSize = SimulationConstants.PressureBucketCount)
+            int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
             where TSaveRunner : struct, ISaveRunner

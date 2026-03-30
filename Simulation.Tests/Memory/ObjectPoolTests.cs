@@ -6,33 +6,67 @@ namespace Simulation.Tests.Memory;
 public sealed class ObjectPoolTests
 {
     [Fact]
-    public void Rent_ReturnsNull_WhenPoolIsExhausted()
+    public void Rent_AllocatesNewInstance_WhenPoolIsExhausted()
     {
         var pool = new ObjectPool<Dummy>(2);
 
-        Dummy? first = pool.Rent();
-        Dummy? second = pool.Rent();
-        Dummy? third = pool.Rent();
+        Dummy first = pool.Rent();
+        Dummy second = pool.Rent();
+        Dummy third = pool.Rent();
 
         Assert.NotNull(first);
         Assert.NotNull(second);
-        Assert.Null(third);
+        Assert.NotNull(third);
+        Assert.NotSame(first, second);
+        Assert.NotSame(second, third);
         Assert.Equal(0, pool.Available);
-        Assert.Equal(2, pool.Capacity);
     }
 
     [Fact]
-    public void Return_MakesItemAvailableAgain()
+    public void Rent_ReturnsCachedInstance_WhenPoolHasItems()
     {
         var pool = new ObjectPool<Dummy>(1);
 
-        Dummy item = Assert.IsType<Dummy>(pool.Rent());
+        Dummy item = pool.Rent();
         Assert.Equal(0, pool.Available);
 
         pool.Return(item);
-
         Assert.Equal(1, pool.Available);
+
         Assert.Same(item, pool.Rent());
+    }
+
+    [Fact]
+    public void Return_GrowsPoolBeyondInitialCapacity()
+    {
+        var pool = new ObjectPool<Dummy>(1);
+
+        Dummy a = pool.Rent();
+        Dummy b = new();
+        Dummy c = new();
+
+        pool.Return(a);
+        pool.Return(b);
+        pool.Return(c);
+
+        Assert.Equal(3, pool.Available);
+
+        Dummy r1 = pool.Rent();
+        Dummy r2 = pool.Rent();
+        Dummy r3 = pool.Rent();
+
+        Assert.Equal(0, pool.Available);
+        Assert.Contains(a, new[] { r1, r2, r3 });
+        Assert.Contains(b, new[] { r1, r2, r3 });
+        Assert.Contains(c, new[] { r1, r2, r3 });
+    }
+
+    [Fact]
+    public void Constructor_PreAllocatesRequestedNumberOfInstances()
+    {
+        var pool = new ObjectPool<Dummy>(5);
+
+        Assert.Equal(5, pool.Available);
     }
 
     private sealed class Dummy

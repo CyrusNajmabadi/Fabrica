@@ -3,28 +3,29 @@ using System.Diagnostics;
 namespace Simulation.Memory;
 
 /// <summary>
-/// Single-threaded, pre-allocated object pool backed by a flat array used as a stack.
+/// Single-threaded object pool backed by a stack.
 ///
 /// DESIGN GOALS
-///   Zero allocation after construction: all T instances are created upfront in
-///   the constructor.  Rent returns null rather than falling back to new T() when
-///   exhausted.  This gives the caller explicit control over pool pressure — the
-///   simulation loop uses a null return to trigger backpressure and cleanup rather
-///   than silently over-allocating and stressing the GC.
+///   Reuse over allocation: pre-allocates an initial batch of T instances in the
+///   constructor for cache warmth and to reduce early GC pressure.  Subsequent
+///   Rent calls return pooled instances when available, or allocate new ones
+///   when the pool is empty — Rent never returns null.
+///
+///   Always accepts returns: Return pushes the item onto the stack regardless
+///   of the pool's current size, so objects are never leaked to the GC when
+///   they could be reused.
 ///
 ///   Single-threaded: all Rent/Return calls must come from the owning thread.
-///   In production this is always the simulation thread.  The #if DEBUG thread-ID
-///   assertion detects accidental cross-thread access in tests early, before it
-///   causes data races.
+///   In production this is always the simulation thread (or a dedicated
+///   SimulationWorker in the future multi-threaded model).  The #if DEBUG
+///   thread-ID assertion detects accidental cross-thread access early.
 ///
-///   Flat array as stack: the top-of-stack index (_count) makes Rent and Return
-///   O(1) with no heap allocation.  LIFO reuse order gives recently-returned
-///   objects the best chance of still being in CPU cache.
+///   LIFO reuse order gives recently-returned objects the best chance of
+///   still being in CPU cache.
 /// </summary>
 internal sealed class ObjectPool<T> where T : class, new()
 {
-    private readonly T[] _items;
-    private int _count;
+    private readonly Stack<T> _items;
 
 #if DEBUG
     private int _ownerThreadId = -1;
@@ -42,34 +43,33 @@ internal sealed class ObjectPool<T> where T : class, new()
     }
 #endif
 
-    public ObjectPool(int capacity)
+    public ObjectPool(int initialCapacity)
     {
-        _items = new T[capacity];
-        for (int i = 0; i < capacity; i++)
-            _items[i] = new T();
-        _count = capacity;
+        _items = new Stack<T>(initialCapacity);
+        for (int i = 0; i < initialCapacity; i++)
+            _items.Push(new T());
     }
 
-    /// <summary>Returns an instance from the pool, or null if exhausted.</summary>
-    public T? Rent()
+    /// <summary>
+    /// Returns a pooled instance if available, or allocates a new one.
+    /// Never returns null.
+    /// </summary>
+    public T Rent()
     {
 #if DEBUG
         AssertOwnerThread();
 #endif
-        if (_count == 0) return null;
-        return _items[--_count];
+        return _items.Count > 0 ? _items.Pop() : new T();
     }
 
-    /// <summary>Returns an instance to the pool.</summary>
+    /// <summary>Returns an instance to the pool for future reuse.</summary>
     public void Return(T item)
     {
 #if DEBUG
         AssertOwnerThread();
-        Debug.Assert(_count < _items.Length, "Pool overflow — more items returned than capacity allows.");
 #endif
-        _items[_count++] = item;
+        _items.Push(item);
     }
 
-    public int Available => _count;
-    public int Capacity  => _items.Length;
+    public int Available => _items.Count;
 }

@@ -7,63 +7,98 @@ namespace Simulation.Tests.Engine;
 
 public sealed class LoopStressHarnessTests
 {
+    private static int LowWaterMarkTicks =>
+        (int)(SimulationConstants.PressureLowWaterMarkNanoseconds / SimulationConstants.TickDurationNanoseconds);
+
     [Fact]
-    public void SimulationIteration_RecoversFromSnapshotStarvation_AfterConsumptionAdvancesEpochDuringWait()
+    public void SimulationIteration_AppliesBackpressure_WhenTickEpochGapExceedsLowWaterMark()
+    {
+        var test = LoopStressHarness.Create();
+
+        test.SimulationLoop.Bootstrap();
+
+        for (int i = 0; i < LowWaterMarkTicks + 1; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+        }
+
+        test.Waiter.ClearCalls();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+
+        int expectedTick = LowWaterMarkTicks + 2;
+        Assert.Equal(expectedTick, test.SimulationLoop.CurrentTick);
+
+        var idleYield = GetIdleYieldWait();
+        Assert.True(test.Waiter.WaitCalls.Count >= 2, "Expected pressure delay + idle yield");
+        Assert.True(test.Waiter.WaitCalls[0] > TimeSpan.Zero, "First wait should be a non-zero pressure delay");
+        Assert.Equal(idleYield, test.Waiter.WaitCalls[^1]);
+    }
+
+    [Fact]
+    public void SimulationIteration_NoPressure_WhenConsumptionKeepsUp()
     {
         var test = LoopStressHarness.Create();
 
         test.SimulationLoop.Bootstrap();
         test.Shared.NextSaveAtTick = 0;
 
-        // Run two full sim+cons cycles so the render pair is established.
-        // Leave the third sim tick unconsumed so the consumption inside
-        // OnWait can rotate to it and advance the epoch.
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T1
-        test.ConsumptionLoop.RunIteration(); // prev=null, curr=T1, epoch=1
+        for (int i = 0; i < 10; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+            test.ConsumptionLoop.RunIteration();
+        }
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T2
-        test.ConsumptionLoop.RunIteration(); // prev=T1, curr=T2, epoch=1
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T3 — NOT consumed yet
-
-        test.Memory.DrainSnapshots();
-        Assert.Equal(0, test.Memory.AvailableSnapshots);
         test.Waiter.ClearCalls();
 
-        int waitCount = 0;
-        test.Waiter.OnWait = duration =>
-        {
-            waitCount++;
-
-            if (waitCount == 1)
-                test.ConsumptionLoop.RunIteration(); // rotates to T3: prev=T2, curr=T3, epoch=2
-        };
-
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // cleanup frees T1 (epoch=2), then produces T4
+        test.SimulationLoop.RunIteration();
 
-        Assert.Equal(4, test.SimulationLoop.CurrentTick);
-        Assert.Equal(4, Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot).TickNumber);
-        Assert.Equal(2, test.Shared.ConsumptionEpoch);
-        Assert.Equal(3, test.Waiter.WaitCalls.Count);
-        Assert.Equal(GetExpectedPressureDelay(availableSnapshots: 0, capacity: test.Memory.SnapshotPoolCapacity), test.Waiter.WaitCalls[0]);
-        Assert.Equal(GetPoolRetryWait(), test.Waiter.WaitCalls[1]);
-        Assert.Equal(GetPoolRetryWait(), test.Waiter.WaitCalls[2]);
+        var idleYield = GetIdleYieldWait();
+        Assert.All(test.Waiter.WaitCalls, w => Assert.Equal(idleYield, w));
     }
 
-    private static TimeSpan GetPoolRetryWait() =>
-        TimeSpan.FromTicks(SimulationConstants.PoolEmptyRetryNanoseconds / 100);
+    [Fact]
+    public void SimulationIteration_PressureDecreases_WhenConsumptionAdvancesEpoch()
+    {
+        var test = LoopStressHarness.Create();
 
-    private static TimeSpan GetExpectedPressureDelay(int availableSnapshots, int capacity) =>
-        TimeSpan.FromTicks(
-            SimulationPressure.ComputeDelay(
-                available: availableSnapshots,
-                capacity: capacity,
-                baseNanoseconds: SimulationConstants.PressureBaseDelayNanoseconds,
-                maxNanoseconds: SimulationConstants.PressureMaxDelayNanoseconds) / 100);
+        test.SimulationLoop.Bootstrap();
+        test.Shared.NextSaveAtTick = 0;
+
+        for (int i = 0; i < LowWaterMarkTicks + 3; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+        }
+
+        test.Waiter.ClearCalls();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+
+        var pressureWaitsBeforeConsumption = test.Waiter.WaitCalls
+            .Where(w => w > TimeSpan.Zero && w != GetIdleYieldWait())
+            .ToList();
+        Assert.NotEmpty(pressureWaitsBeforeConsumption);
+
+        for (int i = 0; i < LowWaterMarkTicks + 3; i++)
+            test.ConsumptionLoop.RunIteration();
+
+        test.Waiter.ClearCalls();
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration();
+
+        var idleYield = GetIdleYieldWait();
+        Assert.All(test.Waiter.WaitCalls, w => Assert.Equal(idleYield, w));
+    }
+
+    private static TimeSpan GetIdleYieldWait() =>
+        TimeSpan.FromTicks(SimulationConstants.IdleYieldNanoseconds / 100);
 
     private sealed class LoopStressHarness
     {
@@ -71,7 +106,6 @@ public sealed class LoopStressHarnessTests
         private long _simulationAccumulator;
 
         private LoopStressHarness(
-            MemorySystem memory,
             SharedState shared,
             ClockState clockState,
             WaiterState waiterState,
@@ -81,7 +115,6 @@ public sealed class LoopStressHarnessTests
             Shared = shared;
             Clock = new ClockController(clockState);
             Waiter = new WaiterController(waiterState);
-            Memory = new MemoryController(memory);
             SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
             ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
         }
@@ -92,13 +125,11 @@ public sealed class LoopStressHarnessTests
 
         public WaiterController Waiter { get; }
 
-        public MemoryController Memory { get; }
-
         public SimulationLoopController SimulationLoop { get; }
 
         public ConsumptionLoopController ConsumptionLoop { get; }
 
-        public static LoopStressHarness Create(int poolSize = SimulationConstants.PressureBucketCount)
+        public static LoopStressHarness Create(int poolSize = 64)
         {
             var memory = new MemorySystem(poolSize);
             var shared = new SharedState();
@@ -120,7 +151,6 @@ public sealed class LoopStressHarnessTests
                 new RecordingRenderer());
 
             return new LoopStressHarness(
-                memory,
                 shared,
                 clockState,
                 waiterState,
@@ -158,43 +188,6 @@ public sealed class LoopStressHarnessTests
             }
 
             public void ClearCalls() => _state.WaitCalls.Clear();
-        }
-
-        public sealed class MemoryController
-        {
-            private readonly MemorySystem _memory;
-
-            public MemoryController(MemorySystem memory)
-            {
-                _memory = memory;
-            }
-
-            public int SnapshotPoolCapacity => _memory.SnapshotPoolCapacity;
-
-            public int AvailableSnapshots
-            {
-                get
-                {
-                    var drained = new List<WorldSnapshot>();
-                    while (_memory.RentSnapshot() is WorldSnapshot snapshot)
-                        drained.Add(snapshot);
-
-                    foreach (WorldSnapshot snapshot in drained)
-                        _memory.ReturnSnapshot(snapshot);
-
-                    return drained.Count;
-                }
-            }
-
-            public List<WorldSnapshot> DrainSnapshots()
-            {
-                var drained = new List<WorldSnapshot>();
-
-                while (_memory.RentSnapshot() is WorldSnapshot snapshot)
-                    drained.Add(snapshot);
-
-                return drained;
-            }
         }
 
         public sealed class SimulationLoopController

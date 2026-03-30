@@ -140,7 +140,7 @@ public sealed class SimulationLoopRunTests
             TClock clock,
             TWaiter waiter,
             WaiterState waiterState,
-            int poolSize = SimulationConstants.PressureBucketCount)
+            int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {

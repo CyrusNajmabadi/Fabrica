@@ -393,7 +393,7 @@ public sealed class LoopHarnessExampleTests
 
         public ConsumptionLoopController ConsumptionLoop { get; }
 
-        public static LoopHarness Create(int poolSize = SimulationConstants.PressureBucketCount)
+        public static LoopHarness Create(int poolSize = 8)
         {
             var memory = new MemorySystem(poolSize);
             var shared = new SharedState();
