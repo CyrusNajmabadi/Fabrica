@@ -1,4 +1,4 @@
-﻿using Simulation.World;
+using Simulation.World;
 using Xunit;
 
 namespace Simulation.Tests.World;

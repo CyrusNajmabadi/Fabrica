@@ -1,4 +1,4 @@
-﻿using Simulation;
+using Simulation;
 using Simulation.Engine;
 
 using var cancellationSource = new CancellationTokenSource();

@@ -1,4 +1,4 @@
-﻿using Simulation.Memory;
+using Simulation.Memory;
 
 namespace Simulation.Engine;
 

@@ -1,4 +1,4 @@
-﻿using Simulation.Engine;
+using Simulation.Engine;
 using Xunit;
 
 namespace Simulation.Tests.Engine;

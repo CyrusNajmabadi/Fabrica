@@ -1,4 +1,4 @@
-﻿namespace Simulation.Engine;
+namespace Simulation.Engine;
 
 /// <summary>
 /// Production waiter backed by <see cref="WaitHandle.WaitOne(TimeSpan)"/> so waits

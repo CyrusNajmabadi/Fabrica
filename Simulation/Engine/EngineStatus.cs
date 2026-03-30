@@ -1,4 +1,4 @@
-﻿namespace Simulation.Engine;
+namespace Simulation.Engine;
 
 /// <summary>
 /// Non-simulation state from the engine: save progress, diagnostics, etc.

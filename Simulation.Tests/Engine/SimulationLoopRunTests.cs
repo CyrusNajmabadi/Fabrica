@@ -1,4 +1,4 @@
-﻿using Simulation.Engine;
+using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.World;
 using Xunit;

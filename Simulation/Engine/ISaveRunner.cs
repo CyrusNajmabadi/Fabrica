@@ -1,4 +1,4 @@
-﻿using Simulation.World;
+using Simulation.World;
 
 namespace Simulation.Engine;
 

@@ -1,4 +1,4 @@
-﻿namespace Simulation;
+namespace Simulation;
 
 internal static class SimulationConstants
 {

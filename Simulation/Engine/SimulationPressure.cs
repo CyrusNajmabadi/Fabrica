@@ -1,4 +1,4 @@
-﻿namespace Simulation.Engine;
+namespace Simulation.Engine;
 
 /// <summary>
 /// Pure pressure-delay calculations for the simulation loop.
