@@ -14,9 +14,10 @@ namespace Simulation.Engine;
 ///     2. SET UP — previous and next images and the cancellation token are
 ///        written to each worker.
 ///     3. SIGNAL — all workers are woken from their park state.
-///     4. JOIN — the calling thread waits on each worker's done signal
-///        in turn.  Every worker runs in parallel; the sequential wait
-///        just collects results.
+///     4. JOIN — a single <see cref="WaitHandleBatch.WaitAll"/> call waits
+///        on every worker's done signal.  <see cref="AutoResetEvent"/>
+///        handles auto-reset when the wait completes, so no manual reset
+///        is needed between ticks.
 ///     5. REF-COUNT — the Simulator walks each worker's created-nodes list
 ///        and performs AddRef on shared subtree nodes.  This is the only
 ///        phase that touches ref-counts, and it runs on a single thread —
@@ -37,12 +38,6 @@ namespace Simulation.Engine;
 ///   <see cref="WorkerResources"/> instance.  Workers never access each
 ///   other's resources during tick computation.
 ///
-/// ZERO-WORKER MODE
-///   Constructing with workerCount = 0 creates a no-op Simulator: no
-///   threads are spawned and <see cref="AdvanceTick"/> returns immediately.
-///   This is used by tests that exercise snapshot lifecycle without
-///   needing real parallel computation.
-///
 /// THREAD PINNING (future)
 ///   Workers currently use unpinned background threads.  A future
 ///   enhancement will pin each worker to a specific core for cache
@@ -50,13 +45,32 @@ namespace Simulation.Engine;
 /// </summary>
 internal sealed class Simulator : IDisposable
 {
+    // Stack-local buffer for collecting WaitHandles during construction.
+    // 1024 handles covers even extreme core counts (8 KB on the stack).
+    [System.Runtime.CompilerServices.InlineArray(1024)]
+    private struct WaitHandleBuffer
+    {
+        private WaitHandle _element;
+    }
+
     private readonly SimulationWorker[] _workers;
+    private readonly WaitHandleBatch _doneBatch;
 
     public Simulator(int workerCount)
     {
+        if (workerCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(workerCount));
+
         _workers = new SimulationWorker[workerCount];
+
+        WaitHandleBuffer buffer = default;
         for (var i = 0; i < workerCount; i++)
+        {
             _workers[i] = new SimulationWorker(new WorkerResources(), i);
+            buffer[i] = _workers[i].DoneEvent;
+        }
+
+        _doneBatch = new WaitHandleBatch(((ReadOnlySpan<WaitHandle>)buffer)[..workerCount]);
     }
 
     public int WorkerCount => _workers.Length;
@@ -68,9 +82,6 @@ internal sealed class Simulator : IDisposable
     /// </summary>
     public void AdvanceTick(WorldImage previous, WorldImage next, CancellationToken cancellationToken)
     {
-        if (_workers.Length == 0)
-            return;
-
         foreach (var worker in _workers)
         {
             worker.Resources.PrepareForTick();
@@ -82,8 +93,7 @@ internal sealed class Simulator : IDisposable
         foreach (var worker in _workers)
             worker.Signal();
 
-        foreach (var worker in _workers)
-            worker.WaitForCompletion();
+        _doneBatch.WaitAll();
 
         foreach (var worker in _workers)
             this.CollectCreatedNodes(worker);
@@ -102,5 +112,8 @@ internal sealed class Simulator : IDisposable
 
         foreach (var worker in _workers)
             worker.Join();
+
+        foreach (var worker in _workers)
+            worker.Cleanup();
     }
 }
