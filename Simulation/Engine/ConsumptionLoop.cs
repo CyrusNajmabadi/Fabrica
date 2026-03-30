@@ -211,14 +211,15 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     /// </summary>
     private void RunSaveTask(WorldImage image, int tick)
     {
+        long startTime = _clock.NowNanoseconds;
         try
         {
             _saver.Save(image, tick);
-            _saveEvents.Enqueue(new SaveEvent(tick, Succeeded: true, Error: null));
+            _saveEvents.Enqueue(new SaveEvent(tick, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: null));
         }
         catch (Exception ex)
         {
-            _saveEvents.Enqueue(new SaveEvent(tick, Succeeded: false, Error: ex));
+            _saveEvents.Enqueue(new SaveEvent(tick, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: ex));
         }
         finally
         {

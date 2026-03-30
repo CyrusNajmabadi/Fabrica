@@ -22,8 +22,9 @@ internal readonly struct SaveStatus
 /// Records the outcome of a completed save operation.
 /// Produced by the save task (threadpool) and delivered to the consumption
 /// thread via a concurrent queue, so the renderer can show save feedback.
+/// A null <see cref="Error"/> indicates success.
 /// </summary>
-internal readonly record struct SaveEvent(int Tick, bool Succeeded, Exception? Error);
+internal readonly record struct SaveEvent(int Tick, long DurationNanoseconds, Exception? Error);
 
 /// <summary>
 /// Placeholder for future engine diagnostics: tick rate, pool pressure,

@@ -156,8 +156,8 @@ public sealed class ConsumptionLoopTests
         EngineStatus status = test.RendererState.RenderedEngineStatuses[1];
         Assert.False(status.Save.InFlight);
         Assert.NotNull(status.Save.LastResult);
-        Assert.False(status.Save.LastResult.Value.Succeeded);
-        Assert.Equal("boom", status.Save.LastResult.Value.Error!.Message);
+        Assert.NotNull(status.Save.LastResult.Value.Error);
+        Assert.Equal("boom", status.Save.LastResult.Value.Error.Message);
     }
 
     [Fact]
