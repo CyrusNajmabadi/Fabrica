@@ -18,7 +18,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Testing
 
-- [ ] True concurrency stress tests — run simulation and consumption on real threads and verify invariants hold (current tests are all single-threaded stepping)
 - [ ] Consolidate duplicate test infrastructure — `RecordingWaiter`, clock types, and context builders are redefined across multiple test files
 - [ ] Tests for production adapters (`SystemClock`, `ThreadWaiter`, `TaskSaveRunner`) if they gain non-trivial logic
 - [ ] Broader `MemorySystem` unit tests — direct coverage for `ReturnImage` reset behavior, edge cases beyond constructor validation
@@ -49,6 +48,12 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [x] Time-based backpressure — tick-epoch gap measured in nanoseconds with a 100ms low water mark (soft exponential delay) and a 2s hard ceiling (simulation blocks until consumption catches up); replaces pool-availability-based throttling ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] SimulationWorker stub — design placeholder documenting per-worker pools, created-nodes list for deferred ref-counting, and the threading contract for future multi-threaded simulation ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] Save overlap — analyzed and confirmed as a non-issue: `NextSaveAtTick` is set to 0 before dispatch and only rescheduled in the save task's `finally` block, so no second save can trigger while one is in flight
+
+## Testing
+
+- [x] True concurrency stress tests — 5 real multi-threaded tests (throughput, backpressure, shutdown, worker lifecycle, save pinning) with hard invariant checks ([e23657d](https://github.com/CyrusNajmabadi/Fabrica/commit/e23657d))
+- [x] Backpressure adaptation tests — 7 deterministic multi-phase tests verifying the feedback loop adapts to matched rates, slow consumption, catch-up, re-engagement, exponential delays, hard ceiling, and bounded gap ([d697ce8](https://github.com/CyrusNajmabadi/Fabrica/commit/d697ce8))
+- [x] xUnit v3 upgrade — migrated from xUnit 2.9.3 to xUnit v3 3.2.2 with aggressive parallel algorithm ([6057e02](https://github.com/CyrusNajmabadi/Fabrica/commit/6057e02))
 
 ## Quality / Tooling
 
