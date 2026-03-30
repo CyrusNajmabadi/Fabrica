@@ -3,10 +3,14 @@ using Xunit;
 
 namespace Simulation.Tests.World;
 
+/// <summary>
+/// Tests for <see cref="WorldSnapshot"/>-specific behavior (domain payload).
+/// Chain mechanics are covered by <see cref="ChainNodeTests"/>.
+/// </summary>
 public sealed class WorldSnapshotTests
 {
     [Fact]
-    public void Initialize_SetsImageAndTickAndClearsNext()
+    public void Initialize_SetsImageAndTickNumber()
     {
         var image = new WorldImage();
         var snapshot = new WorldSnapshot();
@@ -15,65 +19,33 @@ public sealed class WorldSnapshotTests
 
         Assert.Same(image, snapshot.Image);
         Assert.Equal(5, snapshot.TickNumber);
-        Assert.Null(snapshot.NextInChain);
-        Assert.False(snapshot.IsUnreferenced);
+        Assert.Equal(5, snapshot.SequenceNumber);
     }
 
     [Fact]
-    public void SetNext_LinksSnapshots()
-    {
-        var first = new WorldSnapshot();
-        var second = new WorldSnapshot();
-
-        first.Initialize(new WorldImage(), 0);
-        second.Initialize(new WorldImage(), 1);
-
-        first.SetNext(second);
-
-        Assert.Same(second, first.NextInChain);
-    }
-
-    [Fact]
-    public void ClearNext_RemovesLink()
-    {
-        var first = new WorldSnapshot();
-        var second = new WorldSnapshot();
-
-        first.Initialize(new WorldImage(), 0);
-        second.Initialize(new WorldImage(), 1);
-        first.SetNext(second);
-
-        first.ClearNext();
-
-        Assert.Null(first.NextInChain);
-    }
-
-    [Fact]
-    public void Initialize_ClearsPublishTime()
+    public void TickNumber_IsDomainAliasForSequenceNumber()
     {
         var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), 0);
-        snapshot.MarkPublished(999);
+        snapshot.Initialize(new WorldImage(), tickNumber: 42);
+
+        Assert.Equal(snapshot.SequenceNumber, snapshot.TickNumber);
+    }
+
+    [Fact]
+    public void Release_ToZero_NullsImage()
+    {
+        var image = new WorldImage();
+        var snapshot = new WorldSnapshot();
+        snapshot.Initialize(image, tickNumber: 10);
+
         snapshot.Release();
 
-        snapshot.Initialize(new WorldImage(), 1);
-
-        Assert.Equal(0, snapshot.PublishTimeNanoseconds);
+        Assert.True(snapshot.IsUnreferenced);
+        Assert.Null(snapshot.Image);
     }
 
     [Fact]
-    public void MarkPublished_SetsPublishTime()
-    {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), 0);
-
-        snapshot.MarkPublished(42_000_000);
-
-        Assert.Equal(42_000_000, snapshot.PublishTimeNanoseconds);
-    }
-
-    [Fact]
-    public void AddRef_PreventsReleaseFromClearingReferences()
+    public void AddRef_PreventsRelease_FromNullingImage()
     {
         var image = new WorldImage();
         var snapshot = new WorldSnapshot();
@@ -87,7 +59,7 @@ public sealed class WorldSnapshotTests
     }
 
     [Fact]
-    public void AddRef_ThenFullRelease_ClearsReferences()
+    public void AddRef_ThenFullRelease_NullsImage()
     {
         var snapshot = new WorldSnapshot();
         snapshot.Initialize(new WorldImage(), tickNumber: 5);
@@ -97,24 +69,6 @@ public sealed class WorldSnapshotTests
         snapshot.Release();
 
         Assert.True(snapshot.IsUnreferenced);
-        Assert.Null(snapshot.Image);
-    }
-
-    [Fact]
-    public void Release_ToZero_ClearsReferences()
-    {
-        var image = new WorldImage();
-        var next = new WorldSnapshot();
-        var snapshot = new WorldSnapshot();
-
-        snapshot.Initialize(image, tickNumber: 10);
-        next.Initialize(new WorldImage(), 0);
-        snapshot.SetNext(next);
-
-        snapshot.Release();
-
-        Assert.True(snapshot.IsUnreferenced);
-        Assert.Null(snapshot.NextInChain);
         Assert.Null(snapshot.Image);
     }
 }

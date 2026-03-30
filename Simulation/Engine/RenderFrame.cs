@@ -57,7 +57,7 @@ internal readonly struct RenderFrame
     /// through <see cref="Latest"/> inclusive.  Safely bounded — never reads
     /// past the published frontier.
     /// </summary>
-    public WorldSnapshot.SnapshotChain Chain => WorldSnapshot.Chain(this.Previous, this.Latest);
+    public ChainNode<WorldSnapshot>.ChainSegment Chain => ChainNode<WorldSnapshot>.Chain(this.Previous, this.Latest);
 }
 
 /// <summary>
