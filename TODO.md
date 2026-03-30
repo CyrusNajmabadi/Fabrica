@@ -12,7 +12,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 ## Engine / Architecture
 
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
-- [ ] Consider what happens when saves are slow enough to overlap with the next save interval (save-in-flight already prevented, but worth thinking about as real save logic arrives)
 - [ ] Multi-threaded simulation — worker pool for tick computation (`SimulationWorker` stub exists; needs thread management)
 - [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
 
@@ -29,7 +28,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 - [ ] Coverage tooling — no Coverlet or equivalent configured; would help identify gaps as the codebase grows
 - [ ] CI pipeline (GitHub Actions or similar)
-- [ ] `.editorconfig` for consistent formatting
 - [ ] Consider `Directory.Build.props` for shared project settings as more projects are added
 
 ## Documentation
@@ -51,3 +49,8 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [x] ObjectPool redesign — growable `Stack<T>`-backed pool; `Rent()` always returns (allocates on demand), `Return()` always accepts; pre-allocation preserved for cache warmth ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] Time-based backpressure — tick-epoch gap measured in nanoseconds with a 100ms low water mark (soft exponential delay) and a 2s hard ceiling (simulation blocks until consumption catches up); replaces pool-availability-based throttling ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] SimulationWorker stub — design placeholder documenting per-worker pools, created-nodes list for deferred ref-counting, and the threading contract for future multi-threaded simulation ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
+- [x] Save overlap — analyzed and confirmed as a non-issue: `NextSaveAtTick` is set to 0 before dispatch and only rescheduled in the save task's `finally` block, so no second save can trigger while one is in flight
+
+## Quality / Tooling
+
+- [x] `.editorconfig` for consistent formatting — rules for `var`, expression bodies, braces, `this.` qualification, naming; all elevated to warnings ([8b0d326](https://github.com/CyrusNajmabadi/Fabrica/commit/8b0d326), [cc97720](https://github.com/CyrusNajmabadi/Fabrica/commit/cc97720))
