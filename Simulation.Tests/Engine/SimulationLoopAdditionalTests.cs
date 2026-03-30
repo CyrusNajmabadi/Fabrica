@@ -24,8 +24,8 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
 
         var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        var tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
-        var tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
+        var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
+        var tick2 = Assert.IsType<WorldSnapshot>(tick1.NextInChain);
         var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Memory.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
@@ -37,8 +37,8 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Same(tick3, test.Accessor.OldestSnapshot);
         Assert.Same(tick3, test.Accessor.CurrentSnapshot);
         Assert.Equal(2, test.Accessor.PinnedQueueCount);
-        Assert.Null(tick0.Next);
-        Assert.Null(tick1.Next);
+        Assert.Null(tick0.NextInChain);
+        Assert.Null(tick1.NextInChain);
         Assert.True(tick2.IsUnreferenced);
 
         test.Memory.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
@@ -62,7 +62,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
 
         var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        var tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
+        var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
         var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Memory.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);

@@ -387,29 +387,29 @@ public sealed class ConsumptionLoopTests
         Assert.Equal(1, rendered.Previous!.TickNumber);
         Assert.Equal(6, rendered.Latest.TickNumber);
 
-        // Walk the chain from Previous → Latest and verify every tick is present.
+        // Walk the chain via the struct iterator and verify every tick is present.
         var ticks = new List<int>();
-        for (var node = rendered.Previous; node is not null; node = node.Next)
-        {
+        foreach (var node in rendered.Chain)
             ticks.Add(node.TickNumber);
-            if (ReferenceEquals(node, rendered.Latest))
-                break;
-        }
 
         Assert.Equal([1, 2, 3, 4, 5, 6], ticks);
     }
 
     [Fact]
-    public void RunOneIteration_LatestNextIsNull_WhenNoFurtherSnapshotsAreLinked()
+    public void RunOneIteration_ChainIteratorStopsAtLatest_EvenWhenFurtherNodesExist()
     {
         var test = ConsumptionLoopTestContext.Create();
 
-        // Chain: tick 1 → 2 → 3.  Tick 3 is the tail — nothing linked after it.
         var tick0 = test.CreatePublishedSnapshot(tick: 0);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
+        // Build chain: tick 1 → 2 → 3, publish tick 3 as Latest.
+        // Then link a tick 4 beyond Latest to prove the iterator doesn't see it.
         var chain = test.CreatePublishedChain(startTick: 1, endTick: 3);
         tick0.SetNext(chain[0]);
+
+        var beyondLatest = test.CreateUnpublishedSnapshot(tick: 4);
+        chain[^1].SetNext(beyondLatest);
 
         RenderFrame? capturedFrame = null;
         test.RendererState.BeforeRender = frame => capturedFrame = frame;
@@ -417,7 +417,11 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.NotNull(capturedFrame);
-        Assert.Null(capturedFrame.Value.Latest.Next);
+        var ticks = new List<int>();
+        foreach (var node in capturedFrame.Value.Chain)
+            ticks.Add(node.TickNumber);
+
+        Assert.Equal([0, 1, 2, 3], ticks);
     }
 
     [Fact]
@@ -588,6 +592,14 @@ public sealed class ConsumptionLoopTests
             var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
             snapshot.Initialize(image, tick);
             this.Shared.LatestSnapshot = snapshot;
+            return snapshot;
+        }
+
+        public WorldSnapshot CreateUnpublishedSnapshot(int tick)
+        {
+            var image = Assert.IsType<WorldImage>(this.Memory.RentImage());
+            var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
+            snapshot.Initialize(image, tick);
             return snapshot;
         }
 

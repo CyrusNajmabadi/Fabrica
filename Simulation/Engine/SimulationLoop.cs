@@ -203,7 +203,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
                && _oldestSnapshot.TickNumber < consumptionEpoch)
         {
             var toProcess = _oldestSnapshot;
-            _oldestSnapshot = toProcess.Next;
+            _oldestSnapshot = toProcess.NextInChain;
 
             if (_memory.PinnedVersions.IsPinned(toProcess.TickNumber))
             {
