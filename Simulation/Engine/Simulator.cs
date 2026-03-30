@@ -11,7 +11,8 @@ namespace Simulation.Engine;
 ///
 ///     1. PREPARE — each worker's <see cref="WorkerResources.PrepareForTick"/>
 ///        clears per-tick accumulation state.
-///     2. SET UP — previous and next images are written to each worker.
+///     2. SET UP — previous and next images and the cancellation token are
+///        written to each worker.
 ///     3. SIGNAL — all workers are woken from their park state.
 ///     4. JOIN — the calling thread waits on each worker's done signal
 ///        in turn.  Every worker runs in parallel; the sequential wait
@@ -24,6 +25,12 @@ namespace Simulation.Engine;
 ///   Because the Simulator always joins all workers before returning,
 ///   the calling thread sees a fully-consistent next image with all
 ///   reference counts correct.
+///
+/// CANCELLATION
+///   The engine's <see cref="CancellationToken"/> flows through AdvanceTick
+///   to each worker, allowing long-running tick work to exit early when
+///   the engine shuts down.  Workers also check the token after waking
+///   from their park state.
 ///
 /// WORKER OWNERSHIP
 ///   Each <see cref="SimulationWorker"/> owns a dedicated
@@ -59,7 +66,7 @@ internal sealed class Simulator : IDisposable
     /// all have completed.  After join, performs deferred ref-counting
     /// on shared subtree nodes created by workers.
     /// </summary>
-    public void AdvanceTick(WorldImage previous, WorldImage next)
+    public void AdvanceTick(WorldImage previous, WorldImage next, CancellationToken cancellationToken)
     {
         if (_workers.Length == 0)
             return;
@@ -69,6 +76,7 @@ internal sealed class Simulator : IDisposable
             worker.Resources.PrepareForTick();
             worker.PreviousImage = previous;
             worker.NextImage = next;
+            worker.CancellationToken = cancellationToken;
         }
 
         foreach (var worker in _workers)

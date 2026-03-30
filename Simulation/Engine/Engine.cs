@@ -162,7 +162,7 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         TSaveRunner saveRunner,
         TSaver saver,
         TRenderer renderer,
-        int workerCount = 0)
+        int workerCount)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();

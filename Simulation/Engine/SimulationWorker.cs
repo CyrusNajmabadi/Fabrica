@@ -12,13 +12,19 @@ namespace Simulation.Engine;
 ///     1. Thread parks on its go signal (ManualResetEventSlim), consuming
 ///        no CPU while idle.
 ///     2. The <see cref="Simulator"/> sets up the worker's input data
-///        (previous image, next image), prepares resources, and calls
-///        <see cref="Signal"/>.
+///        (previous image, next image, cancellation token), prepares
+///        resources, and calls <see cref="Signal"/>.
 ///     3. The worker wakes, performs its computation using its own
 ///        <see cref="Resources"/>, then sets its done signal.
 ///     4. The Simulator calls <see cref="WaitForCompletion"/> to block
 ///        until the worker finishes.
 ///     5. The worker loops back to step 1.
+///
+/// CANCELLATION
+///   The engine's <see cref="CancellationToken"/> is written to each worker
+///   by the Simulator before every tick dispatch.  Workers check it after
+///   waking and pass it through to <see cref="ExecuteTick"/> so that
+///   long-running tick work can exit early when the engine shuts down.
 ///
 /// OWNERSHIP
 ///   Each worker exclusively owns a <see cref="WorkerResources"/> instance.
@@ -27,7 +33,7 @@ namespace Simulation.Engine;
 ///
 /// SHUTDOWN
 ///   The <see cref="Simulator"/> manages worker shutdown: it sets the
-///   volatile shutdown flag, unblocks the go signal, and joins the thread.
+///   shutdown flag, unblocks the go signal, and joins the thread.
 ///   Workers do not implement IDisposable — the Simulator owns their
 ///   lifecycle.
 /// </summary>
@@ -45,6 +51,7 @@ internal sealed class SimulationWorker
     // signal pair (set-before-signal / read-after-wait).
     internal WorldImage? PreviousImage { get; set; }
     internal WorldImage? NextImage { get; set; }
+    internal CancellationToken CancellationToken { get; set; }
 
     public SimulationWorker(WorkerResources resources, int workerIndex)
     {
@@ -62,7 +69,7 @@ internal sealed class SimulationWorker
         while (true)
         {
             _goSignal.Wait();
-            if (_shutdown)
+            if (_shutdown || this.CancellationToken.IsCancellationRequested)
                 return;
             _goSignal.Reset();
 
@@ -77,12 +84,13 @@ internal sealed class SimulationWorker
         // TODO: actual per-worker tick computation.
         // Read PreviousImage (immutable), write into NextImage partition,
         // log new shared nodes into Resources.CreatedNodes.
+        // Check CancellationToken for early exit during long work.
     }
 
     /// <summary>
     /// Wakes the worker thread to begin its next tick.
-    /// Caller must have written PreviousImage/NextImage and called
-    /// <see cref="WorkerResources.PrepareForTick"/> before this.
+    /// Caller must have written PreviousImage/NextImage/CancellationToken
+    /// and called <see cref="WorkerResources.PrepareForTick"/> before this.
     /// </summary>
     internal void Signal()
     {
