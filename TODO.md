@@ -26,8 +26,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Quality / Tooling
 
-- [ ] Coverage tooling — no Coverlet or equivalent configured; would help identify gaps as the codebase grows
-- [ ] CI pipeline (GitHub Actions or similar)
 - [ ] Consider `Directory.Build.props` for shared project settings as more projects are added
 
 ## Documentation
@@ -54,3 +52,5 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 ## Quality / Tooling
 
 - [x] `.editorconfig` for consistent formatting — rules for `var`, expression bodies, braces, `this.` qualification, naming; all elevated to warnings ([8b0d326](https://github.com/CyrusNajmabadi/Fabrica/commit/8b0d326), [cc97720](https://github.com/CyrusNajmabadi/Fabrica/commit/cc97720))
+- [x] Coverage tooling — Coverlet collector added to test project; coverage uploaded to Codecov with badge on README ([7fe7d64](https://github.com/CyrusNajmabadi/Fabrica/commit/7fe7d64), [1ca02ed](https://github.com/CyrusNajmabadi/Fabrica/commit/1ca02ed))
+- [x] CI pipeline — GitHub Actions workflow with separate build and test checks; coverage summary in run page ([7fe7d64](https://github.com/CyrusNajmabadi/Fabrica/commit/7fe7d64), [1ca02ed](https://github.com/CyrusNajmabadi/Fabrica/commit/1ca02ed))
