@@ -14,7 +14,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
 - [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationWorker.ExecuteTick()` (thread machinery and dispatch cycle are in place)
 - [ ] Thread pinning on macOS — current `ThreadPinning` supports Windows/Linux; macOS needs `thread_policy_set` with `THREAD_AFFINITY_POLICY` for hint-based co-location
-- [ ] Thread pinning for >64 cores — `SetThreadGroupAffinity` on Windows, larger `cpu_set_t` on Linux
+- [ ] Thread pinning for >64 cores (low priority) — workers beyond index 63 simply run unpinned; would need `SetThreadGroupAffinity` on Windows, larger `cpu_set_t` on Linux
 - [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
 
 ## Testing
