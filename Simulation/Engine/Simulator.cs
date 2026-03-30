@@ -45,6 +45,14 @@ namespace Simulation.Engine;
 /// </summary>
 internal sealed class Simulator : IDisposable
 {
+    // Stack-local buffer for collecting WaitHandles during construction.
+    // 1024 handles covers even extreme core counts (8 KB on the stack).
+    [System.Runtime.CompilerServices.InlineArray(1024)]
+    private struct WaitHandleBuffer
+    {
+        private WaitHandle _element;
+    }
+
     private readonly SimulationWorker[] _workers;
     private readonly WaitHandleBatch _doneBatch;
 
@@ -55,14 +63,14 @@ internal sealed class Simulator : IDisposable
 
         _workers = new SimulationWorker[workerCount];
 
-        var doneEvents = new WaitHandle[workerCount];
+        WaitHandleBuffer buffer = default;
         for (var i = 0; i < workerCount; i++)
         {
             _workers[i] = new SimulationWorker(new WorkerResources(), i);
-            doneEvents[i] = _workers[i].DoneEvent;
+            buffer[i] = _workers[i].DoneEvent;
         }
 
-        _doneBatch = new WaitHandleBatch(doneEvents);
+        _doneBatch = new WaitHandleBatch(((ReadOnlySpan<WaitHandle>)buffer)[..workerCount]);
     }
 
     public int WorkerCount => _workers.Length;

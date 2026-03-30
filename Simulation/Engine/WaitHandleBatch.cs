@@ -18,7 +18,7 @@ internal sealed class WaitHandleBatch
 
     private readonly WaitHandle[][] _chunks;
 
-    public WaitHandleBatch(WaitHandle[] handles)
+    public WaitHandleBatch(ReadOnlySpan<WaitHandle> handles)
     {
         var chunkCount = (handles.Length + MaxHandlesPerChunk - 1) / MaxHandlesPerChunk;
         _chunks = new WaitHandle[chunkCount][];
@@ -28,7 +28,7 @@ internal sealed class WaitHandleBatch
             var start = i * MaxHandlesPerChunk;
             var length = Math.Min(MaxHandlesPerChunk, handles.Length - start);
             _chunks[i] = new WaitHandle[length];
-            Array.Copy(handles, start, _chunks[i], 0, length);
+            handles.Slice(start, length).CopyTo(_chunks[i]);
         }
     }
 
