@@ -11,7 +11,7 @@ namespace Simulation.Engine;
 ///   As WorldImage gains real state (belts, machines, subtree nodes),
 ///   this class will hold:
 ///     • Per-type ObjectPools for local allocation without contention.
-///     • A "created nodes" list for deferred ref-counting — the Simulator
+///     • A "created nodes" list for deferred ref-counting — the SimulationCoordinator
 ///       walks each worker's list after all workers complete and performs
 ///       AddRef calls on shared subtree nodes from a single thread.
 ///
@@ -28,7 +28,7 @@ internal sealed class WorkerResources
 
     /// <summary>
     /// Resets per-tick state in preparation for a new tick dispatch.
-    /// Called by the <see cref="Simulator"/> before signaling workers.
+    /// Called by the <see cref="SimulationCoordinator"/> before signaling workers.
     /// </summary>
     internal void PrepareForTick()
     {

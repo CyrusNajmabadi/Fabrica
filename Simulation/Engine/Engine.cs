@@ -96,8 +96,9 @@ namespace Simulation.Engine;
 ///    Constraint: all workers must finish before DispatchFrame returns, because
 ///    ConsumptionEpoch advances immediately afterward and the simulation may
 ///    then reclaim 'previous' on the very next cleanup pass.
-///    Render workers are pinned to cores starting after the simulation workers
-///    (offset = simulationWorkerCount) to avoid overlap.
+///    Both simulation and render workers pin to the same core range (0..N-1).
+///    When one group is idle (e.g. simulation is throttled), the OS scheduler
+///    naturally gives the other group full CPU time.
 ///
 ///  TEMPORAL DECOUPLING
 ///    Rendering always operates on already-computed, immutable snapshots.
@@ -144,13 +145,13 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     where TSaver : struct, ISaver
     where TRenderer : struct, IRenderer
 {
-    private readonly Simulator _simulator;
+    private readonly SimulationCoordinator _simulator;
     private readonly RenderCoordinator _renderCoordinator;
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
     private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _consumptionLoop;
 
     public Engine(
-        Simulator simulator,
+        SimulationCoordinator simulator,
         RenderCoordinator renderCoordinator,
         SimulationLoop<TClock, TWaiter> simulationLoop,
         ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
@@ -175,8 +176,8 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
-        var simulator = new Simulator(simulationWorkerCount);
-        var renderCoordinator = new RenderCoordinator(renderWorkerCount, coreIndexOffset: simulationWorkerCount);
+        var simulator = new SimulationCoordinator(simulationWorkerCount);
+        var renderCoordinator = new RenderCoordinator(renderWorkerCount);
 
         return new Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
             simulator,

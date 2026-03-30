@@ -140,7 +140,7 @@ public sealed class LoopStressHarnessTests
             var simulationLoop = new SimulationLoop<TestRecordingClock, TestRecordingWaiter>(
                 memory,
                 shared,
-                new Simulator(1),
+                new SimulationCoordinator(1),
                 clock,
                 new TestRecordingWaiter(waiterState));
             var consumptionLoop = new ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestNoOpRenderer>(

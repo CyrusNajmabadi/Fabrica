@@ -46,7 +46,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [x] Time-based backpressure — tick-epoch gap measured in nanoseconds with a 100ms low water mark (soft exponential delay) and a 2s hard ceiling (simulation blocks until consumption catches up); replaces pool-availability-based throttling ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] SimulationWorker stub — design placeholder documenting per-worker pools, created-nodes list for deferred ref-counting, and the threading contract for future multi-threaded simulation ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
 - [x] Save overlap — analyzed and confirmed as a non-issue: `NextSaveAtTick` is set to 0 before dispatch and only rescheduled in the save task's `finally` block, so no second save can trigger while one is in flight
-- [x] Generic `ThreadWorker<TState, TExecutor>` refactor — extracted thread park/signal loop, shutdown, and pinning into reusable generic infrastructure (`ThreadWorker`, `WorkerGroup`, `IThreadExecutor`); `SimulationWorker` deleted and replaced by `SimulationExecutor` + generic worker; `RenderCoordinator`/`RenderExecutor` built on the same infrastructure for parallel rendering
+- [x] Generic `ThreadWorker<TState, TExecutor>` refactor — extracted thread park/signal loop, shutdown, and pinning into reusable generic infrastructure (`ThreadWorker`, `WorkerGroup`, `IThreadExecutor`); `SimulationWorker` deleted and replaced by `SimulationExecutor` + generic worker; `RenderCoordinator`/`RenderExecutor` built on the same infrastructure for parallel rendering; `Simulator` renamed to `SimulationCoordinator` for naming consistency
 
 ## Testing
 

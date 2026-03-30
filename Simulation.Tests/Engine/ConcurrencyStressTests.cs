@@ -15,7 +15,7 @@ public sealed class ConcurrencyStressTests
     {
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
+        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
         RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 0);
 
@@ -29,7 +29,7 @@ public sealed class ConcurrencyStressTests
     {
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
+        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
         RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 50);
 
@@ -54,7 +54,7 @@ public sealed class ConcurrencyStressTests
     {
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
+        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
         var stopwatch = Stopwatch.StartNew();
         RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 0);
@@ -71,7 +71,7 @@ public sealed class ConcurrencyStressTests
         var workerCount = Math.Max(4, Environment.ProcessorCount);
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var simulator = new Simulator(workerCount);
+        var simulator = new SimulationCoordinator(workerCount);
 
         RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 0);
 
@@ -86,7 +86,7 @@ public sealed class ConcurrencyStressTests
         var metrics = new TestStressMetrics();
         var saveMetrics = new TestSaveMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
+        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
         RunEngineWithSaves(metrics, saveMetrics, simulator, cancellationSource.Token);
 
@@ -101,7 +101,7 @@ public sealed class ConcurrencyStressTests
 
     private static void RunEngine(
         TestStressMetrics metrics,
-        Simulator simulator,
+        SimulationCoordinator simulator,
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
@@ -121,7 +121,7 @@ public sealed class ConcurrencyStressTests
     private static void RunEngineWithSaves(
         TestStressMetrics metrics,
         TestSaveMetrics saveMetrics,
-        Simulator simulator,
+        SimulationCoordinator simulator,
         CancellationToken cancellationToken)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
@@ -141,7 +141,7 @@ public sealed class ConcurrencyStressTests
     private static void RunBothLoops<TSaveRunner, TSaver>(
         SimulationLoop<TestStressClock, ThreadWaiter> simulationLoop,
         ConsumptionLoop<TestStressClock, ThreadWaiter, TSaveRunner, TSaver, TestInvariantCheckingRenderer> consumptionLoop,
-        Simulator simulator,
+        SimulationCoordinator simulator,
         CancellationToken cancellationToken,
         TestStressMetrics metrics)
         where TSaveRunner : struct, ISaveRunner

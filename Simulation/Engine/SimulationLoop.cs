@@ -61,7 +61,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 {
     private readonly MemorySystem _memory;
     private readonly SharedState _shared;
-    private readonly Simulator _simulator;
+    private readonly SimulationCoordinator _simulator;
     private readonly TClock _clock;
     private readonly TWaiter _waiter;
 
@@ -73,7 +73,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     // HashSet gives O(1) add, O(1) remove-per-item, and prevents accidental duplicates.
     private readonly HashSet<WorldSnapshot> _pinnedQueue = new();
 
-    public SimulationLoop(MemorySystem memory, SharedState shared, Simulator simulator, TClock clock, TWaiter waiter)
+    public SimulationLoop(MemorySystem memory, SharedState shared, SimulationCoordinator simulator, TClock clock, TWaiter waiter)
     {
         _memory = memory;
         _shared = shared;
