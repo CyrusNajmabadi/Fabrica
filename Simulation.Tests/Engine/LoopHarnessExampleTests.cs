@@ -601,7 +601,7 @@ public sealed class LoopHarnessExampleTests
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(frame.Current.TickNumber);
+            _state.RenderedTicks.Add(frame.Latest.TickNumber);
         }
     }
 }

@@ -554,7 +554,7 @@ public sealed class ConsumptionLoopTests
             _state.BeforeRender?.Invoke(frame);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(frame.Current.TickNumber);
+            _state.RenderedTicks.Add(frame.Latest.TickNumber);
             _state.RenderedEngineStatuses.Add(frame.EngineStatus);
         }
     }
