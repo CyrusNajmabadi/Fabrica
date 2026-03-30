@@ -24,6 +24,11 @@ namespace Simulation.Engine;
 ///   during the Render call — the renderer can walk <c>Previous.Next</c>
 ///   repeatedly to visit every intermediate snapshot if desired.
 ///
+///   IMPORTANT: <see cref="Latest"/>.<c>Next</c> MUST NOT be read.  The
+///   simulation thread may concurrently link a new node after Latest, so the
+///   pointer is unreliable without an additional acquire fence.  Treat Latest
+///   as the exclusive end of the walkable chain.
+///
 /// INTERPOLATION MODEL
 ///   The consumption loop holds two distinct snapshot references and rotates
 ///   them when the simulation publishes new data: the old Latest becomes
@@ -37,6 +42,10 @@ namespace Simulation.Engine;
 ///
 ///   On the very first frame (before two distinct snapshots exist),
 ///   <see cref="Previous"/> is null.  The renderer should display Latest as-is.
+///
+///   INVARIANT: when <see cref="Previous"/> is non-null, it is always a
+///   different object reference from <see cref="Latest"/>.  The consumption
+///   loop's rotation guard guarantees this.
 /// </summary>
 internal readonly struct RenderFrame
 {
