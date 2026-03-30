@@ -12,7 +12,8 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 ## Engine / Architecture
 
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
-- [ ] Multi-threaded simulation — worker pool for tick computation (`SimulationWorker` stub exists; needs thread management)
+- [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationWorker.ExecuteTick()` (thread machinery and dispatch cycle are in place)
+- [ ] Thread pinning — pin `SimulationWorker` threads to specific cores for cache affinity
 - [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
 
 ## Testing

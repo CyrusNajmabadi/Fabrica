@@ -1,46 +1,116 @@
-using Simulation.Memory;
+using Simulation.World;
 
 namespace Simulation.Engine;
 
 /// <summary>
-/// Design stub for a future per-worker simulation context.
+/// A long-lived simulation worker thread that parks between ticks and
+/// wakes on signal to perform its portion of the tick computation.
 ///
-/// MULTI-THREADED SIMULATION MODEL
-///   The simulation manager partitions tick computation across N workers, each
-///   running on its own thread.  Every worker owns:
+/// THREADING MODEL
+///   Each worker runs a dedicated background thread in a park/signal loop:
 ///
-///     • A dedicated <see cref="ObjectPool{T}"/> for allocating tree nodes (and
-///       any other per-tick objects) without contention.  Because pools are
-///       single-threaded, no locking or interlocked operations are needed on
-///       the allocation fast path.
+///     1. Thread parks on its go signal (ManualResetEventSlim), consuming
+///        no CPU while idle.
+///     2. The <see cref="Simulator"/> sets up the worker's input data
+///        (previous image, next image), prepares resources, and calls
+///        <see cref="Signal"/>.
+///     3. The worker wakes, performs its computation using its own
+///        <see cref="Resources"/>, then sets its done signal.
+///     4. The Simulator calls <see cref="WaitForCompletion"/> to block
+///        until the worker finishes.
+///     5. The worker loops back to step 1.
 ///
-///     • A "created nodes" list that records every shared object the worker
-///       allocated during the current tick.  After all workers complete, the
-///       main simulation thread walks each worker's list and performs AddRef
-///       calls on behalf of the worker.  This deferred ref-counting keeps
-///       reference-count mutations on a single thread, avoiding interlocked
-///       operations entirely.
+/// OWNERSHIP
+///   Each worker exclusively owns a <see cref="WorkerResources"/> instance.
+///   During tick execution, the worker may only access its own resources
+///   and the read-only previous image — no shared mutable state is touched.
 ///
-/// THREADING CONTRACT
-///   • During tick computation, a worker may only touch its own pool and its
-///     own created-nodes list.  No shared mutable state is accessed.
-///   • Between ticks (the "join" phase), only the main simulation thread
-///     reads the created-nodes lists and adjusts reference counts.
-///   • Workers must not carry references to objects from a previous tick's
-///     pool — each tick starts with a clean created-nodes list.
-///
-/// BACKPRESSURE
-///   Backpressure is driven by the tick-epoch gap measured on the main
-///   simulation thread (see <see cref="SimulationPressure"/>).  Workers
-///   themselves do not throttle; the main thread simply delays before
-///   dispatching the next tick to all workers.
-///
-/// This class is a placeholder — it contains no thread management yet.
-/// Its purpose is to document the intended ownership model and provide a
-/// home for per-worker state as the multi-threaded simulation is built out.
+/// SHUTDOWN
+///   The <see cref="Simulator"/> manages worker shutdown: it sets the
+///   volatile shutdown flag, unblocks the go signal, and joins the thread.
+///   Workers do not implement IDisposable — the Simulator owns their
+///   lifecycle.
 /// </summary>
 internal sealed class SimulationWorker
 {
-    // Future: ObjectPool<TreeNode> _nodePool;
-    // Future: List<TreeNode> _createdNodes;
+    private readonly Thread _thread;
+    private readonly ManualResetEventSlim _goSignal = new(false);
+    private readonly ManualResetEventSlim _doneSignal = new(false);
+    private volatile bool _shutdown;
+
+    internal WorkerResources Resources { get; }
+
+    // Written by the Simulator before each Signal(); read by the worker
+    // thread during ExecuteTick().  No synchronisation needed beyond the
+    // signal pair (set-before-signal / read-after-wait).
+    internal WorldImage? PreviousImage { get; set; }
+    internal WorldImage? NextImage { get; set; }
+
+    public SimulationWorker(WorkerResources resources, int workerIndex)
+    {
+        this.Resources = resources;
+        _thread = new Thread(this.ThreadLoop)
+        {
+            Name = $"SimWorker-{workerIndex}",
+            IsBackground = true,
+        };
+        _thread.Start();
+    }
+
+    private void ThreadLoop()
+    {
+        while (true)
+        {
+            _goSignal.Wait();
+            if (_shutdown)
+                return;
+            _goSignal.Reset();
+
+            this.ExecuteTick();
+
+            _doneSignal.Set();
+        }
+    }
+
+    private void ExecuteTick()
+    {
+        // TODO: actual per-worker tick computation.
+        // Read PreviousImage (immutable), write into NextImage partition,
+        // log new shared nodes into Resources.CreatedNodes.
+    }
+
+    /// <summary>
+    /// Wakes the worker thread to begin its next tick.
+    /// Caller must have written PreviousImage/NextImage and called
+    /// <see cref="WorkerResources.PrepareForTick"/> before this.
+    /// </summary>
+    internal void Signal()
+    {
+        _doneSignal.Reset();
+        _goSignal.Set();
+    }
+
+    /// <summary>
+    /// Blocks until the worker has finished the current tick.
+    /// Returns immediately if the worker is already idle.
+    /// </summary>
+    internal void WaitForCompletion() =>
+        _doneSignal.Wait();
+
+    /// <summary>
+    /// Sets the shutdown flag and unblocks the thread so it can exit.
+    /// Called by <see cref="Simulator.Dispose"/> — must be followed by
+    /// <see cref="Join"/> to ensure the thread has terminated.
+    /// </summary>
+    internal void Shutdown()
+    {
+        _shutdown = true;
+        _goSignal.Set();
+    }
+
+    /// <summary>
+    /// Blocks until the worker thread has exited.
+    /// </summary>
+    internal void Join() =>
+        _thread.Join();
 }

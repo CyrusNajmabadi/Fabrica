@@ -61,6 +61,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 {
     private readonly MemorySystem _memory;
     private readonly SharedState _shared;
+    private readonly Simulator _simulator;
     private readonly TClock _clock;
     private readonly TWaiter _waiter;
 
@@ -72,10 +73,11 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     // HashSet gives O(1) add, O(1) remove-per-item, and prevents accidental duplicates.
     private readonly HashSet<WorldSnapshot> _pinnedQueue = new();
 
-    public SimulationLoop(MemorySystem memory, SharedState shared, TClock clock, TWaiter waiter)
+    public SimulationLoop(MemorySystem memory, SharedState shared, Simulator simulator, TClock clock, TWaiter waiter)
     {
         _memory = memory;
         _shared = shared;
+        _simulator = simulator;
         _clock = clock;
         _waiter = waiter;
     }
@@ -158,7 +160,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         var snapshot = _memory.RentSnapshot();
 
         _currentTick++;
-        // TODO: advance world state into image
+        _simulator.AdvanceTick(_currentSnapshot!.Image, image);
 
         snapshot.Initialize(image, _currentTick);
         _currentSnapshot!.SetNext(snapshot);

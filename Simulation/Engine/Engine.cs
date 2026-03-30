@@ -139,13 +139,16 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     where TSaver : struct, ISaver
     where TRenderer : struct, IRenderer
 {
+    private readonly Simulator _simulator;
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
     private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _consumptionLoop;
 
     public Engine(
+        Simulator simulator,
         SimulationLoop<TClock, TWaiter> simulationLoop,
         ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
     {
+        _simulator = simulator;
         _simulationLoop = simulationLoop;
         _consumptionLoop = consumptionLoop;
     }
@@ -158,13 +161,16 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         TWaiter waiter,
         TSaveRunner saveRunner,
         TSaver saver,
-        TRenderer renderer)
+        TRenderer renderer,
+        int workerCount = 0)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
+        var simulator = new Simulator(workerCount);
 
         return new Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
-            new SimulationLoop<TClock, TWaiter>(memory, shared, clock, waiter),
+            simulator,
+            new SimulationLoop<TClock, TWaiter>(memory, shared, simulator, clock, waiter),
             new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
                 memory,
                 shared,
@@ -180,22 +186,29 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     /// </summary>
     public void Run(CancellationToken cancellationToken)
     {
-        var simulationThread = new Thread(() => _simulationLoop.Run(cancellationToken))
+        try
         {
-            Name = "Simulation",
-            IsBackground = false,
-        };
+            var simulationThread = new Thread(() => _simulationLoop.Run(cancellationToken))
+            {
+                Name = "Simulation",
+                IsBackground = false,
+            };
 
-        var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
+            var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
+            {
+                Name = "Consumption",
+                IsBackground = false,
+            };
+
+            simulationThread.Start();
+            consumptionThread.Start();
+
+            simulationThread.Join();
+            consumptionThread.Join();
+        }
+        finally
         {
-            Name = "Consumption",
-            IsBackground = false,
-        };
-
-        simulationThread.Start();
-        consumptionThread.Start();
-
-        simulationThread.Join();
-        consumptionThread.Join();
+            _simulator.Dispose();
+        }
     }
 }

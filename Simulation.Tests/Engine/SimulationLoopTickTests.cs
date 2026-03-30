@@ -431,7 +431,7 @@ public sealed class SimulationLoopTickTests
         {
             var memory = new MemorySystem(poolSize);
             var shared = new SharedState();
-            var loop = new SimulationLoop<TClock, TWaiter>(memory, shared, clock, waiter);
+            var loop = new SimulationLoop<TClock, TWaiter>(memory, shared, new Simulator(0), clock, waiter);
             return new SimulationLoopTestContext<TClock, TWaiter>(memory, shared, waiterState, loop);
         }
     }
