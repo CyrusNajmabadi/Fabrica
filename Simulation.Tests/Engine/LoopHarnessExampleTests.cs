@@ -406,7 +406,7 @@ public sealed class LoopHarnessExampleTests
             var saveRunner = new RecordingSaveRunner(saveRunnerState);
             var saver = new RecordingSaver(saverState);
             var renderer = new RecordingRenderer(rendererState);
-            var simulationLoop = new SimulationLoop<RecordingClock, NoWaiter>(memory, shared, clock, waiter);
+            var simulationLoop = new SimulationLoop<RecordingClock, NoWaiter>(memory, shared, new Simulator(0), clock, waiter);
             var consumptionLoop = new ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>(
                 memory,
                 shared,
