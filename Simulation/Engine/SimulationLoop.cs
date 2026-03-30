@@ -115,7 +115,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         while (accumulator >= SimulationConstants.TickDurationNanoseconds)
         {
             this.ApplyPressureDelay(cancellationToken);
-            this.Tick();
+            this.Tick(cancellationToken);
             this.CleanupStaleSnapshots();
             accumulator -= SimulationConstants.TickDurationNanoseconds;
         }
@@ -154,13 +154,13 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// makes all image writes visible to the consumption thread's subsequent
     /// acquire-read).
     /// </summary>
-    private void Tick()
+    private void Tick(CancellationToken cancellationToken)
     {
         var image = _memory.RentImage();
         var snapshot = _memory.RentSnapshot();
 
         _currentTick++;
-        _simulator.AdvanceTick(_currentSnapshot!.Image, image);
+        _simulator.AdvanceTick(_currentSnapshot!.Image, image, cancellationToken);
 
         snapshot.Initialize(image, _currentTick);
         _currentSnapshot!.SetNext(snapshot);
@@ -285,7 +285,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
         public void Bootstrap() => _loop.Bootstrap();
 
-        public void Tick() => _loop.Tick();
+        public void Tick() => _loop.Tick(CancellationToken.None);
 
         public void CleanupStaleSnapshots() => _loop.CleanupStaleSnapshots();
 
