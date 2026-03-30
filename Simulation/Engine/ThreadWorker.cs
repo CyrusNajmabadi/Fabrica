@@ -1,0 +1,131 @@
+namespace Simulation.Engine;
+
+/// <summary>
+/// A long-lived worker thread that parks between dispatches and wakes on signal
+/// to perform domain-specific work via its <typeparamref name="TExecutor"/>.
+///
+/// THREADING MODEL
+///   Each worker runs a dedicated background thread in a park/signal loop:
+///
+///     1. Thread parks on its go signal (<see cref="AutoResetEvent"/>),
+///        consuming no CPU while idle.
+///     2. The coordinator sets up input data (<see cref="State"/>,
+///        <see cref="CancellationToken"/>), prepares the executor via
+///        <see cref="IThreadExecutor{TState}.Prepare"/>, and calls
+///        <see cref="Signal"/>.
+///     3. The worker wakes (go signal auto-resets), calls
+///        <see cref="IThreadExecutor{TState}.Execute"/> on its executor,
+///        then sets its done signal.
+///     4. The coordinator waits on all done signals via
+///        <see cref="WaitHandleBatch"/>.
+///     5. The worker loops back to step 1.
+///
+///   Both signals are <see cref="AutoResetEvent"/>: the go signal auto-resets
+///   when the worker wakes, and the done signals auto-reset when the
+///   coordinator's <see cref="WaitHandle.WaitAll"/> returns.
+///
+/// THREAD PINNING
+///   At startup the worker attempts to pin itself to a specific logical core
+///   via <see cref="ThreadPinning"/>.  This is best-effort — pinning may fail
+///   silently on restricted environments or unsupported platforms.
+///
+/// GENERIC SPECIALIZATION
+///   Both <typeparamref name="TState"/> and <typeparamref name="TExecutor"/>
+///   are constrained to struct, so the JIT specializes each instantiation.
+///   The executor is stored by value — no heap allocation, no vtable dispatch.
+/// </summary>
+internal sealed class ThreadWorker<TState, TExecutor>
+    where TState : struct
+    where TExecutor : struct, IThreadExecutor<TState>
+{
+    private readonly Thread _thread;
+    private readonly AutoResetEvent _goSignal = new(false);
+    private readonly AutoResetEvent _doneSignal = new(false);
+    private readonly int _coreIndex;
+    private volatile bool _shutdown;
+
+    private TExecutor _executor;
+    private TState _state;
+    private CancellationToken _cancellationToken;
+
+    internal AutoResetEvent DoneEvent => _doneSignal;
+
+    /// <summary>
+    /// Provides direct mutable access to the executor so the coordinator can
+    /// call <see cref="IThreadExecutor{TState}.Prepare"/> and inspect
+    /// executor-owned resources (e.g. created-nodes list) after join.
+    /// Returns by ref to avoid copying the struct.
+    /// </summary>
+    internal ref TExecutor Executor => ref _executor;
+
+    internal TState State
+    {
+        set => _state = value;
+    }
+
+    internal CancellationToken CancellationToken
+    {
+        set => _cancellationToken = value;
+    }
+
+    public ThreadWorker(TExecutor executor, int coreIndex, string threadName)
+    {
+        _executor = executor;
+        _coreIndex = coreIndex;
+        _thread = new Thread(this.ThreadLoop)
+        {
+            Name = threadName,
+            IsBackground = true,
+        };
+        _thread.Start();
+    }
+
+    private void ThreadLoop()
+    {
+        ThreadPinning.TryPinCurrentThread(_coreIndex);
+
+        while (true)
+        {
+            _goSignal.WaitOne();
+            if (_shutdown || _cancellationToken.IsCancellationRequested)
+                return;
+
+            _executor.Execute(in _state, _cancellationToken);
+
+            _doneSignal.Set();
+        }
+    }
+
+    /// <summary>
+    /// Wakes the worker thread to begin its next dispatch.
+    /// The go signal auto-resets when the worker wakes.
+    /// </summary>
+    internal void Signal() =>
+        _goSignal.Set();
+
+    /// <summary>
+    /// Sets the shutdown flag and unblocks the thread so it can exit.
+    /// Must be followed by <see cref="Join"/> to ensure the thread has terminated.
+    /// </summary>
+    internal void Shutdown()
+    {
+        _shutdown = true;
+        _goSignal.Set();
+    }
+
+    /// <summary>
+    /// Blocks until the worker thread has exited.
+    /// </summary>
+    internal void Join() =>
+        _thread.Join();
+
+    /// <summary>
+    /// Disposes OS handles for the go and done signals.
+    /// Call after the thread has been joined and no further waits will occur.
+    /// </summary>
+    internal void Cleanup()
+    {
+        _goSignal.Dispose();
+        _doneSignal.Dispose();
+    }
+}

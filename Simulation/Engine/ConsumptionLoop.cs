@@ -90,6 +90,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     private readonly TSaveRunner _saveRunner;
     private readonly TSaver _saver;
     private readonly TRenderer _renderer;
+    private readonly RenderCoordinator? _renderCoordinator;
 
     public ConsumptionLoop(
         MemorySystem memory,
@@ -98,7 +99,8 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         TWaiter waiter,
         TSaveRunner saveRunner,
         TSaver saver,
-        TRenderer renderer)
+        TRenderer renderer,
+        RenderCoordinator? renderCoordinator = null)
     {
         _memory = memory;
         _shared = shared;
@@ -107,6 +109,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         _saveRunner = saveRunner;
         _saver = saver;
         _renderer = renderer;
+        _renderCoordinator = renderCoordinator;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -153,7 +156,10 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
                 },
             };
 
-            _renderer.Render(in frame);
+            if (_renderCoordinator is not null)
+                _renderCoordinator.DispatchFrame(in frame, cancellationToken);
+            else
+                _renderer.Render(in frame);
 
             // Epoch protects both held snapshots.  When we have a previous,
             // set epoch to its tick — cleanup frees strictly below, so both
