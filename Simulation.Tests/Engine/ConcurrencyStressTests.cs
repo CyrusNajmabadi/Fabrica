@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -12,7 +13,7 @@ public sealed class ConcurrencyStressTests
     [Fact]
     public void SustainsHighThroughput_NoDeadlocks()
     {
-        var metrics = new StressMetrics();
+        var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
 
@@ -26,7 +27,7 @@ public sealed class ConcurrencyStressTests
     [Fact]
     public void BackpressureEngages_WhenConsumptionIsSlowedDown()
     {
-        var metrics = new StressMetrics();
+        var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
 
@@ -51,7 +52,7 @@ public sealed class ConcurrencyStressTests
     [Fact]
     public void GracefulShutdown_UnderLoad()
     {
-        var metrics = new StressMetrics();
+        var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
 
@@ -68,7 +69,7 @@ public sealed class ConcurrencyStressTests
     public void WorkerSignalParkCycle_SurvivesManyTicks()
     {
         var workerCount = Math.Max(4, Environment.ProcessorCount);
-        var metrics = new StressMetrics();
+        var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         var simulator = new Simulator(workerCount);
 
@@ -82,8 +83,8 @@ public sealed class ConcurrencyStressTests
     [Fact]
     public void SavePinning_AcrossThreadBoundaries()
     {
-        var metrics = new StressMetrics();
-        var saveMetrics = new SaveMetrics();
+        var metrics = new TestStressMetrics();
+        var saveMetrics = new TestSaveMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         var simulator = new Simulator(Math.Max(1, Environment.ProcessorCount - 1));
 
@@ -99,50 +100,50 @@ public sealed class ConcurrencyStressTests
     // ── Engine runners ───────────────────────────────────────────────────────
 
     private static void RunEngine(
-        StressMetrics metrics,
+        TestStressMetrics metrics,
         Simulator simulator,
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
-        var clock = new StressClock();
-        var renderer = new InvariantCheckingRenderer(metrics, renderDelayMilliseconds);
+        var clock = new TestStressClock();
+        var renderer = new TestInvariantCheckingRenderer(metrics, renderDelayMilliseconds);
 
-        var simulationLoop = new SimulationLoop<StressClock, ThreadWaiter>(
+        var simulationLoop = new SimulationLoop<TestStressClock, ThreadWaiter>(
             memory, shared, simulator, clock, new ThreadWaiter());
-        var consumptionLoop = new ConsumptionLoop<StressClock, ThreadWaiter, NoOpSaveRunner, NoOpSaver, InvariantCheckingRenderer>(
-            memory, shared, clock, new ThreadWaiter(), new NoOpSaveRunner(), new NoOpSaver(), renderer);
+        var consumptionLoop = new ConsumptionLoop<TestStressClock, ThreadWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestInvariantCheckingRenderer>(
+            memory, shared, clock, new ThreadWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), renderer);
 
         RunBothLoops(simulationLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
 
     private static void RunEngineWithSaves(
-        StressMetrics metrics,
-        SaveMetrics saveMetrics,
+        TestStressMetrics metrics,
+        TestSaveMetrics saveMetrics,
         Simulator simulator,
         CancellationToken cancellationToken)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState { NextSaveAtTick = 1 };
-        var clock = new StressClock();
-        var renderer = new InvariantCheckingRenderer(metrics, renderDelayMilliseconds: 0);
-        var saver = new SlowSaver(saveMetrics);
+        var clock = new TestStressClock();
+        var renderer = new TestInvariantCheckingRenderer(metrics, renderDelayMilliseconds: 0);
+        var saver = new TestSlowSaver(saveMetrics);
 
-        var simulationLoop = new SimulationLoop<StressClock, ThreadWaiter>(
+        var simulationLoop = new SimulationLoop<TestStressClock, ThreadWaiter>(
             memory, shared, simulator, clock, new ThreadWaiter());
-        var consumptionLoop = new ConsumptionLoop<StressClock, ThreadWaiter, TaskSaveRunner, SlowSaver, InvariantCheckingRenderer>(
+        var consumptionLoop = new ConsumptionLoop<TestStressClock, ThreadWaiter, TaskSaveRunner, TestSlowSaver, TestInvariantCheckingRenderer>(
             memory, shared, clock, new ThreadWaiter(), new TaskSaveRunner(), saver, renderer);
 
         RunBothLoops(simulationLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
 
     private static void RunBothLoops<TSaveRunner, TSaver>(
-        SimulationLoop<StressClock, ThreadWaiter> simulationLoop,
-        ConsumptionLoop<StressClock, ThreadWaiter, TSaveRunner, TSaver, InvariantCheckingRenderer> consumptionLoop,
+        SimulationLoop<TestStressClock, ThreadWaiter> simulationLoop,
+        ConsumptionLoop<TestStressClock, ThreadWaiter, TSaveRunner, TSaver, TestInvariantCheckingRenderer> consumptionLoop,
         Simulator simulator,
         CancellationToken cancellationToken,
-        StressMetrics metrics)
+        TestStressMetrics metrics)
         where TSaveRunner : struct, ISaveRunner
         where TSaver : struct, ISaver
     {
@@ -201,7 +202,7 @@ public sealed class ConcurrencyStressTests
 
     // ── Struct implementations ───────────────────────────────────────────────
 
-    private readonly struct StressClock : IClock
+    private readonly struct TestStressClock : IClock
     {
         public long NowNanoseconds
         {
@@ -215,12 +216,12 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private readonly struct InvariantCheckingRenderer : IRenderer
+    private readonly struct TestInvariantCheckingRenderer : IRenderer
     {
-        private readonly StressMetrics _metrics;
+        private readonly TestStressMetrics _metrics;
         private readonly int _renderDelayMilliseconds;
 
-        public InvariantCheckingRenderer(StressMetrics metrics, int renderDelayMilliseconds)
+        public TestInvariantCheckingRenderer(TestStressMetrics metrics, int renderDelayMilliseconds)
         {
             _metrics = metrics;
             _renderDelayMilliseconds = renderDelayMilliseconds;
@@ -235,21 +236,11 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private readonly struct NoOpSaveRunner : ISaveRunner
+    private readonly struct TestSlowSaver : ISaver
     {
-        public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction) { }
-    }
+        private readonly TestSaveMetrics _metrics;
 
-    private readonly struct NoOpSaver : ISaver
-    {
-        public void Save(WorldImage image, int tick) { }
-    }
-
-    private readonly struct SlowSaver : ISaver
-    {
-        private readonly SaveMetrics _metrics;
-
-        public SlowSaver(SaveMetrics metrics) => _metrics = metrics;
+        public TestSlowSaver(TestSaveMetrics metrics) => _metrics = metrics;
 
         public void Save(WorldImage image, int tick)
         {
@@ -268,7 +259,7 @@ public sealed class ConcurrencyStressTests
 
     // ── Metrics ──────────────────────────────────────────────────────────────
 
-    private sealed class StressMetrics
+    private sealed class TestStressMetrics
     {
         private long _framesRendered;
         private int _maxTickObserved;
@@ -316,7 +307,7 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private sealed class SaveMetrics
+    private sealed class TestSaveMetrics
     {
         internal int _savesCompleted;
         internal int _savesFailed;

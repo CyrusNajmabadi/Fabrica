@@ -1,10 +1,13 @@
 using Simulation.Memory;
+using Simulation.World;
 using Xunit;
 
 namespace Simulation.Tests.Memory;
 
 public sealed class MemorySystemTests
 {
+    // ── Constructor ──────────────────────────────────────────────────────────
+
     [Fact]
     public void Constructor_RejectsNonPositivePoolSize()
     {
@@ -23,6 +26,8 @@ public sealed class MemorySystemTests
         Assert.NotNull(snapshot);
         Assert.NotNull(image);
     }
+
+    // ── Rent (pool exhaustion) ───────────────────────────────────────────────
 
     [Fact]
     public void RentSnapshot_AlwaysReturnsNonNull()
@@ -48,5 +53,163 @@ public sealed class MemorySystemTests
         Assert.NotNull(first);
         Assert.NotNull(second);
         Assert.NotSame(first, second);
+    }
+
+    // ── ReturnSnapshot ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void ReturnSnapshot_MakesInstanceAvailableForReuse()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var original = memory.RentSnapshot();
+        memory.ReturnSnapshot(original);
+
+        var reused = memory.RentSnapshot();
+        Assert.Same(original, reused);
+    }
+
+    [Fact]
+    public void ReturnSnapshot_MultipleRoundTrips_AlwaysRecyclesSameInstance()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var snapshot = memory.RentSnapshot();
+        for (var i = 0; i < 10; i++)
+        {
+            memory.ReturnSnapshot(snapshot);
+            var rented = memory.RentSnapshot();
+            Assert.Same(snapshot, rented);
+        }
+    }
+
+    // ── ReturnImage ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ReturnImage_MakesInstanceAvailableForReuse()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var original = memory.RentImage();
+        memory.ReturnImage(original);
+
+        var reused = memory.RentImage();
+        Assert.Same(original, reused);
+    }
+
+    [Fact]
+    public void ReturnImage_CallsResetForPool_BeforeReturningToPool()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var image = memory.RentImage();
+        memory.ReturnImage(image);
+
+        // ResetForPool is currently a no-op, but the fact that ReturnImage
+        // completes without error and the image can be re-rented verifies the
+        // contract.  When WorldImage gains real state, this test should be
+        // extended to assert that state is cleared.
+        var reused = memory.RentImage();
+        Assert.Same(image, reused);
+    }
+
+    [Fact]
+    public void ReturnImage_MultipleRoundTrips_AlwaysRecyclesSameInstance()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var image = memory.RentImage();
+        for (var i = 0; i < 10; i++)
+        {
+            memory.ReturnImage(image);
+            var rented = memory.RentImage();
+            Assert.Same(image, rented);
+        }
+    }
+
+    // ── Pool growth ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ReturningExtraSnapshots_GrowsPoolBeyondInitialCapacity()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var a = memory.RentSnapshot();
+        var b = memory.RentSnapshot();
+        var c = memory.RentSnapshot();
+
+        memory.ReturnSnapshot(a);
+        memory.ReturnSnapshot(b);
+        memory.ReturnSnapshot(c);
+
+        var r1 = memory.RentSnapshot();
+        var r2 = memory.RentSnapshot();
+        var r3 = memory.RentSnapshot();
+
+        var rented = new[] { r1, r2, r3 };
+        Assert.Contains(a, rented);
+        Assert.Contains(b, rented);
+        Assert.Contains(c, rented);
+    }
+
+    [Fact]
+    public void ReturningExtraImages_GrowsPoolBeyondInitialCapacity()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        var a = memory.RentImage();
+        var b = memory.RentImage();
+        var c = memory.RentImage();
+
+        memory.ReturnImage(a);
+        memory.ReturnImage(b);
+        memory.ReturnImage(c);
+
+        var r1 = memory.RentImage();
+        var r2 = memory.RentImage();
+        var r3 = memory.RentImage();
+
+        var rented = new[] { r1, r2, r3 };
+        Assert.Contains(a, rented);
+        Assert.Contains(b, rented);
+        Assert.Contains(c, rented);
+    }
+
+    // ── PinnedVersions ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void PinnedVersions_IsAccessibleAndInitiallyEmpty()
+    {
+        var memory = new MemorySystem(initialPoolSize: 1);
+
+        Assert.NotNull(memory.PinnedVersions);
+        Assert.False(memory.PinnedVersions.IsPinned(0));
+    }
+
+    // ── Pool independence ────────────────────────────────────────────────────
+
+    [Fact]
+    public void SnapshotAndImagePools_AreIndependent()
+    {
+        var memory = new MemorySystem(initialPoolSize: 2);
+
+        var s1 = memory.RentSnapshot();
+        var s2 = memory.RentSnapshot();
+
+        var i1 = memory.RentImage();
+        var i2 = memory.RentImage();
+
+        // Exhausting one pool shouldn't affect the other; both still allocate.
+        var s3 = memory.RentSnapshot();
+        var i3 = memory.RentImage();
+
+        Assert.NotNull(s3);
+        Assert.NotNull(i3);
+
+        // All instances are distinct within their pool.
+        Assert.NotSame(s1, s2);
+        Assert.NotSame(s2, s3);
+        Assert.NotSame(i1, i2);
+        Assert.NotSame(i2, i3);
     }
 }

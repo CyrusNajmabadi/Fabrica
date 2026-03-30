@@ -1,6 +1,6 @@
 using Simulation.Engine;
 using Simulation.Memory;
-using Simulation.World;
+using Simulation.Tests.Helpers;
 using Xunit;
 
 namespace Simulation.Tests.Engine;
@@ -226,20 +226,20 @@ public sealed class BackpressureAdaptationTests
     private sealed class BackpressureHarness
     {
         private readonly SharedState _shared;
-        private readonly ClockState _clockState;
-        private readonly WaiterState _waiterState;
-        private readonly SimulationLoop<RecordingClock, RecordingWaiter>.TestAccessor _simulationAccessor;
-        private readonly ConsumptionLoop<RecordingClock, NoWaiter, NoOpSaveRunner, NoOpSaver, NoOpRenderer>.TestAccessor _consumptionAccessor;
+        private readonly TestClockState _clockState;
+        private readonly TestWaiterState _waiterState;
+        private readonly SimulationLoop<TestRecordingClock, TestRecordingWaiter>.TestAccessor _simulationAccessor;
+        private readonly ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>.TestAccessor _consumptionAccessor;
         private long _simulationLastTime;
         private long _simulationAccumulator;
         private int _totalPressureDelays;
 
         private BackpressureHarness(
             SharedState shared,
-            ClockState clockState,
-            WaiterState waiterState,
-            SimulationLoop<RecordingClock, RecordingWaiter>.TestAccessor simulationAccessor,
-            ConsumptionLoop<RecordingClock, NoWaiter, NoOpSaveRunner, NoOpSaver, NoOpRenderer>.TestAccessor consumptionAccessor)
+            TestClockState clockState,
+            TestWaiterState waiterState,
+            SimulationLoop<TestRecordingClock, TestRecordingWaiter>.TestAccessor simulationAccessor,
+            ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>.TestAccessor consumptionAccessor)
         {
             _shared = shared;
             _clockState = clockState;
@@ -262,14 +262,14 @@ public sealed class BackpressureAdaptationTests
         {
             var memory = new MemorySystem(512);
             var shared = new SharedState { NextSaveAtTick = 0 };
-            var clockState = new ClockState();
-            var waiterState = new WaiterState();
-            var clock = new RecordingClock(clockState);
+            var clockState = new TestClockState();
+            var waiterState = new TestWaiterState();
+            var clock = new TestRecordingClock(clockState);
 
-            var simulationLoop = new SimulationLoop<RecordingClock, RecordingWaiter>(
-                memory, shared, new Simulator(1), clock, new RecordingWaiter(waiterState));
-            var consumptionLoop = new ConsumptionLoop<RecordingClock, NoWaiter, NoOpSaveRunner, NoOpSaver, NoOpRenderer>(
-                memory, shared, clock, new NoWaiter(), new NoOpSaveRunner(), new NoOpSaver(), new NoOpRenderer());
+            var simulationLoop = new SimulationLoop<TestRecordingClock, TestRecordingWaiter>(
+                memory, shared, new Simulator(1), clock, new TestRecordingWaiter(waiterState));
+            var consumptionLoop = new ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>(
+                memory, shared, clock, new TestNoOpWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), new TestNoOpRenderer());
 
             return new BackpressureHarness(
                 shared,
@@ -322,59 +322,5 @@ public sealed class BackpressureAdaptationTests
 
         private static int CountPressureDelays(List<TimeSpan> waitCalls) =>
             waitCalls.Count(w => w > TimeSpan.Zero && w != IdleYield);
-    }
-
-    // ── Struct implementations ───────────────────────────────────────────────
-
-    private sealed class ClockState
-    {
-        public long NowNanoseconds { get; set; }
-    }
-
-    private readonly struct RecordingClock : IClock
-    {
-        private readonly ClockState _state;
-        public RecordingClock(ClockState state) => _state = state;
-        public long NowNanoseconds => _state.NowNanoseconds;
-    }
-
-    private sealed class WaiterState
-    {
-        public readonly List<TimeSpan> WaitCalls = [];
-        public Action<TimeSpan>? OnWait { get; set; }
-    }
-
-    private readonly struct RecordingWaiter : IWaiter
-    {
-        private readonly WaiterState _state;
-        public RecordingWaiter(WaiterState state) => _state = state;
-
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            _state.WaitCalls.Add(duration);
-            _state.OnWait?.Invoke(duration);
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-    }
-
-    private readonly struct NoWaiter : IWaiter
-    {
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken) =>
-            cancellationToken.ThrowIfCancellationRequested();
-    }
-
-    private readonly struct NoOpSaveRunner : ISaveRunner
-    {
-        public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction) { }
-    }
-
-    private readonly struct NoOpSaver : ISaver
-    {
-        public void Save(WorldImage image, int tick) { }
-    }
-
-    private readonly struct NoOpRenderer : IRenderer
-    {
-        public void Render(in RenderFrame frame) { }
     }
 }
