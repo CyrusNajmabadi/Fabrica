@@ -1,5 +1,8 @@
 # Fabrica
 
+[![CI](https://github.com/CyrusNajmabadi/Fabrica/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/CyrusNajmabadi/Fabrica/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/CyrusNajmabadi/Fabrica/branch/master/graph/badge.svg)](https://codecov.io/gh/CyrusNajmabadi/Fabrica)
+
 A simulation engine experiment, built for fun and learning. Inspired by factory automation games like Factorio.
 
 ## Goals
