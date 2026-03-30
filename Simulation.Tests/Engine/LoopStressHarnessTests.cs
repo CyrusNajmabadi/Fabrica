@@ -150,7 +150,8 @@ public sealed class LoopStressHarnessTests
                 new TestNoOpWaiter(),
                 new TestRecordingSaveRunner(),
                 new TestRecordingSaver(),
-                new TestNoOpRenderer());
+                new TestNoOpRenderer(),
+                new RenderCoordinator(1));
 
             return new LoopStressHarness(
                 shared,

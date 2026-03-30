@@ -269,7 +269,7 @@ public sealed class BackpressureAdaptationTests
             var simulationLoop = new SimulationLoop<TestRecordingClock, TestRecordingWaiter>(
                 memory, shared, new Simulator(1), clock, new TestRecordingWaiter(waiterState));
             var consumptionLoop = new ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>(
-                memory, shared, clock, new TestNoOpWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), new TestNoOpRenderer());
+                memory, shared, clock, new TestNoOpWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), new TestNoOpRenderer(), new RenderCoordinator(1));
 
             return new BackpressureHarness(
                 shared,

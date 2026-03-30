@@ -113,7 +113,7 @@ public sealed class ConcurrencyStressTests
         var simulationLoop = new SimulationLoop<TestStressClock, ThreadWaiter>(
             memory, shared, simulator, clock, new ThreadWaiter());
         var consumptionLoop = new ConsumptionLoop<TestStressClock, ThreadWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestInvariantCheckingRenderer>(
-            memory, shared, clock, new ThreadWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), renderer);
+            memory, shared, clock, new ThreadWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), renderer, new RenderCoordinator(1));
 
         RunBothLoops(simulationLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
@@ -133,7 +133,7 @@ public sealed class ConcurrencyStressTests
         var simulationLoop = new SimulationLoop<TestStressClock, ThreadWaiter>(
             memory, shared, simulator, clock, new ThreadWaiter());
         var consumptionLoop = new ConsumptionLoop<TestStressClock, ThreadWaiter, TaskSaveRunner, TestSlowSaver, TestInvariantCheckingRenderer>(
-            memory, shared, clock, new ThreadWaiter(), new TaskSaveRunner(), saver, renderer);
+            memory, shared, clock, new ThreadWaiter(), new TaskSaveRunner(), saver, renderer, new RenderCoordinator(1));
 
         RunBothLoops(simulationLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }

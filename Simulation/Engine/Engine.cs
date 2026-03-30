@@ -145,15 +145,15 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     where TRenderer : struct, IRenderer
 {
     private readonly Simulator _simulator;
-    private readonly RenderCoordinator? _renderCoordinator;
+    private readonly RenderCoordinator _renderCoordinator;
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
     private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _consumptionLoop;
 
     public Engine(
         Simulator simulator,
+        RenderCoordinator renderCoordinator,
         SimulationLoop<TClock, TWaiter> simulationLoop,
-        ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop,
-        RenderCoordinator? renderCoordinator = null)
+        ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
     {
         _simulator = simulator;
         _renderCoordinator = renderCoordinator;
@@ -163,8 +163,6 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
 
     /// <summary>
     /// Builds a fully wired engine with default pool sizes and the supplied clock.
-    /// <paramref name="renderWorkerCount"/> controls parallel rendering: pass 0 to
-    /// use the single-threaded <see cref="IRenderer.Render"/> path (the default).
     /// </summary>
     public static Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> Create(
         TClock clock,
@@ -172,18 +170,17 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         TSaveRunner saveRunner,
         TSaver saver,
         TRenderer renderer,
-        int workerCount,
-        int renderWorkerCount = 0)
+        int simulationWorkerCount,
+        int renderWorkerCount)
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
-        var simulator = new Simulator(workerCount);
-        var renderCoordinator = renderWorkerCount > 0
-            ? new RenderCoordinator(renderWorkerCount, coreIndexOffset: workerCount)
-            : null;
+        var simulator = new Simulator(simulationWorkerCount);
+        var renderCoordinator = new RenderCoordinator(renderWorkerCount, coreIndexOffset: simulationWorkerCount);
 
         return new Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
             simulator,
+            renderCoordinator,
             new SimulationLoop<TClock, TWaiter>(memory, shared, simulator, clock, waiter),
             new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
                 memory,
@@ -193,8 +190,7 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
                 saveRunner,
                 saver,
                 renderer,
-                renderCoordinator),
-            renderCoordinator);
+                renderCoordinator));
     }
 
     /// <summary>
@@ -224,7 +220,7 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         }
         finally
         {
-            _renderCoordinator?.Dispose();
+            _renderCoordinator.Dispose();
             _simulator.Dispose();
         }
     }

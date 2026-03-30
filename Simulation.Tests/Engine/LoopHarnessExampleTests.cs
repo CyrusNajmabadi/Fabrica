@@ -415,7 +415,8 @@ public sealed class LoopHarnessExampleTests
                 waiter,
                 saveRunner,
                 saver,
-                renderer);
+                renderer,
+                new RenderCoordinator(1));
 
             return new LoopHarness(
                 memory,
