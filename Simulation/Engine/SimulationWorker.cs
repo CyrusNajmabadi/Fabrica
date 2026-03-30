@@ -9,16 +9,22 @@ namespace Simulation.Engine;
 /// THREADING MODEL
 ///   Each worker runs a dedicated background thread in a park/signal loop:
 ///
-///     1. Thread parks on its go signal (ManualResetEventSlim), consuming
-///        no CPU while idle.
+///     1. Thread parks on its go signal (<see cref="AutoResetEvent"/>),
+///        consuming no CPU while idle.
 ///     2. The <see cref="Simulator"/> sets up the worker's input data
 ///        (previous image, next image, cancellation token), prepares
 ///        resources, and calls <see cref="Signal"/>.
-///     3. The worker wakes, performs its computation using its own
-///        <see cref="Resources"/>, then sets its done signal.
-///     4. The Simulator calls <see cref="WaitForCompletion"/> to block
-///        until the worker finishes.
+///     3. The worker wakes (the go signal auto-resets), performs its
+///        computation using its own <see cref="Resources"/>, then sets
+///        its done signal.
+///     4. The Simulator waits on all done signals via
+///        <see cref="WaitHandleBatch"/>.
 ///     5. The worker loops back to step 1.
+///
+///   Both signals are <see cref="AutoResetEvent"/>: the go signal
+///   auto-resets when the worker wakes, and the done signals auto-reset
+///   when the Simulator's <see cref="WaitHandle.WaitAll"/> returns.
+///   No manual Reset calls are needed.
 ///
 /// CANCELLATION
 ///   The engine's <see cref="CancellationToken"/> is written to each worker
@@ -40,11 +46,13 @@ namespace Simulation.Engine;
 internal sealed class SimulationWorker
 {
     private readonly Thread _thread;
-    private readonly ManualResetEventSlim _goSignal = new(false);
-    private readonly ManualResetEventSlim _doneSignal = new(false);
+    private readonly AutoResetEvent _goSignal = new(false);
+    private readonly AutoResetEvent _doneSignal = new(false);
     private volatile bool _shutdown;
 
     internal WorkerResources Resources { get; }
+
+    internal AutoResetEvent DoneEvent => _doneSignal;
 
     // Written by the Simulator before each Signal(); read by the worker
     // thread during ExecuteTick().  No synchronisation needed beyond the
@@ -68,10 +76,9 @@ internal sealed class SimulationWorker
     {
         while (true)
         {
-            _goSignal.Wait();
+            _goSignal.WaitOne();
             if (_shutdown || this.CancellationToken.IsCancellationRequested)
                 return;
-            _goSignal.Reset();
 
             this.ExecuteTick();
 
@@ -89,21 +96,11 @@ internal sealed class SimulationWorker
 
     /// <summary>
     /// Wakes the worker thread to begin its next tick.
-    /// Caller must have written PreviousImage/NextImage/CancellationToken
-    /// and called <see cref="WorkerResources.PrepareForTick"/> before this.
+    /// The go signal auto-resets when the worker wakes — no manual
+    /// reset is needed.
     /// </summary>
-    internal void Signal()
-    {
-        _doneSignal.Reset();
+    internal void Signal() =>
         _goSignal.Set();
-    }
-
-    /// <summary>
-    /// Blocks until the worker has finished the current tick.
-    /// Returns immediately if the worker is already idle.
-    /// </summary>
-    internal void WaitForCompletion() =>
-        _doneSignal.Wait();
 
     /// <summary>
     /// Sets the shutdown flag and unblocks the thread so it can exit.
@@ -121,4 +118,15 @@ internal sealed class SimulationWorker
     /// </summary>
     internal void Join() =>
         _thread.Join();
+
+    /// <summary>
+    /// Disposes OS handles for the go and done signals.
+    /// Called by <see cref="Simulator.Dispose"/> after the thread has
+    /// been joined and no further waits will occur.
+    /// </summary>
+    internal void Cleanup()
+    {
+        _goSignal.Dispose();
+        _doneSignal.Dispose();
+    }
 }
