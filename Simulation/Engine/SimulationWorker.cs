@@ -48,6 +48,7 @@ internal sealed class SimulationWorker
     private readonly Thread _thread;
     private readonly AutoResetEvent _goSignal = new(false);
     private readonly AutoResetEvent _doneSignal = new(false);
+    private readonly int _workerIndex;
     private volatile bool _shutdown;
 
     internal WorkerResources Resources { get; }
@@ -64,6 +65,7 @@ internal sealed class SimulationWorker
     public SimulationWorker(WorkerResources resources, int workerIndex)
     {
         this.Resources = resources;
+        _workerIndex = workerIndex;
         _thread = new Thread(this.ThreadLoop)
         {
             Name = $"SimWorker-{workerIndex}",
@@ -74,6 +76,8 @@ internal sealed class SimulationWorker
 
     private void ThreadLoop()
     {
+        ThreadPinning.TryPinCurrentThread(_workerIndex);
+
         while (true)
         {
             _goSignal.WaitOne();

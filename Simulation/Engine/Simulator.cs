@@ -38,10 +38,12 @@ namespace Simulation.Engine;
 ///   <see cref="WorkerResources"/> instance.  Workers never access each
 ///   other's resources during tick computation.
 ///
-/// THREAD PINNING (future)
-///   Workers currently use unpinned background threads.  A future
-///   enhancement will pin each worker to a specific core for cache
-///   affinity.  See TODO.md.
+/// THREAD PINNING
+///   Each worker attempts to pin itself to a specific logical core
+///   (worker N → core N) at thread startup via <see cref="ThreadPinning"/>.
+///   This is best-effort: pinning may fail silently on restricted kernels,
+///   containerised environments, or macOS (not supported).  The simulation
+///   is correct regardless — pinning is purely a cache-affinity optimisation.
 /// </summary>
 internal sealed class Simulator : IDisposable
 {

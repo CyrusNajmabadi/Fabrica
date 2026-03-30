@@ -13,15 +13,13 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
 - [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationWorker.ExecuteTick()` (thread machinery and dispatch cycle are in place)
-- [ ] Thread pinning — pin `SimulationWorker` threads to specific cores for cache affinity
+- [ ] Thread pinning on macOS — current `ThreadPinning` supports Windows/Linux; macOS needs `thread_policy_set` with `THREAD_AFFINITY_POLICY` for hint-based co-location
+- [ ] Thread pinning for >64 cores — `SetThreadGroupAffinity` on Windows, larger `cpu_set_t` on Linux
 - [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
 
 ## Testing
 
-- [ ] Consolidate duplicate test infrastructure — `RecordingWaiter`, clock types, and context builders are redefined across multiple test files
 - [ ] Tests for production adapters (`SystemClock`, `ThreadWaiter`, `TaskSaveRunner`) if they gain non-trivial logic
-- [ ] Broader `MemorySystem` unit tests — direct coverage for `ReturnImage` reset behavior, edge cases beyond constructor validation
-- [ ] `ObjectPool` edge case tests — double-return, growth behavior under load
 - [ ] `WorldImage` standalone tests as it gains real state
 
 ## Quality / Tooling
@@ -54,6 +52,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [x] True concurrency stress tests — 5 real multi-threaded tests (throughput, backpressure, shutdown, worker lifecycle, save pinning) with hard invariant checks ([e23657d](https://github.com/CyrusNajmabadi/Fabrica/commit/e23657d))
 - [x] Backpressure adaptation tests — 7 deterministic multi-phase tests verifying the feedback loop adapts to matched rates, slow consumption, catch-up, re-engagement, exponential delays, hard ceiling, and bounded gap ([d697ce8](https://github.com/CyrusNajmabadi/Fabrica/commit/d697ce8))
 - [x] xUnit v3 upgrade — migrated from xUnit 2.9.3 to xUnit v3 3.2.2 with aggressive parallel algorithm ([6057e02](https://github.com/CyrusNajmabadi/Fabrica/commit/6057e02))
+- [x] Consolidate duplicate test infrastructure — shared `TestDoubles.cs` with `Test`-prefixed interface implementations, unified `WaiterState` families, 15 new MemorySystem/ObjectPool tests ([9a4b2bc](https://github.com/CyrusNajmabadi/Fabrica/commit/9a4b2bc))
 
 ## Quality / Tooling
 
