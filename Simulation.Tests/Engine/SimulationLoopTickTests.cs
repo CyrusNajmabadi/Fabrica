@@ -21,11 +21,11 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Bootstrap();
 
-        var snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
-        Assert.Equal(0, test.Accessor.CurrentTick);
-        Assert.Same(snapshot, test.Accessor.OldestSnapshot);
-        Assert.Same(snapshot, test.Shared.LatestSnapshot);
+        Assert.Equal(0, test.Accessor.CurrentSequence);
+        Assert.Same(snapshot, test.Accessor.OldestNode);
+        Assert.Same(snapshot, test.Shared.LatestNode);
         Assert.Equal(0, snapshot.TickNumber);
         Assert.Null(snapshot.NextInChain);
     }
@@ -36,15 +36,15 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var initial = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var initial = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
         test.Accessor.Tick();
 
-        Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.NotSame(initial, test.Accessor.CurrentSnapshot);
-        Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
-        Assert.Same(test.Accessor.CurrentSnapshot, initial.NextInChain);
+        Assert.Equal(1, test.Accessor.CurrentSequence);
+        Assert.NotSame(initial, test.Accessor.CurrentNode);
+        Assert.Same(test.Accessor.CurrentNode, test.Shared.LatestNode);
+        Assert.Equal(1, test.Accessor.CurrentNode!.TickNumber);
+        Assert.Same(test.Accessor.CurrentNode, initial.NextInChain);
     }
 
     [Fact]
@@ -56,15 +56,15 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var secondSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
-        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var secondSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
 
         test.Shared.ConsumptionEpoch = 2;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
-        Assert.NotSame(firstSnapshot, test.Accessor.OldestSnapshot);
-        Assert.Same(secondSnapshot, test.Accessor.CurrentSnapshot);
+        Assert.NotSame(firstSnapshot, test.Accessor.OldestNode);
+        Assert.Same(secondSnapshot, test.Accessor.CurrentNode);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -77,11 +77,11 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
 
         test.Shared.ConsumptionEpoch = 2;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
         Assert.True(firstSnapshot.IsUnreferenced);
     }
@@ -92,15 +92,15 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var currentSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var currentSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
         test.Shared.ConsumptionEpoch = 100;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
-        Assert.Same(currentSnapshot, test.Accessor.CurrentSnapshot);
-        Assert.Same(currentSnapshot, test.Accessor.OldestSnapshot);
-        Assert.Same(currentSnapshot, test.Shared.LatestSnapshot);
+        Assert.Same(currentSnapshot, test.Accessor.CurrentNode);
+        Assert.Same(currentSnapshot, test.Accessor.OldestNode);
+        Assert.Same(currentSnapshot, test.Shared.LatestNode);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -115,10 +115,10 @@ public sealed class SimulationLoopTickTests
 
         test.Shared.ConsumptionEpoch = 1;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
-        Assert.Equal(1, Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot).TickNumber);
-        Assert.Equal(2, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).TickNumber);
+        Assert.Equal(1, Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode).TickNumber);
+        Assert.Equal(2, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode).TickNumber);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -132,21 +132,21 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        var latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
+        var latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
-        test.Memory.PinnedVersions.Pin(firstSnapshot.TickNumber, pinOwner);
+        test.PinnedVersions.Pin(firstSnapshot.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
-        Assert.NotSame(firstSnapshot, test.Accessor.OldestSnapshot);
-        Assert.Same(latestSnapshot, test.Accessor.CurrentSnapshot);
+        Assert.NotSame(firstSnapshot, test.Accessor.OldestNode);
+        Assert.Same(latestSnapshot, test.Accessor.CurrentNode);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
 
-        test.Memory.PinnedVersions.Unpin(firstSnapshot.TickNumber, pinOwner);
+        test.PinnedVersions.Unpin(firstSnapshot.TickNumber, pinOwner);
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
@@ -162,25 +162,25 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(); // tick 2
         test.Accessor.Tick(); // tick 3
 
-        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
         var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
         var tick2 = Assert.IsType<WorldSnapshot>(tick1.NextInChain);
-        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
-        test.Memory.PinnedVersions.Pin(tick1.TickNumber, pinOwner);
+        test.PinnedVersions.Pin(tick1.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 3;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
-        Assert.Same(tick3, test.Accessor.CurrentSnapshot);
-        Assert.Same(tick3, test.Accessor.OldestSnapshot);
+        Assert.Same(tick3, test.Accessor.CurrentNode);
+        Assert.Same(tick3, test.Accessor.OldestNode);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
         Assert.Null(tick1.NextInChain);
         Assert.Equal(1, tick1.TickNumber);
         Assert.Equal(3, tick3.TickNumber);
 
-        test.Memory.PinnedVersions.Unpin(tick1.TickNumber, pinOwner);
-        test.Accessor.CleanupStaleSnapshots();
+        test.PinnedVersions.Unpin(tick1.TickNumber, pinOwner);
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
@@ -199,7 +199,7 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(0, test.Accessor.CurrentTick);
+        Assert.Equal(0, test.Accessor.CurrentSequence);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds - 1, accumulator);
         Assert.Equal(
             [GetIdleYieldWait()],
@@ -218,7 +218,7 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(1, test.Accessor.CurrentTick);
+        Assert.Equal(1, test.Accessor.CurrentSequence);
         Assert.Equal(0, accumulator);
         Assert.Equal(
             [GetIdleYieldWait()],
@@ -241,7 +241,7 @@ public sealed class SimulationLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(0, test.Accessor.CurrentTick);
+        Assert.Equal(0, test.Accessor.CurrentSequence);
         Assert.Equal(
             [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
@@ -259,7 +259,7 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(2, test.Accessor.CurrentTick);
+        Assert.Equal(2, test.Accessor.CurrentSequence);
         Assert.Equal(123, accumulator);
         Assert.Equal(
             [GetIdleYieldWait()],
@@ -285,7 +285,7 @@ public sealed class SimulationLoopTickTests
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         var tickBefore = LowWaterMarkTicks + 1;
-        Assert.Equal(tickBefore + 1, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore + 1, test.Accessor.CurrentSequence);
         Assert.Equal(
             [
                 GetExpectedPressureDelay(outstandingTicks: tickBefore),
@@ -303,7 +303,7 @@ public sealed class SimulationLoopTickTests
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
             test.Accessor.Tick();
 
-        var tickBefore = test.Accessor.CurrentTick;
+        var tickBefore = test.Accessor.CurrentSequence;
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
@@ -315,7 +315,7 @@ public sealed class SimulationLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(tickBefore, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore, test.Accessor.CurrentSequence);
         Assert.Equal(
             [GetExpectedPressureDelay(outstandingTicks: tickBefore)],
             test.WaiterState.WaitCalls);
@@ -348,7 +348,7 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(HardCeilingTicks + 1, test.Accessor.CurrentTick);
+        Assert.Equal(HardCeilingTicks + 1, test.Accessor.CurrentSequence);
 
         var hardCeilingWait = GetHardCeilingWait();
         Assert.Equal(hardCeilingWait, test.WaiterState.WaitCalls[0]);
@@ -366,7 +366,7 @@ public sealed class SimulationLoopTickTests
         for (var i = 0; i < HardCeilingTicks; i++)
             test.Accessor.Tick();
 
-        var tickBefore = test.Accessor.CurrentTick;
+        var tickBefore = test.Accessor.CurrentSequence;
         test.WaiterState.WaitCalls.Clear();
 
         using var cancellationSource = new CancellationTokenSource();
@@ -378,7 +378,7 @@ public sealed class SimulationLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(tickBefore, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore, test.Accessor.CurrentSequence);
         Assert.Equal(
             [GetHardCeilingWait()],
             test.WaiterState.WaitCalls);
@@ -421,10 +421,14 @@ public sealed class SimulationLoopTickTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var memory = new MemorySystem(poolSize);
-            var shared = new SharedState();
-            var loop = new SimulationLoop<TClock, TWaiter>(memory, shared, new SimulationCoordinator(1), clock, waiter);
-            return new SimulationLoopTestContext<TClock, TWaiter>(memory, shared, waiterState, loop);
+            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var pinnedVersions = new PinnedVersions();
+            var shared = new SharedState<WorldSnapshot>();
+            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var loop = new ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>(
+                snapshotPool, pinnedVersions, shared, producer, clock, waiter);
+            return new SimulationLoopTestContext<TClock, TWaiter>(pinnedVersions, shared, waiterState, loop);
         }
     }
 
@@ -433,26 +437,26 @@ public sealed class SimulationLoopTickTests
         where TWaiter : struct, IWaiter
     {
         internal SimulationLoopTestContext(
-            MemorySystem memory,
-            SharedState shared,
+            PinnedVersions pinnedVersions,
+            SharedState<WorldSnapshot> shared,
             TestWaiterState waiterState,
-            SimulationLoop<TClock, TWaiter> loop)
+            ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> loop)
         {
-            this.Memory = memory;
+            this.PinnedVersions = pinnedVersions;
             this.Shared = shared;
             this.WaiterState = waiterState;
             this.Loop = loop;
             this.Accessor = loop.GetTestAccessor();
         }
 
-        public MemorySystem Memory { get; }
+        public PinnedVersions PinnedVersions { get; }
 
-        public SharedState Shared { get; }
+        public SharedState<WorldSnapshot> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 
-        public SimulationLoop<TClock, TWaiter> Loop { get; }
+        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> Loop { get; }
 
-        public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
 }

@@ -1,3 +1,4 @@
+using Simulation;
 using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.Tests.Helpers;
@@ -18,7 +19,7 @@ public sealed class ConsumptionLoopTests
         Assert.Equal(
             [GetRenderInterval()],
             test.WaiterState.WaitCalls);
-        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
         Assert.Empty(test.SaveRunnerState.RunCalls);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
     }
@@ -28,18 +29,18 @@ public sealed class ConsumptionLoopTests
     {
         var test = ConsumptionLoopTestContext.Create();
         var snapshot = test.CreatePublishedSnapshot(tick: 12);
-        var epochAtRender = -1;
-        test.RendererState.BeforeRender = _ => epochAtRender = test.Shared.ConsumptionEpoch;
+        var epochAtConsume = -1;
+        test.ConsumerState.BeforeConsume = (_, _, _) => epochAtConsume = test.Shared.ConsumptionEpoch;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal([12], test.RendererState.RenderedTicks);
-        Assert.Equal(0, epochAtRender);
+        Assert.Equal([12], test.ConsumerState.ConsumedTicks);
+        Assert.Equal(0, epochAtConsume);
         Assert.Equal(12, test.Shared.ConsumptionEpoch);
         Assert.Equal(
             [GetRenderInterval()],
             test.WaiterState.WaitCalls);
-        Assert.Same(snapshot, test.Shared.LatestSnapshot);
+        Assert.Same(snapshot, test.Shared.LatestNode);
     }
 
     [Fact]
@@ -52,7 +53,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Empty(test.SaveRunnerState.RunCalls);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.False(test.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(SimulationConstants.SaveIntervalTicks, test.Shared.ConsumptionEpoch);
     }
 
@@ -65,7 +66,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Empty(test.SaveRunnerState.RunCalls);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.False(test.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
     }
 
@@ -78,12 +79,12 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         var invocation = Assert.Single(test.SaveRunnerState.RunCalls);
-        Assert.Same(snapshot.Image, invocation.Image);
-        Assert.Equal(SimulationConstants.SaveIntervalTicks, invocation.Tick);
-        Assert.True(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
+        Assert.Same(snapshot, invocation.Node);
+        Assert.Equal(SimulationConstants.SaveIntervalTicks, invocation.SequenceNumber);
+        Assert.True(test.PinnedVersions.IsPinned(invocation.SequenceNumber));
         Assert.Equal(0, test.Shared.NextSaveAtTick);
         Assert.Equal(SimulationConstants.SaveIntervalTicks, test.Shared.ConsumptionEpoch);
-        Assert.Equal([SimulationConstants.SaveIntervalTicks], test.RendererState.RenderedTicks);
+        Assert.Equal([SimulationConstants.SaveIntervalTicks], test.ConsumerState.ConsumedTicks);
     }
 
     [Fact]
@@ -96,9 +97,9 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         var invocation = Assert.Single(test.SaveRunnerState.RunCalls);
-        Assert.Same(snapshot.Image, invocation.Image);
-        Assert.Equal(tick, invocation.Tick);
-        Assert.True(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
+        Assert.Same(snapshot, invocation.Node);
+        Assert.Equal(tick, invocation.SequenceNumber);
+        Assert.True(test.PinnedVersions.IsPinned(invocation.SequenceNumber));
         Assert.Equal(0, test.Shared.NextSaveAtTick);
         Assert.Equal(tick, test.Shared.ConsumptionEpoch);
     }
@@ -113,7 +114,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Single(test.SaveRunnerState.RunCalls);
-        Assert.True(test.Memory.PinnedVersions.IsPinned(SimulationConstants.SaveIntervalTicks));
+        Assert.True(test.PinnedVersions.IsPinned(SimulationConstants.SaveIntervalTicks));
         Assert.Equal(0, test.Shared.NextSaveAtTick);
     }
 
@@ -128,9 +129,9 @@ public sealed class ConsumptionLoopTests
 
         test.SaveRunnerState.Complete(invocation);
 
-        Assert.False(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
-        Assert.Equal(invocation.Tick + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-        Assert.Equal([invocation.Tick], test.SaverState.SaveCalls);
+        Assert.False(test.PinnedVersions.IsPinned(invocation.SequenceNumber));
+        Assert.Equal(invocation.SequenceNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+        Assert.Equal([invocation.SequenceNumber], test.SaverState.SaveCalls);
     }
 
     [Fact]
@@ -146,19 +147,19 @@ public sealed class ConsumptionLoopTests
         // Exception is captured in the save event queue, not propagated.
         test.SaveRunnerState.Complete(invocation);
 
-        Assert.False(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
-        Assert.Equal(invocation.Tick + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-        Assert.Equal([invocation.Tick], test.SaverState.SaveCalls);
+        Assert.False(test.PinnedVersions.IsPinned(invocation.SequenceNumber));
+        Assert.Equal(invocation.SequenceNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+        Assert.Equal([invocation.SequenceNumber], test.SaverState.SaveCalls);
 
-        // Failure surfaces via EngineStatus on the next render frame.
+        // Failure surfaces via SaveStatus on the next consume.
         test.SaverState.ExceptionToThrow = null;
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        var status = test.RendererState.RenderedEngineStatuses[1];
-        Assert.False(status.Save.InFlight);
-        Assert.NotNull(status.Save.LastResult);
-        Assert.NotNull(status.Save.LastResult.Value.Error);
-        Assert.Equal("boom", status.Save.LastResult.Value.Error.Message);
+        var status = test.ConsumerState.ConsumedSaveStatuses[1];
+        Assert.False(status.InFlight);
+        Assert.NotNull(status.LastResult);
+        Assert.NotNull(status.LastResult.Value.Error);
+        Assert.Equal("boom", status.LastResult.Value.Error.Message);
     }
 
     [Fact]
@@ -172,84 +173,84 @@ public sealed class ConsumptionLoopTests
             () => test.Accessor.RunOneIteration(CancellationToken.None));
 
         Assert.Equal("dispatch failed", exception.Message);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.False(test.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(snapshot.TickNumber, test.Shared.NextSaveAtTick);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
-        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
         Assert.Empty(test.SaverState.SaveCalls);
     }
 
     [Fact]
-    public void RendererFailure_AfterSaveDispatch_LeavesEpochUnadvancedUntilSaveCompletes()
+    public void ConsumerFailure_AfterSaveDispatch_LeavesEpochUnadvancedUntilSaveCompletes()
     {
         var test = ConsumptionLoopTestContext.Create();
         var snapshot = test.CreatePublishedSnapshot(tick: SimulationConstants.SaveIntervalTicks);
-        test.RendererState.ExceptionToThrow = new InvalidOperationException("render failed");
+        test.ConsumerState.ExceptionToThrow = new InvalidOperationException("consume failed");
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => test.Accessor.RunOneIteration(CancellationToken.None));
 
-        Assert.Equal("render failed", exception.Message);
+        Assert.Equal("consume failed", exception.Message);
         var invocation = Assert.Single(test.SaveRunnerState.RunCalls);
-        Assert.True(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.True(test.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
         Assert.Equal(0, test.Shared.NextSaveAtTick);
-        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
 
         test.SaveRunnerState.Complete(invocation);
 
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.False(test.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(snapshot.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
     }
 
     [Fact]
-    public void RendererFailure_WhenNoSaveIsDue_LeavesEpochAndSaveStateUnchanged()
+    public void ConsumerFailure_WhenNoSaveIsDue_LeavesEpochAndSaveStateUnchanged()
     {
         var test = ConsumptionLoopTestContext.Create();
         var snapshot = test.CreatePublishedSnapshot(tick: 7);
         test.Shared.NextSaveAtTick = 0;
-        test.RendererState.ExceptionToThrow = new InvalidOperationException("render failed");
+        test.ConsumerState.ExceptionToThrow = new InvalidOperationException("consume failed");
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => test.Accessor.RunOneIteration(CancellationToken.None));
 
-        Assert.Equal("render failed", exception.Message);
+        Assert.Equal("consume failed", exception.Message);
         Assert.Empty(test.SaveRunnerState.RunCalls);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.False(test.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(0, test.Shared.NextSaveAtTick);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
-        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
     }
 
     [Fact]
-    public void RendererFailureAfterSaveDispatch_AllowsLaterSuccessfulRenderOfTheSameSnapshot()
+    public void ConsumerFailureAfterSaveDispatch_AllowsLaterSuccessfulConsumeOfTheSameSnapshot()
     {
         var test = ConsumptionLoopTestContext.Create();
         var snapshot = test.CreatePublishedSnapshot(tick: SimulationConstants.SaveIntervalTicks);
-        test.RendererState.ExceptionToThrow = new InvalidOperationException("render failed");
+        test.ConsumerState.ExceptionToThrow = new InvalidOperationException("consume failed");
 
         Assert.Throws<InvalidOperationException>(() => test.Accessor.RunOneIteration(CancellationToken.None));
         var invocation = Assert.Single(test.SaveRunnerState.RunCalls);
 
         test.SaveRunnerState.Complete(invocation);
-        test.RendererState.ExceptionToThrow = null;
+        test.ConsumerState.ExceptionToThrow = null;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal([snapshot.TickNumber], test.RendererState.RenderedTicks);
+        Assert.Equal([snapshot.TickNumber], test.ConsumerState.ConsumedTicks);
         Assert.Equal(snapshot.TickNumber, test.Shared.ConsumptionEpoch);
         Assert.Equal(snapshot.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
         Assert.Single(test.SaveRunnerState.RunCalls);
     }
 
     [Fact]
-    public void SaveIsPinnedBeforeDispatchAndEpochAdvancesAfterRender()
+    public void SaveIsPinnedBeforeDispatchAndEpochAdvancesAfterConsume()
     {
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: SimulationConstants.SaveIntervalTicks);
         test.SaveRunnerState.BeforeDispatch = invocation =>
         {
-            Assert.True(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
+            Assert.True(test.PinnedVersions.IsPinned(invocation.SequenceNumber));
             Assert.Equal(0, test.Shared.NextSaveAtTick);
             Assert.Equal(0, test.Shared.ConsumptionEpoch);
         };
@@ -265,7 +266,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: 5);
         test.ClockState.NowNanoseconds = 0;
-        test.RendererState.BeforeRender = _ => test.ClockState.NowNanoseconds = 5_000_000;
+        test.ConsumerState.BeforeConsume = (_, _, _) => test.ClockState.NowNanoseconds = 5_000_000;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -279,8 +280,8 @@ public sealed class ConsumptionLoopTests
     {
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: 5);
-        test.RendererState.BeforeRender =
-            _ => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
+        test.ConsumerState.BeforeConsume =
+            (_, _, _) => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -326,7 +327,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        Assert.Equal([5], test.RendererState.RenderedTicks);
+        Assert.Equal([5], test.ConsumerState.ConsumedTicks);
     }
 
     [Fact]
@@ -340,7 +341,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        Assert.Empty(test.RendererState.RenderedTicks);
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
         Assert.Empty(test.SaveRunnerState.RunCalls);
         Assert.Empty(test.WaiterState.WaitCalls);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
@@ -356,13 +357,13 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal([5, 5], test.RendererState.RenderedTicks);
+        Assert.Equal([5, 5], test.ConsumerState.ConsumedTicks);
         Assert.Equal(5, test.Shared.ConsumptionEpoch);
         Assert.Empty(test.SaveRunnerState.RunCalls);
     }
 
     [Fact]
-    public void RunOneIteration_WhenSimulationPublishesMultipleTicks_RendererReceivesFullChain()
+    public void RunOneIteration_WhenSimulationPublishesMultipleTicks_ConsumerReceivesFullChain()
     {
         var test = ConsumptionLoopTestContext.Create();
 
@@ -370,26 +371,30 @@ public sealed class ConsumptionLoopTests
         var tick1 = test.CreatePublishedSnapshot(tick: 1);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        // Simulation publishes ticks 2–6 as a chain, then sets LatestSnapshot = tick 6.
+        // Simulation publishes ticks 2–6 as a chain, then sets LatestNode = tick 6.
         var chain = test.CreatePublishedChain(startTick: 2, endTick: 6);
         tick1.SetNext(chain[0]);
 
-        RenderFrame? capturedFrame = null;
-        test.RendererState.BeforeRender = frame => capturedFrame = frame;
+        WorldSnapshot? capturedPrevious = null;
+        WorldSnapshot? capturedLatest = null;
+        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        {
+            capturedPrevious = prev;
+            capturedLatest = latest;
+        };
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(capturedFrame);
-        var rendered = capturedFrame.Value;
+        Assert.NotNull(capturedLatest);
 
         // Previous should be tick 1, Latest should be tick 6.
-        Assert.NotNull(rendered.Previous);
-        Assert.Equal(1, rendered.Previous!.TickNumber);
-        Assert.Equal(6, rendered.Latest.TickNumber);
+        Assert.NotNull(capturedPrevious);
+        Assert.Equal(1, capturedPrevious!.TickNumber);
+        Assert.Equal(6, capturedLatest!.TickNumber);
 
         // Walk the chain via the struct iterator and verify every tick is present.
         var ticks = new List<int>();
-        foreach (var node in rendered.Chain)
+        foreach (var node in ChainNode<WorldSnapshot>.Chain(capturedPrevious, capturedLatest))
             ticks.Add(node.TickNumber);
 
         Assert.Equal([1, 2, 3, 4, 5, 6], ticks);
@@ -411,14 +416,19 @@ public sealed class ConsumptionLoopTests
         var beyondLatest = test.CreateUnpublishedSnapshot(tick: 4);
         chain[^1].SetNext(beyondLatest);
 
-        RenderFrame? capturedFrame = null;
-        test.RendererState.BeforeRender = frame => capturedFrame = frame;
+        WorldSnapshot? capturedPrevious = null;
+        WorldSnapshot? capturedLatest = null;
+        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        {
+            capturedPrevious = prev;
+            capturedLatest = latest;
+        };
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(capturedFrame);
+        Assert.NotNull(capturedLatest);
         var ticks = new List<int>();
-        foreach (var node in capturedFrame.Value.Chain)
+        foreach (var node in ChainNode<WorldSnapshot>.Chain(capturedPrevious, capturedLatest!))
             ticks.Add(node.TickNumber);
 
         Assert.Equal([0, 1, 2, 3], ticks);
@@ -434,24 +444,34 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         // Frame 2: same snapshot, no rotation → Previous still null, Latest still tick1.
-        RenderFrame? frame2 = null;
-        test.RendererState.BeforeRender = frame => frame2 = frame;
+        WorldSnapshot? previous2 = null;
+        WorldSnapshot? latest2 = null;
+        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        {
+            previous2 = prev;
+            latest2 = latest;
+        };
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(frame2);
-        Assert.Null(frame2.Value.Previous);
+        Assert.NotNull(latest2);
+        Assert.Null(previous2);
 
         // Frame 3: new snapshot published → rotation happens.
         test.CreatePublishedSnapshot(tick: 2);
-        RenderFrame? frame3 = null;
-        test.RendererState.BeforeRender = frame => frame3 = frame;
+        WorldSnapshot? previous3 = null;
+        WorldSnapshot? latest3 = null;
+        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        {
+            previous3 = prev;
+            latest3 = latest;
+        };
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(frame3);
-        Assert.NotNull(frame3.Value.Previous);
-        Assert.NotSame(frame3.Value.Previous, frame3.Value.Latest);
-        Assert.Equal(1, frame3.Value.Previous!.TickNumber);
-        Assert.Equal(2, frame3.Value.Latest.TickNumber);
+        Assert.NotNull(latest3);
+        Assert.NotNull(previous3);
+        Assert.NotSame(previous3, latest3);
+        Assert.Equal(1, previous3!.TickNumber);
+        Assert.Equal(2, latest3!.TickNumber);
     }
 
     [Fact]
@@ -464,11 +484,11 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         // Simulate: ticks 2–10 published as a chain.
-        var chain = test.CreatePublishedChain(startTick: 2, endTick: 10);
+        test.CreatePublishedChain(startTick: 2, endTick: 10);
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        // Epoch should be set to _previous.TickNumber (tick 1), which keeps
+        // Epoch should be set to _previous.SequenceNumber (tick 1), which keeps
         // tick 1 and all nodes through tick 10 alive (cleanup frees strictly < epoch).
         Assert.Equal(1, test.Shared.ConsumptionEpoch);
     }
@@ -478,103 +498,112 @@ public sealed class ConsumptionLoopTests
 
     private static class ConsumptionLoopTestContext
     {
-        public static ConsumptionLoopTestContext<TestRecordingClock, TestRecordingWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer> Create()
+        public static ConsumptionLoopTestContext<TestRecordingClock, TestRecordingWaiter, TestRecordingSaveRunner, TestRecordingSaver> Create()
         {
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var saveRunnerState = new TestSaveRunnerState();
             var saverState = new TestSaverState();
-            var rendererState = new TestRendererState();
+            var consumerState = new TestConsumerState();
 
             return Create(
                 clock: new TestRecordingClock(clockState),
                 waiter: new TestRecordingWaiter(waiterState),
                 saveRunner: new TestRecordingSaveRunner(saveRunnerState),
                 saver: new TestRecordingSaver(saverState),
-                renderer: new TestRecordingRenderer(rendererState),
+                consumerState: consumerState,
                 clockState: clockState,
                 waiterState: waiterState,
                 saveRunnerState: saveRunnerState,
-                saverState: saverState,
-                rendererState: rendererState);
+                saverState: saverState);
         }
 
-        public static ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> Create<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
+        public static ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver> Create<TClock, TWaiter, TSaveRunner, TSaver>(
             TClock clock,
             TWaiter waiter,
             TSaveRunner saveRunner,
             TSaver saver,
-            TRenderer renderer,
+            TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState,
             TestSaveRunnerState saveRunnerState,
             TestSaverState saverState,
-            TestRendererState rendererState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
-            where TSaveRunner : struct, ISaveRunner
-            where TSaver : struct, ISaver
-            where TRenderer : struct, IRenderer
+            where TSaveRunner : struct, ISaveRunner<WorldSnapshot>
+            where TSaver : struct, ISaver<WorldSnapshot>
         {
-            var memory = new MemorySystem(poolSize);
-            var shared = new SharedState();
-            var loop = new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
-                memory,
+            var pinnedVersions = new PinnedVersions();
+            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var shared = new SharedState<WorldSnapshot>();
+            var consumer = new TestRecordingConsumer(consumerState);
+            var loop = new ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TSaveRunner, TSaver, TClock, TWaiter>(
+                pinnedVersions,
                 shared,
+                consumer,
                 clock,
                 waiter,
                 saveRunner,
-                saver,
-                renderer,
-                new RenderCoordinator(1));
-            return new ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
-                memory,
+                saver);
+            return new ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver>(
+                pinnedVersions,
+                snapshotPool,
+                imagePool,
                 shared,
                 loop,
+                consumerState,
                 clockState,
                 waiterState,
                 saveRunnerState,
-                saverState,
-                rendererState);
+                saverState);
         }
     }
 
-    private sealed class ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
+    private sealed class ConsumptionLoopTestContext<TClock, TWaiter, TSaveRunner, TSaver>
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
-        where TSaveRunner : struct, ISaveRunner
-        where TSaver : struct, ISaver
-        where TRenderer : struct, IRenderer
+        where TSaveRunner : struct, ISaveRunner<WorldSnapshot>
+        where TSaver : struct, ISaver<WorldSnapshot>
     {
+        private readonly ObjectPool<WorldSnapshot> _snapshotPool;
+        private readonly ObjectPool<WorldImage> _imagePool;
+
         internal ConsumptionLoopTestContext(
-            MemorySystem memory,
-            SharedState shared,
-            ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> loop,
+            PinnedVersions pinnedVersions,
+            ObjectPool<WorldSnapshot> snapshotPool,
+            ObjectPool<WorldImage> imagePool,
+            SharedState<WorldSnapshot> shared,
+            ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TSaveRunner, TSaver, TClock, TWaiter> loop,
+            TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState,
             TestSaveRunnerState saveRunnerState,
-            TestSaverState saverState,
-            TestRendererState rendererState)
+            TestSaverState saverState)
         {
-            this.Memory = memory;
+            this.PinnedVersions = pinnedVersions;
+            _snapshotPool = snapshotPool;
+            _imagePool = imagePool;
             this.Shared = shared;
             this.Loop = loop;
             this.Accessor = loop.GetTestAccessor();
+            this.ConsumerState = consumerState;
             this.ClockState = clockState;
             this.WaiterState = waiterState;
             this.SaveRunnerState = saveRunnerState;
             this.SaverState = saverState;
-            this.RendererState = rendererState;
         }
 
-        public MemorySystem Memory { get; }
+        public PinnedVersions PinnedVersions { get; }
 
-        public SharedState Shared { get; }
+        public SharedState<WorldSnapshot> Shared { get; }
 
-        public ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> Loop { get; }
+        public ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TSaveRunner, TSaver, TClock, TWaiter> Loop { get; }
 
-        public ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>.TestAccessor Accessor { get; }
+        public ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TSaveRunner, TSaver, TClock, TWaiter>.TestAccessor Accessor { get; }
+
+        public TestConsumerState ConsumerState { get; }
 
         public TestClockState ClockState { get; }
 
@@ -584,28 +613,26 @@ public sealed class ConsumptionLoopTests
 
         public TestSaverState SaverState { get; }
 
-        public TestRendererState RendererState { get; }
-
         public WorldSnapshot CreatePublishedSnapshot(int tick)
         {
-            var image = Assert.IsType<WorldImage>(this.Memory.RentImage());
-            var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
+            var image = _imagePool.Rent();
+            var snapshot = _snapshotPool.Rent();
             snapshot.Initialize(image, tick);
-            this.Shared.LatestSnapshot = snapshot;
+            this.Shared.LatestNode = snapshot;
             return snapshot;
         }
 
         public WorldSnapshot CreateUnpublishedSnapshot(int tick)
         {
-            var image = Assert.IsType<WorldImage>(this.Memory.RentImage());
-            var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
+            var image = _imagePool.Rent();
+            var snapshot = _snapshotPool.Rent();
             snapshot.Initialize(image, tick);
             return snapshot;
         }
 
         /// <summary>
         /// Builds a forward-linked chain of snapshots [startTick → startTick+1 → … → endTick]
-        /// and publishes the last one as LatestSnapshot.  Returns the full array (index 0 = startTick).
+        /// and publishes the last one as LatestNode.  Returns the full array (index 0 = startTick).
         /// </summary>
         public WorldSnapshot[] CreatePublishedChain(int startTick, int endTick)
         {
@@ -613,15 +640,15 @@ public sealed class ConsumptionLoopTests
             var chain = new WorldSnapshot[count];
             for (var i = 0; i < count; i++)
             {
-                var image = Assert.IsType<WorldImage>(this.Memory.RentImage());
-                var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
+                var image = _imagePool.Rent();
+                var snapshot = _snapshotPool.Rent();
                 snapshot.Initialize(image, startTick + i);
                 if (i > 0)
                     chain[i - 1].SetNext(snapshot);
                 chain[i] = snapshot;
             }
 
-            this.Shared.LatestSnapshot = chain[^1];
+            this.Shared.LatestNode = chain[^1];
             return chain;
         }
     }
@@ -634,18 +661,19 @@ public sealed class ConsumptionLoopTests
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public void Complete(TestSaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
+        public void Complete(TestSaveInvocation invocation) =>
+            invocation.SaveAction(invocation.Node, invocation.SequenceNumber);
     }
 
-    private readonly struct TestRecordingSaveRunner : ISaveRunner
+    private readonly struct TestRecordingSaveRunner : ISaveRunner<WorldSnapshot>
     {
         private readonly TestSaveRunnerState _state;
 
         public TestRecordingSaveRunner(TestSaveRunnerState state) => _state = state;
 
-        public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
+        public void RunSave(WorldSnapshot node, int sequenceNumber, Action<WorldSnapshot, int> saveAction)
         {
-            var invocation = new TestSaveInvocation(image, tick, saveAction);
+            var invocation = new TestSaveInvocation(node, sequenceNumber, saveAction);
             _state.RunCalls.Add(invocation);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
@@ -660,44 +688,50 @@ public sealed class ConsumptionLoopTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingSaver : ISaver
+    private readonly struct TestRecordingSaver : ISaver<WorldSnapshot>
     {
         private readonly TestSaverState _state;
 
         public TestRecordingSaver(TestSaverState state) => _state = state;
 
-        public void Save(WorldImage image, int tick)
+        public void Save(WorldSnapshot node, int sequenceNumber)
         {
-            _state.SaveCalls.Add(tick);
-
+            _state.SaveCalls.Add(sequenceNumber);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
         }
     }
 
-    private sealed class TestRendererState
+    private sealed class TestConsumerState
     {
-        public readonly List<int> RenderedTicks = [];
-        public readonly List<EngineStatus> RenderedEngineStatuses = [];
+        public readonly List<int> ConsumedTicks = [];
+        public readonly List<SaveStatus> ConsumedSaveStatuses = [];
+        public readonly List<(WorldSnapshot? Previous, WorldSnapshot Latest)> ConsumedPairs = [];
 
-        public Action<RenderFrame>? BeforeRender { get; set; }
+        public Action<WorldSnapshot?, WorldSnapshot, SaveStatus>? BeforeConsume { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingRenderer : IRenderer
+    private readonly struct TestRecordingConsumer : IConsumer<WorldSnapshot>
     {
-        private readonly TestRendererState _state;
+        private readonly TestConsumerState _state;
 
-        public TestRecordingRenderer(TestRendererState state) => _state = state;
+        public TestRecordingConsumer(TestConsumerState state) => _state = state;
 
-        public void Render(in RenderFrame frame)
+        public void Consume(
+            WorldSnapshot? previous,
+            WorldSnapshot latest,
+            long frameStartNanoseconds,
+            SaveStatus saveStatus,
+            CancellationToken cancellationToken)
         {
-            _state.BeforeRender?.Invoke(frame);
+            _state.BeforeConsume?.Invoke(previous, latest, saveStatus);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(frame.Latest.TickNumber);
-            _state.RenderedEngineStatuses.Add(frame.EngineStatus);
+            _state.ConsumedTicks.Add(latest.TickNumber);
+            _state.ConsumedSaveStatuses.Add(saveStatus);
+            _state.ConsumedPairs.Add((previous, latest));
         }
     }
 }

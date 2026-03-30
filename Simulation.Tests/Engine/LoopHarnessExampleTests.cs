@@ -18,7 +18,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
 
         test.ConsumptionLoop.RunIteration(); // save dispatched for T1
         Assert.True(test.Pins.IsPinned(1));
@@ -58,7 +58,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
 
         test.ConsumptionLoop.RunIteration(); // save dispatched for T1
         test.Pins.Pin(1, externalOwner);
@@ -126,7 +126,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1
 
@@ -332,7 +332,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1, no save
 
@@ -350,37 +350,34 @@ public sealed class LoopHarnessExampleTests
 
     private sealed class LoopHarness
     {
-        private readonly SimulationLoop<TestRecordingClock, TestNoOpWaiter>.TestAccessor _simulationAccessor;
-        private readonly ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>.TestAccessor _consumptionAccessor;
+        private readonly ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _simulationAccessor;
+        private readonly ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor _consumptionAccessor;
         private long _simulationLastTime;
         private long _simulationAccumulator;
 
         private LoopHarness(
-            MemorySystem memory,
-            SharedState shared,
+            PinnedVersions pinnedVersions,
+            SharedState<WorldSnapshot> shared,
             TestClockState clockState,
             TestSaveRunnerState saveRunnerState,
             TestSaverState saverState,
             TestRendererState rendererState,
-            SimulationLoop<TestRecordingClock, TestNoOpWaiter> simulationLoop,
-            ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer> consumptionLoop)
+            ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter> productionLoop,
+            ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
         {
-            this.Memory = memory;
             this.Shared = shared;
             this.Clock = new ClockController(clockState);
-            this.Pins = new PinController(memory.PinnedVersions);
+            this.Pins = new PinController(pinnedVersions);
             this.Save = new SaveController(saveRunnerState, saverState);
             this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor(), saveRunnerState);
-            this.SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
+            this.SimulationLoop = new SimulationLoopController(this, productionLoop.GetTestAccessor());
             this.Renderer = new RendererController(rendererState);
 
-            _simulationAccessor = simulationLoop.GetTestAccessor();
+            _simulationAccessor = productionLoop.GetTestAccessor();
             _consumptionAccessor = consumptionLoop.GetTestAccessor();
         }
 
-        private MemorySystem Memory { get; }
-
-        public SharedState Shared { get; }
+        public SharedState<WorldSnapshot> Shared { get; }
 
         public ClockController Clock { get; }
 
@@ -396,8 +393,10 @@ public sealed class LoopHarnessExampleTests
 
         public static LoopHarness Create(int poolSize = 8)
         {
-            var memory = new MemorySystem(poolSize);
-            var shared = new SharedState();
+            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var pinnedVersions = new PinnedVersions();
+            var shared = new SharedState<WorldSnapshot>();
             var clockState = new TestClockState();
             var saveRunnerState = new TestSaveRunnerState();
             var saverState = new TestSaverState();
@@ -406,43 +405,39 @@ public sealed class LoopHarnessExampleTests
             var waiter = new TestNoOpWaiter();
             var saveRunner = new TestRecordingSaveRunner(saveRunnerState);
             var saver = new TestRecordingSaver(saverState);
-            var renderer = new TestRecordingRenderer(rendererState);
-            var simulationLoop = new SimulationLoop<TestRecordingClock, TestNoOpWaiter>(memory, shared, new SimulationCoordinator(1), clock, waiter);
-            var consumptionLoop = new ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>(
-                memory,
-                shared,
-                clock,
-                waiter,
-                saveRunner,
-                saver,
-                renderer,
-                new RenderCoordinator(1));
+            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var consumer = new TestRecordingConsumer(rendererState);
+
+            var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>(
+                snapshotPool, pinnedVersions, shared, producer, clock, waiter);
+            var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>(
+                pinnedVersions, shared, consumer, clock, waiter, saveRunner, saver);
 
             return new LoopHarness(
-                memory,
+                pinnedVersions,
                 shared,
                 clockState,
                 saveRunnerState,
                 saverState,
                 rendererState,
-                simulationLoop,
+                productionLoop,
                 consumptionLoop);
         }
 
         public sealed class SimulationLoopController
         {
             private readonly LoopHarness _owner;
-            private readonly SimulationLoop<TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
+            private readonly ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
 
             public SimulationLoopController(
                 LoopHarness owner,
-                SimulationLoop<TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
+                ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
             {
                 _owner = owner;
                 _accessor = accessor;
             }
 
-            public WorldSnapshot? CurrentSnapshot => _accessor.CurrentSnapshot;
+            public WorldSnapshot? CurrentNode => _accessor.CurrentNode;
 
             public int PinnedQueueCount => _accessor.PinnedQueueCount;
 
@@ -462,11 +457,11 @@ public sealed class LoopHarnessExampleTests
 
         public sealed class ConsumptionLoopController
         {
-            private readonly ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>.TestAccessor _accessor;
+            private readonly ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
             private readonly TestSaveRunnerState _saveRunnerState;
 
             public ConsumptionLoopController(
-                ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>.TestAccessor accessor,
+                ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor,
                 TestSaveRunnerState saveRunnerState)
             {
                 _accessor = accessor;
@@ -550,21 +545,21 @@ public sealed class LoopHarnessExampleTests
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public void Complete(TestSaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
+        public void Complete(TestSaveInvocation invocation) => invocation.SaveAction(invocation.Node, invocation.SequenceNumber);
     }
 
-    private readonly struct TestRecordingSaveRunner : ISaveRunner
+    private readonly struct TestRecordingSaveRunner : ISaveRunner<WorldSnapshot>
     {
         private readonly TestSaveRunnerState _state;
 
         public TestRecordingSaveRunner(TestSaveRunnerState state) => _state = state;
 
-        public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
+        public void RunSave(WorldSnapshot node, int sequenceNumber, Action<WorldSnapshot, int> saveAction)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
 
-            var invocation = new TestSaveInvocation(image, tick, saveAction);
+            var invocation = new TestSaveInvocation(node, sequenceNumber, saveAction);
             _state.DispatchHistory.Add(invocation);
             _state.PendingInvocations.Add(invocation);
         }
@@ -575,13 +570,13 @@ public sealed class LoopHarnessExampleTests
         public readonly List<int> SaveCalls = [];
     }
 
-    private readonly struct TestRecordingSaver : ISaver
+    private readonly struct TestRecordingSaver : ISaver<WorldSnapshot>
     {
         private readonly TestSaverState _state;
 
         public TestRecordingSaver(TestSaverState state) => _state = state;
 
-        public void Save(WorldImage image, int tick) => _state.SaveCalls.Add(tick);
+        public void Save(WorldSnapshot node, int sequenceNumber) => _state.SaveCalls.Add(sequenceNumber);
     }
 
     private sealed class TestRendererState
@@ -591,17 +586,17 @@ public sealed class LoopHarnessExampleTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingRenderer : IRenderer
+    private readonly struct TestRecordingConsumer : IConsumer<WorldSnapshot>
     {
         private readonly TestRendererState _state;
 
-        public TestRecordingRenderer(TestRendererState state) => _state = state;
+        public TestRecordingConsumer(TestRendererState state) => _state = state;
 
-        public void Render(in RenderFrame frame)
+        public void Consume(WorldSnapshot? previous, WorldSnapshot latest, long frameStartNanoseconds, SaveStatus saveStatus, CancellationToken cancellationToken)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(frame.Latest.TickNumber);
+            _state.RenderedTicks.Add(latest.TickNumber);
         }
     }
 }

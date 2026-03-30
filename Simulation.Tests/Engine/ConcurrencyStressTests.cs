@@ -105,17 +105,20 @@ public sealed class ConcurrencyStressTests
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedState();
+        var snapshotPool = new ObjectPool<WorldSnapshot>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
+        var pinnedVersions = new PinnedVersions();
+        var shared = new SharedState<WorldSnapshot>();
+        var producer = new SimulationProducer(imagePool, simulator);
+        var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new TestStressClock();
-        var renderer = new TestInvariantCheckingRenderer(metrics, renderDelayMilliseconds);
 
-        var simulationLoop = new SimulationLoop<TestStressClock, ThreadWaiter>(
-            memory, shared, simulator, clock, new ThreadWaiter());
-        var consumptionLoop = new ConsumptionLoop<TestStressClock, ThreadWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestInvariantCheckingRenderer>(
-            memory, shared, clock, new ThreadWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), renderer, new RenderCoordinator(1));
+        var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestStressClock, ThreadWaiter>(
+            snapshotPool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
+        var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestInvariantCheckingConsumer, TestNoOpSaveRunner, TestNoOpSaver, TestStressClock, ThreadWaiter>(
+            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver());
 
-        RunBothLoops(simulationLoop, consumptionLoop, simulator, cancellationToken, metrics);
+        RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
 
     private static void RunEngineWithSaves(
@@ -124,35 +127,39 @@ public sealed class ConcurrencyStressTests
         SimulationCoordinator simulator,
         CancellationToken cancellationToken)
     {
-        var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedState { NextSaveAtTick = 1 };
+        var snapshotPool = new ObjectPool<WorldSnapshot>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
+        var pinnedVersions = new PinnedVersions();
+        var shared = new SharedState<WorldSnapshot> { NextSaveAtTick = 1 };
+        var producer = new SimulationProducer(imagePool, simulator);
+        var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new TestStressClock();
-        var renderer = new TestInvariantCheckingRenderer(metrics, renderDelayMilliseconds: 0);
         var saver = new TestSlowSaver(saveMetrics);
 
-        var simulationLoop = new SimulationLoop<TestStressClock, ThreadWaiter>(
-            memory, shared, simulator, clock, new ThreadWaiter());
-        var consumptionLoop = new ConsumptionLoop<TestStressClock, ThreadWaiter, TaskSaveRunner, TestSlowSaver, TestInvariantCheckingRenderer>(
-            memory, shared, clock, new ThreadWaiter(), new TaskSaveRunner(), saver, renderer, new RenderCoordinator(1));
+        var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestStressClock, ThreadWaiter>(
+            snapshotPool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
+        var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestInvariantCheckingConsumer, TaskSaveRunner, TestSlowSaver, TestStressClock, ThreadWaiter>(
+            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), new TaskSaveRunner(), saver);
 
-        RunBothLoops(simulationLoop, consumptionLoop, simulator, cancellationToken, metrics);
+        RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
 
-    private static void RunBothLoops<TSaveRunner, TSaver>(
-        SimulationLoop<TestStressClock, ThreadWaiter> simulationLoop,
-        ConsumptionLoop<TestStressClock, ThreadWaiter, TSaveRunner, TSaver, TestInvariantCheckingRenderer> consumptionLoop,
+    private static void RunBothLoops<TConsumer, TSaveRunner, TSaver>(
+        ProductionLoop<WorldSnapshot, SimulationProducer, TestStressClock, ThreadWaiter> productionLoop,
+        ConsumptionLoop<WorldSnapshot, TConsumer, TSaveRunner, TSaver, TestStressClock, ThreadWaiter> consumptionLoop,
         SimulationCoordinator simulator,
         CancellationToken cancellationToken,
         TestStressMetrics metrics)
-        where TSaveRunner : struct, ISaveRunner
-        where TSaver : struct, ISaver
+        where TConsumer : struct, IConsumer<WorldSnapshot>
+        where TSaveRunner : struct, ISaveRunner<WorldSnapshot>
+        where TSaver : struct, ISaver<WorldSnapshot>
     {
         Exception? simulationException = null;
         Exception? consumptionException = null;
 
         var simulationThread = new Thread(() =>
         {
-            try { simulationLoop.Run(cancellationToken); }
+            try { productionLoop.Run(cancellationToken); }
             catch (OperationCanceledException) { }
             catch (Exception ex) { Volatile.Write(ref simulationException, ex); }
         })
@@ -216,33 +223,32 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private readonly struct TestInvariantCheckingRenderer : IRenderer
+    private struct TestInvariantCheckingConsumer : IConsumer<WorldSnapshot>
     {
         private readonly TestStressMetrics _metrics;
         private readonly int _renderDelayMilliseconds;
 
-        public TestInvariantCheckingRenderer(TestStressMetrics metrics, int renderDelayMilliseconds)
+        public TestInvariantCheckingConsumer(TestStressMetrics metrics, int renderDelayMilliseconds)
         {
             _metrics = metrics;
             _renderDelayMilliseconds = renderDelayMilliseconds;
         }
 
-        public void Render(in RenderFrame frame)
+        public void Consume(WorldSnapshot? previous, WorldSnapshot latest, long frameStartNanoseconds, SaveStatus saveStatus, CancellationToken cancellationToken)
         {
-            _metrics.RecordFrame(frame);
-
+            _metrics.RecordFrame(previous, latest);
             if (_renderDelayMilliseconds > 0)
                 Thread.Sleep(_renderDelayMilliseconds);
         }
     }
 
-    private readonly struct TestSlowSaver : ISaver
+    private readonly struct TestSlowSaver : ISaver<WorldSnapshot>
     {
         private readonly TestSaveMetrics _metrics;
 
         public TestSlowSaver(TestSaveMetrics metrics) => _metrics = metrics;
 
-        public void Save(WorldImage image, int tick)
+        public void Save(WorldSnapshot node, int sequenceNumber)
         {
             try
             {
@@ -270,11 +276,11 @@ public sealed class ConcurrencyStressTests
         public int MaxTickObserved => Volatile.Read(ref _maxTickObserved);
         public string? InvariantViolation => _invariantViolation;
 
-        public void RecordFrame(in RenderFrame frame)
+        public void RecordFrame(WorldSnapshot? previous, WorldSnapshot latest)
         {
             Interlocked.Increment(ref _framesRendered);
 
-            var latestTick = frame.Latest.TickNumber;
+            var latestTick = latest.TickNumber;
 
             // Latest tick must be monotonically non-decreasing across frames.
             var previousLatestTick = _lastLatestTick;
@@ -286,9 +292,9 @@ public sealed class ConcurrencyStressTests
             _lastLatestTick = latestTick;
 
             // Previous tick (when present) must be <= latest tick.
-            if (frame.Previous is not null && frame.Previous.TickNumber > latestTick)
+            if (previous is not null && previous.TickNumber > latestTick)
             {
-                _invariantViolation ??= $"Previous tick ({frame.Previous.TickNumber}) > latest tick ({latestTick})";
+                _invariantViolation ??= $"Previous tick ({previous.TickNumber}) > latest tick ({latestTick})";
                 return;
             }
 

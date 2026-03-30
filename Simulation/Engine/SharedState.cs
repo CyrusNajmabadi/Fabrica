@@ -4,7 +4,7 @@ using Simulation.World;
 namespace Simulation.Engine;
 
 /// <summary>
-/// All mutable state shared across the simulation and consumption threads.
+/// All mutable state shared across the production and consumption threads.
 /// Each member documents which thread(s) may write and which may read.
 ///
 /// VOLATILE MEMORY MODEL
@@ -12,18 +12,18 @@ namespace Simulation.Engine;
 ///   that precede it are guaranteed visible to any thread that subsequently
 ///   performs the matching volatile read (an acquire fence).
 ///
-///   Concretely for LatestSnapshot: the simulation thread fully initialises
-///   the WorldImage, then volatile-writes LatestSnapshot.  The consumption
-///   thread volatile-reads LatestSnapshot, then reads WorldImage fields.
-///   The release/acquire pair ensures all image writes are visible — no
-///   additional synchronisation is needed to read image data.
+///   Concretely for LatestNode: the production thread fully initialises
+///   the node's payload, then volatile-writes LatestNode.  The consumption
+///   thread volatile-reads LatestNode, then reads payload fields.
+///   The release/acquire pair ensures all payload writes are visible — no
+///   additional synchronisation is needed to read payload data.
 ///
 /// CONSERVATIVE RACE DIRECTIONS
-///   LatestSnapshot: if the consumption thread reads a slightly stale pointer
-///   it merely renders the same snapshot twice — correct, not stale data.
+///   LatestNode: if the consumption thread reads a slightly stale pointer
+///   it merely consumes the same node twice — correct, not stale data.
 ///
-///   ConsumptionEpoch: if the simulation reads a slightly stale (lower) epoch
-///   it retains a snapshot one extra cleanup pass — never frees prematurely.
+///   ConsumptionEpoch: if the production loop reads a slightly stale (lower)
+///   epoch it retains a node one extra cleanup pass — never frees prematurely.
 ///
 ///   NextSaveAtTick: see field comment below.
 ///
@@ -33,32 +33,32 @@ namespace Simulation.Engine;
 ///   write from a new thread ID, so tests that use both fields from the test
 ///   thread will correctly bind the "owner" to the test thread.
 /// </summary>
-internal sealed class SharedState
+internal sealed class SharedState<TNode> where TNode : ChainNode<TNode>
 {
-    // ── LatestSnapshot ────────────────────────────────────────────────────────
-    // Written by simulation thread only.  Read by consumption thread.
+    // ── LatestNode ───────────────────────────────────────────────────────────
+    // Written by production thread only.  Read by consumption thread.
 
-    private volatile WorldSnapshot? _latestSnapshot;
+    private volatile TNode? _latestNode;
 
 #if DEBUG
-    private int _latestSnapshotWriterThreadId = -1;
+    private int _latestNodeWriterThreadId = -1;
 #endif
 
-    public WorldSnapshot? LatestSnapshot
+    public TNode? LatestNode
     {
-        get => _latestSnapshot;
+        get => _latestNode;
         set
         {
 #if DEBUG
-            AssertSingleWriter(ref _latestSnapshotWriterThreadId, nameof(this.LatestSnapshot));
+            AssertSingleWriter(ref _latestNodeWriterThreadId, nameof(this.LatestNode));
 #endif
-            _latestSnapshot = value;
+            _latestNode = value;
         }
     }
 
     // ── ConsumptionEpoch ──────────────────────────────────────────────────────
-    // Written by consumption thread only.  Read by simulation thread.
-    // Simulation may free any snapshot whose tick < ConsumptionEpoch.
+    // Written by consumption thread only.  Read by production thread.
+    // Production may free any node whose sequence < ConsumptionEpoch.
     // Initial value 0: nothing eligible for freeing until consumption has processed something.
 
     private volatile int _consumptionEpoch;

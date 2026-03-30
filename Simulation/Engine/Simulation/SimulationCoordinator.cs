@@ -7,7 +7,7 @@ namespace Simulation.Engine;
 ///
 /// TICK DISPATCH CYCLE
 ///   <see cref="AdvanceTick"/> runs once per simulation tick, called by
-///   <see cref="SimulationLoop{TClock,TWaiter}"/>:
+///   <see cref="SimulationProducer"/>:
 ///
 ///     1. PREPARE — each worker's <see cref="SimulationExecutor.Prepare"/>
 ///        clears per-tick accumulation state via <see cref="WorkerResources"/>.

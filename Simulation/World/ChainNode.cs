@@ -75,9 +75,9 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     /// <summary>
     /// Prepares this node for use after being rented from the pool.
     /// Sets the sequence number, clears the forward pointer, and initialises
-    /// the ref count to 1.
+    /// the ref count to 1.  Called by the production loop after renting a node.
     /// </summary>
-    protected void InitializeBase(int sequenceNumber)
+    internal void InitializeBase(int sequenceNumber)
     {
         Debug.Assert(_refCount == 0, "InitializeBase called on a node still in use");
         this.SequenceNumber = sequenceNumber;
