@@ -145,18 +145,18 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     where TSaver : struct, ISaver
     where TRenderer : struct, IRenderer
 {
-    private readonly SimulationCoordinator _simulator;
+    private readonly SimulationCoordinator _simulationCoordinator;
     private readonly RenderCoordinator _renderCoordinator;
     private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
     private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _consumptionLoop;
 
     public Engine(
-        SimulationCoordinator simulator,
+        SimulationCoordinator simulationCoordinator,
         RenderCoordinator renderCoordinator,
         SimulationLoop<TClock, TWaiter> simulationLoop,
         ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
     {
-        _simulator = simulator;
+        _simulationCoordinator = simulationCoordinator;
         _renderCoordinator = renderCoordinator;
         _simulationLoop = simulationLoop;
         _consumptionLoop = consumptionLoop;
@@ -176,13 +176,13 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     {
         var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState();
-        var simulator = new SimulationCoordinator(simulationWorkerCount);
+        var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
         var renderCoordinator = new RenderCoordinator(renderWorkerCount);
 
         return new Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
-            simulator,
+            simulationCoordinator,
             renderCoordinator,
-            new SimulationLoop<TClock, TWaiter>(memory, shared, simulator, clock, waiter),
+            new SimulationLoop<TClock, TWaiter>(memory, shared, simulationCoordinator, clock, waiter),
             new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
                 memory,
                 shared,
@@ -222,7 +222,7 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         finally
         {
             _renderCoordinator.Dispose();
-            _simulator.Dispose();
+            _simulationCoordinator.Dispose();
         }
     }
 }
