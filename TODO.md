@@ -13,7 +13,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
 - [ ] Consider what happens when saves are slow enough to overlap with the next save interval (save-in-flight already prevented, but worth thinking about as real save logic arrives)
-- [ ] Multi-threaded simulation — worker pool for tick computation (architecture already supports this; needs implementation)
+- [ ] Multi-threaded simulation — worker pool for tick computation (`SimulationWorker` stub exists; needs thread management)
 - [ ] Multi-threaded rendering — parallel render workers within a `Render` call (architecture supports this; needs implementation)
 
 ## Testing
@@ -22,7 +22,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] Consolidate duplicate test infrastructure — `RecordingWaiter`, clock types, and context builders are redefined across multiple test files
 - [ ] Tests for production adapters (`SystemClock`, `ThreadWaiter`, `TaskSaveRunner`) if they gain non-trivial logic
 - [ ] Broader `MemorySystem` unit tests — direct coverage for `ReturnImage` reset behavior, edge cases beyond constructor validation
-- [ ] `ObjectPool` edge case tests — double-return, capacity boundary conditions
+- [ ] `ObjectPool` edge case tests — double-return, growth behavior under load
 - [ ] `WorldImage` standalone tests as it gains real state
 
 ## Quality / Tooling
@@ -48,3 +48,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [x] Snapshot lifetime contract — renderers must not store snapshot refs beyond the Render call; documented in `IRenderer` and `RenderFrame` ([d1c4c9a](https://github.com/CyrusNajmabadi/Fabrica/commit/d1c4c9a))
 - [x] Move `TickNumber` and `PublishTimeNanoseconds` from `WorldImage` to `WorldSnapshot` — publication metadata belongs on the snapshot, not the world state ([d1c4c9a](https://github.com/CyrusNajmabadi/Fabrica/commit/d1c4c9a))
 - [x] Tighten type safety — mutable public fields on `WorldSnapshot` replaced with private-set properties; `WorldImage.Reset()` renamed to `ResetForPool()` ([d1c4c9a](https://github.com/CyrusNajmabadi/Fabrica/commit/d1c4c9a))
+- [x] ObjectPool redesign — growable `Stack<T>`-backed pool; `Rent()` always returns (allocates on demand), `Return()` always accepts; pre-allocation preserved for cache warmth ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
+- [x] Time-based backpressure — tick-epoch gap measured in nanoseconds with a 100ms low water mark (soft exponential delay) and a 2s hard ceiling (simulation blocks until consumption catches up); replaces pool-availability-based throttling ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
+- [x] SimulationWorker stub — design placeholder documenting per-worker pools, created-nodes list for deferred ref-counting, and the threading contract for future multi-threaded simulation ([032a1dc](https://github.com/CyrusNajmabadi/Fabrica/commit/032a1dc))
