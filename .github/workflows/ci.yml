@@ -20,7 +20,16 @@ jobs:
 
       - run: dotnet build
 
-      - run: dotnet test --no-build --collect:"XPlat Code Coverage" --results-directory ./coverage
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: dotnet test --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: Coverage summary
         if: always()
@@ -33,5 +42,6 @@ jobs:
         if: always()
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
           fail_ci_if_error: false
