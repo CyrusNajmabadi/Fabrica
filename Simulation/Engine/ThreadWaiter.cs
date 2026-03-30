@@ -1,4 +1,4 @@
-namespace Simulation.Engine;
+﻿namespace Simulation.Engine;
 
 /// <summary>
 /// Production waiter backed by <see cref="WaitHandle.WaitOne(TimeSpan)"/> so waits
@@ -11,7 +11,7 @@ internal readonly struct ThreadWaiter : IWaiter
         if (duration <= TimeSpan.Zero)
             return;
 
-        int signaled = WaitHandle.WaitAny(
+        var signaled = WaitHandle.WaitAny(
             [cancellationToken.WaitHandle],
             duration);
 

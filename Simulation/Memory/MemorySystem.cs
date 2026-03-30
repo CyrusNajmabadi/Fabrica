@@ -1,4 +1,4 @@
-using Simulation.World;
+﻿using Simulation.World;
 
 namespace Simulation.Memory;
 
@@ -26,7 +26,7 @@ namespace Simulation.Memory;
 internal sealed class MemorySystem
 {
     private readonly ObjectPool<WorldSnapshot> _snapshotPool;
-    private readonly ObjectPool<WorldImage>    _imagePool;
+    private readonly ObjectPool<WorldImage> _imagePool;
 
     public PinnedVersions PinnedVersions { get; } = new();
 
@@ -36,16 +36,16 @@ internal sealed class MemorySystem
             throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
         _snapshotPool = new ObjectPool<WorldSnapshot>(initialPoolSize);
-        _imagePool    = new ObjectPool<WorldImage>(initialPoolSize);
+        _imagePool = new ObjectPool<WorldImage>(initialPoolSize);
     }
 
     // ── Snapshot pool (simulation thread only) ───────────────────────────────
 
-    public WorldSnapshot RentSnapshot()                        => _snapshotPool.Rent();
-    public void          ReturnSnapshot(WorldSnapshot snapshot) => _snapshotPool.Return(snapshot);
+    public WorldSnapshot RentSnapshot() => _snapshotPool.Rent();
+    public void ReturnSnapshot(WorldSnapshot snapshot) => _snapshotPool.Return(snapshot);
 
     // ── Image pool (simulation thread only) ──────────────────────────────────
 
-    public WorldImage RentImage()              => _imagePool.Rent();
-    public void       ReturnImage(WorldImage image) { image.ResetForPool(); _imagePool.Return(image); }
+    public WorldImage RentImage() => _imagePool.Rent();
+    public void ReturnImage(WorldImage image) { image.ResetForPool(); _imagePool.Return(image); }
 }

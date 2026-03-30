@@ -1,4 +1,4 @@
-using Simulation.Engine;
+﻿using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.World;
 using Xunit;
@@ -20,7 +20,7 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Bootstrap();
 
-        WorldSnapshot snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Same(snapshot, test.Accessor.OldestSnapshot);
@@ -35,7 +35,7 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        WorldSnapshot initial = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var initial = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Accessor.Tick();
 
@@ -55,8 +55,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        WorldSnapshot secondSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
-        WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var secondSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
 
         test.Shared.ConsumptionEpoch = 2;
 
@@ -76,7 +76,7 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
 
         test.Shared.ConsumptionEpoch = 2;
 
@@ -91,7 +91,7 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        WorldSnapshot currentSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var currentSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Shared.ConsumptionEpoch = 100;
 
@@ -131,8 +131,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        WorldSnapshot latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Memory.PinnedVersions.Pin(firstSnapshot.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
@@ -161,10 +161,10 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(); // tick 2
         test.Accessor.Tick(); // tick 3
 
-        WorldSnapshot tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        WorldSnapshot tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
-        WorldSnapshot tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
-        WorldSnapshot tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
+        var tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
+        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Memory.PinnedVersions.Pin(tick1.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 3;
@@ -194,14 +194,14 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Bootstrap();
 
         long lastTime = 0;
-        long accumulator = SimulationConstants.TickDurationNanoseconds - 1;
+        var accumulator = SimulationConstants.TickDurationNanoseconds - 1;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds - 1, accumulator);
         Assert.Equal(
-            [ GetIdleYieldWait() ],
+            [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
     }
 
@@ -213,14 +213,14 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Bootstrap();
 
         long lastTime = 0;
-        long accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = SimulationConstants.TickDurationNanoseconds;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(0, accumulator);
         Assert.Equal(
-            [ GetIdleYieldWait() ],
+            [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
     }
 
@@ -242,7 +242,7 @@ public sealed class SimulationLoopTickTests
 
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ GetIdleYieldWait() ],
+            [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
     }
 
@@ -254,14 +254,14 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Bootstrap();
 
         long lastTime = 0;
-        long accumulator = (SimulationConstants.TickDurationNanoseconds * 2) + 123;
+        var accumulator = (SimulationConstants.TickDurationNanoseconds * 2) + 123;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         Assert.Equal(2, test.Accessor.CurrentTick);
         Assert.Equal(123, accumulator);
         Assert.Equal(
-            [ GetIdleYieldWait() ],
+            [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
     }
 
@@ -273,17 +273,17 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.CreateManual();
 
         test.Accessor.Bootstrap();
-        for (int i = 0; i < LowWaterMarkTicks + 1; i++)
+        for (var i = 0; i < LowWaterMarkTicks + 1; i++)
             test.Accessor.Tick();
 
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        long accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = SimulationConstants.TickDurationNanoseconds;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        int tickBefore = LowWaterMarkTicks + 1;
+        var tickBefore = LowWaterMarkTicks + 1;
         Assert.Equal(tickBefore + 1, test.Accessor.CurrentTick);
         Assert.Equal(
             [
@@ -299,14 +299,14 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.CreateManual();
 
         test.Accessor.Bootstrap();
-        for (int i = 0; i < LowWaterMarkTicks + 1; i++)
+        for (var i = 0; i < LowWaterMarkTicks + 1; i++)
             test.Accessor.Tick();
 
-        int tickBefore = test.Accessor.CurrentTick;
+        var tickBefore = test.Accessor.CurrentTick;
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        long accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = SimulationConstants.TickDurationNanoseconds;
 
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = cancellationSource.Cancel;
@@ -316,7 +316,7 @@ public sealed class SimulationLoopTickTests
 
         Assert.Equal(tickBefore, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ GetExpectedPressureDelay(outstandingTicks: tickBefore) ],
+            [GetExpectedPressureDelay(outstandingTicks: tickBefore)],
             test.WaiterState.WaitCalls);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds, accumulator);
     }
@@ -329,12 +329,12 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.CreateManual();
 
         test.Accessor.Bootstrap();
-        for (int i = 0; i < HardCeilingTicks; i++)
+        for (var i = 0; i < HardCeilingTicks; i++)
             test.Accessor.Tick();
 
         test.WaiterState.WaitCalls.Clear();
 
-        int waitCount = 0;
+        var waitCount = 0;
         test.WaiterState.BeforeWait = () =>
         {
             waitCount++;
@@ -343,7 +343,7 @@ public sealed class SimulationLoopTickTests
         };
 
         long lastTime = 0;
-        long accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = SimulationConstants.TickDurationNanoseconds;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
@@ -362,24 +362,24 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.CreateManual();
 
         test.Accessor.Bootstrap();
-        for (int i = 0; i < HardCeilingTicks; i++)
+        for (var i = 0; i < HardCeilingTicks; i++)
             test.Accessor.Tick();
 
-        int tickBefore = test.Accessor.CurrentTick;
+        var tickBefore = test.Accessor.CurrentTick;
         test.WaiterState.WaitCalls.Clear();
 
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = cancellationSource.Cancel;
 
         long lastTime = 0;
-        long accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = SimulationConstants.TickDurationNanoseconds;
 
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
         Assert.Equal(tickBefore, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ GetHardCeilingWait() ],
+            [GetHardCeilingWait()],
             test.WaiterState.WaitCalls);
     }
 

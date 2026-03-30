@@ -1,4 +1,4 @@
-using Simulation.Engine;
+﻿using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.World;
 using Xunit;
@@ -17,7 +17,7 @@ public sealed class LoopStressHarnessTests
 
         test.SimulationLoop.Bootstrap();
 
-        for (int i = 0; i < LowWaterMarkTicks + 1; i++)
+        for (var i = 0; i < LowWaterMarkTicks + 1; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -28,7 +28,7 @@ public sealed class LoopStressHarnessTests
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration();
 
-        int expectedTick = LowWaterMarkTicks + 2;
+        var expectedTick = LowWaterMarkTicks + 2;
         Assert.Equal(expectedTick, test.SimulationLoop.CurrentTick);
 
         var idleYield = GetIdleYieldWait();
@@ -45,7 +45,7 @@ public sealed class LoopStressHarnessTests
         test.SimulationLoop.Bootstrap();
         test.Shared.NextSaveAtTick = 0;
 
-        for (int i = 0; i < 10; i++)
+        for (var i = 0; i < 10; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -69,7 +69,7 @@ public sealed class LoopStressHarnessTests
         test.SimulationLoop.Bootstrap();
         test.Shared.NextSaveAtTick = 0;
 
-        for (int i = 0; i < LowWaterMarkTicks + 3; i++)
+        for (var i = 0; i < LowWaterMarkTicks + 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -85,7 +85,7 @@ public sealed class LoopStressHarnessTests
             .ToList();
         Assert.NotEmpty(pressureWaitsBeforeConsumption);
 
-        for (int i = 0; i < LowWaterMarkTicks + 3; i++)
+        for (var i = 0; i < LowWaterMarkTicks + 3; i++)
             test.ConsumptionLoop.RunIteration();
 
         test.Waiter.ClearCalls();

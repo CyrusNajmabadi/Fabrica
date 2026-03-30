@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Simulation.Memory;
 using Simulation.World;
 
@@ -119,11 +119,11 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     private void RunOneIteration(CancellationToken cancellationToken)
     {
-        long frameStart = _clock.NowNanoseconds;
+        var frameStart = _clock.NowNanoseconds;
 
         DrainSaveEvents();
 
-        WorldSnapshot? latestSnapshot = _shared.LatestSnapshot;
+        var latestSnapshot = _shared.LatestSnapshot;
         if (latestSnapshot is not null)
         {
             if (!ReferenceEquals(latestSnapshot, _renderCurrent))
@@ -167,7 +167,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     private void DrainSaveEvents()
     {
-        while (_saveEvents.TryDequeue(out SaveEvent saveEvent))
+        while (_saveEvents.TryDequeue(out var saveEvent))
         {
             _saveInFlight = false;
             _lastSaveResult = saveEvent;
@@ -191,12 +191,12 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     /// </summary>
     private void MaybeStartSave(WorldSnapshot snapshot)
     {
-        int nextSaveAt = _shared.NextSaveAtTick;
+        var nextSaveAt = _shared.NextSaveAtTick;
 
         if (nextSaveAt == 0 || snapshot.TickNumber < nextSaveAt)
             return;
 
-        int tickToSave = snapshot.TickNumber;
+        var tickToSave = snapshot.TickNumber;
 
         // Clear the timer BEFORE firing so the save task controls the next trigger.
         _shared.NextSaveAtTick = 0;
@@ -206,7 +206,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         // after Render below), so the simulation already holds this snapshot alive.
         _memory.PinnedVersions.Pin(tickToSave, _savePinOwner);
 
-        WorldImage imageToSave = snapshot.Image;
+        var imageToSave = snapshot.Image;
         try
         {
             _saveRunner.RunSave(imageToSave, tickToSave, RunSaveTask);
@@ -235,7 +235,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     /// </summary>
     private void RunSaveTask(WorldImage image, int tick)
     {
-        long startTime = _clock.NowNanoseconds;
+        var startTime = _clock.NowNanoseconds;
         try
         {
             _saver.Save(image, tick);
@@ -257,8 +257,8 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     private void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken)
     {
-        long elapsed = Math.Max(0, _clock.NowNanoseconds - frameStart);
-        long remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
+        var elapsed = Math.Max(0, _clock.NowNanoseconds - frameStart);
+        var remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
         if (remaining > 0)
             _waiter.Wait(new TimeSpan(remaining / 100), cancellationToken);
     }

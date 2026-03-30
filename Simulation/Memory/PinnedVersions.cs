@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
 namespace Simulation.Memory;
@@ -54,7 +54,7 @@ internal sealed class PinnedVersions
     {
         ArgumentNullException.ThrowIfNull(owner);
 
-        ConcurrentDictionary<object, byte> owners = _pinned.GetOrAdd(
+        var owners = _pinned.GetOrAdd(
             tick,
             _ => new ConcurrentDictionary<object, byte>(ReferenceOwnerComparer.Instance));
 
@@ -66,7 +66,7 @@ internal sealed class PinnedVersions
     {
         ArgumentNullException.ThrowIfNull(owner);
 
-        if (!_pinned.TryGetValue(tick, out ConcurrentDictionary<object, byte>? owners))
+        if (!_pinned.TryGetValue(tick, out var owners))
             throw new InvalidOperationException("Attempted to unpin a tick that is not currently pinned.");
 
         if (!owners.TryRemove(owner, out _))
@@ -77,7 +77,7 @@ internal sealed class PinnedVersions
     }
 
     public bool IsPinned(int tick) =>
-        _pinned.TryGetValue(tick, out ConcurrentDictionary<object, byte>? owners) && !owners.IsEmpty;
+        _pinned.TryGetValue(tick, out var owners) && !owners.IsEmpty;
 
     private sealed class ReferenceOwnerComparer : IEqualityComparer<object>
     {

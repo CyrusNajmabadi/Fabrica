@@ -1,4 +1,4 @@
-using Simulation.Memory;
+﻿using Simulation.Memory;
 using Xunit;
 
 namespace Simulation.Tests.Memory;
@@ -10,9 +10,9 @@ public sealed class ObjectPoolTests
     {
         var pool = new ObjectPool<Dummy>(2);
 
-        Dummy first = pool.Rent();
-        Dummy second = pool.Rent();
-        Dummy third = pool.Rent();
+        var first = pool.Rent();
+        var second = pool.Rent();
+        var third = pool.Rent();
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -27,7 +27,7 @@ public sealed class ObjectPoolTests
     {
         var pool = new ObjectPool<Dummy>(1);
 
-        Dummy item = pool.Rent();
+        var item = pool.Rent();
         Assert.Equal(0, pool.Available);
 
         pool.Return(item);
@@ -41,7 +41,7 @@ public sealed class ObjectPoolTests
     {
         var pool = new ObjectPool<Dummy>(1);
 
-        Dummy a = pool.Rent();
+        var a = pool.Rent();
         Dummy b = new();
         Dummy c = new();
 
@@ -51,9 +51,9 @@ public sealed class ObjectPoolTests
 
         Assert.Equal(3, pool.Available);
 
-        Dummy r1 = pool.Rent();
-        Dummy r2 = pool.Rent();
-        Dummy r3 = pool.Rent();
+        var r1 = pool.Rent();
+        var r2 = pool.Rent();
+        var r3 = pool.Rent();
 
         Assert.Equal(0, pool.Available);
         Assert.Contains(a, new[] { r1, r2, r3 });

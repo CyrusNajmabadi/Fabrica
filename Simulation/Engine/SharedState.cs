@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Simulation.World;
 
 namespace Simulation.Engine;
@@ -101,7 +101,7 @@ internal sealed class SharedState
 #if DEBUG
     private static void AssertSingleWriter(ref int storedThreadId, string propertyName)
     {
-        int current = Environment.CurrentManagedThreadId;
+        var current = Environment.CurrentManagedThreadId;
         if (storedThreadId == -1)
             storedThreadId = current;
         Debug.Assert(

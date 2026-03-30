@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Simulation.Memory;
 using Simulation.World;
 
@@ -39,17 +39,17 @@ namespace Simulation.Engine;
 ///   The pinned queue is drained each cleanup pass once the pin is released.
 ///
 /// BACKPRESSURE
-    ///   The tick-epoch gap (in nanoseconds) drives two pressure levels:
-    ///
-    ///   1. Soft pressure — when the gap exceeds PressureLowWaterMarkNanoseconds,
-    ///      an exponentially increasing delay (1 ms → 64 ms) is inserted before
-    ///      each tick, slowing the simulation and giving the consumption thread
-    ///      time to advance its epoch.
-    ///
-    ///   2. Hard ceiling — when the gap reaches PressureHardCeilingNanoseconds,
-    ///      the simulation blocks entirely, sleeping PressureMaxDelayNanoseconds
-    ///      per iteration until the gap drops below the ceiling.  This bounds
-    ///      memory growth: the simulation cannot run arbitrarily far ahead.
+///   The tick-epoch gap (in nanoseconds) drives two pressure levels:
+///
+///   1. Soft pressure — when the gap exceeds PressureLowWaterMarkNanoseconds,
+///      an exponentially increasing delay (1 ms → 64 ms) is inserted before
+///      each tick, slowing the simulation and giving the consumption thread
+///      time to advance its epoch.
+///
+///   2. Hard ceiling — when the gap reaches PressureHardCeilingNanoseconds,
+///      the simulation blocks entirely, sleeping PressureMaxDelayNanoseconds
+///      per iteration until the gap drops below the ceiling.  This bounds
+///      memory growth: the simulation cannot run arbitrarily far ahead.
 ///
 /// Generic on <typeparamref name="TClock"/> and <typeparamref name="TWaiter"/>
 /// (both constrained to struct) so the JIT/AOT devirtualises all calls —
@@ -60,11 +60,11 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     where TWaiter : struct, IWaiter
 {
     private readonly MemorySystem _memory;
-    private readonly SharedState  _shared;
-    private readonly TClock       _clock;
-    private readonly TWaiter      _waiter;
+    private readonly SharedState _shared;
+    private readonly TClock _clock;
+    private readonly TWaiter _waiter;
 
-    private int            _currentTick;
+    private int _currentTick;
     private WorldSnapshot? _currentSnapshot;
     private WorldSnapshot? _oldestSnapshot;
 
@@ -76,7 +76,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     {
         _memory = memory;
         _shared = shared;
-        _clock  = clock;
+        _clock = clock;
         _waiter = waiter;
     }
 
@@ -86,7 +86,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
         Bootstrap();
 
-        long lastTime    = _clock.NowNanoseconds;
+        var lastTime = _clock.NowNanoseconds;
         long accumulator = 0;
 
         while (!cancellationToken.IsCancellationRequested)
@@ -98,9 +98,9 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         ref long lastTime,
         ref long accumulator)
     {
-        long now   = _clock.NowNanoseconds;
-        long delta = Math.Max(0, now - lastTime);
-        lastTime   = now;
+        var now = _clock.NowNanoseconds;
+        var delta = Math.Max(0, now - lastTime);
+        lastTime = now;
         accumulator += delta;
 
         ProcessAvailableTicks(cancellationToken, ref accumulator);
@@ -128,14 +128,14 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// </summary>
     private void Bootstrap()
     {
-        WorldImage    image    = _memory.RentImage();
-        WorldSnapshot snapshot = _memory.RentSnapshot();
+        var image = _memory.RentImage();
+        var snapshot = _memory.RentSnapshot();
 
         snapshot.Initialize(image, tickNumber: 0);
 
         _currentSnapshot = snapshot;
-        _oldestSnapshot  = snapshot;
-        _currentTick     = 0;
+        _oldestSnapshot = snapshot;
+        _currentTick = 0;
 
         snapshot.MarkPublished(_clock.NowNanoseconds);
         _shared.LatestSnapshot = snapshot;
@@ -154,8 +154,8 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// </summary>
     private void Tick()
     {
-        WorldImage    image    = _memory.RentImage();
-        WorldSnapshot snapshot = _memory.RentSnapshot();
+        var image = _memory.RentImage();
+        var snapshot = _memory.RentSnapshot();
 
         _currentTick++;
         // TODO: advance world state into image
@@ -190,7 +190,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// </summary>
     private void CleanupStaleSnapshots()
     {
-        int consumptionEpoch = _shared.ConsumptionEpoch; // volatile read
+        var consumptionEpoch = _shared.ConsumptionEpoch; // volatile read
 
         // Walk the chain, freeing every snapshot the consumption side has moved past.
         // Pinned snapshots are severed from the chain and parked in _pinnedQueue so
@@ -200,7 +200,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
                && _oldestSnapshot != _currentSnapshot
                && _oldestSnapshot.TickNumber < consumptionEpoch)
         {
-            WorldSnapshot toProcess = _oldestSnapshot;
+            var toProcess = _oldestSnapshot;
             _oldestSnapshot = toProcess.Next;
 
             if (_memory.PinnedVersions.IsPinned(toProcess.TickNumber))
@@ -227,7 +227,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
 
     private void FreeSnapshot(WorldSnapshot snapshot)
     {
-        WorldImage image = snapshot.Image; // capture before Release() nulls it
+        var image = snapshot.Image; // capture before Release() nulls it
         snapshot.Release();
         Debug.Assert(snapshot.IsUnreferenced, "Snapshot still referenced after cleanup — refcount mismatch.");
         _memory.ReturnSnapshot(snapshot);
@@ -249,7 +249,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     /// </summary>
     private void ApplyPressureDelay(CancellationToken cancellationToken)
     {
-        long gapNanoseconds = (long)(_currentTick - _shared.ConsumptionEpoch)
+        var gapNanoseconds = (long)(_currentTick - _shared.ConsumptionEpoch)
                             * SimulationConstants.TickDurationNanoseconds;
 
         while (gapNanoseconds >= SimulationConstants.PressureHardCeilingNanoseconds)
@@ -261,7 +261,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
                            * SimulationConstants.TickDurationNanoseconds;
         }
 
-        long delay = SimulationPressure.ComputeDelay(
+        var delay = SimulationPressure.ComputeDelay(
             gapNanoseconds,
             SimulationConstants.PressureLowWaterMarkNanoseconds,
             SimulationConstants.TickDurationNanoseconds,

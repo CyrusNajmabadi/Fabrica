@@ -1,4 +1,4 @@
-namespace Simulation.Engine;
+﻿namespace Simulation.Engine;
 
 /// <summary>
 /// Blocking delay abstraction.  Implementations are constrained to struct so the

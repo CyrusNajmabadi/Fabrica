@@ -1,4 +1,4 @@
-using Simulation.Memory;
+﻿using Simulation.Memory;
 using Xunit;
 
 namespace Simulation.Tests.Memory;

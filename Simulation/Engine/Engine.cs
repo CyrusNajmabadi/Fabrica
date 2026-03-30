@@ -1,4 +1,4 @@
-using Simulation.Memory;
+﻿using Simulation.Memory;
 
 namespace Simulation.Engine;
 
@@ -146,7 +146,7 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
         SimulationLoop<TClock, TWaiter> simulationLoop,
         ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
     {
-        _simulationLoop  = simulationLoop;
+        _simulationLoop = simulationLoop;
         _consumptionLoop = consumptionLoop;
     }
 
@@ -182,13 +182,13 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     {
         var simulationThread = new Thread(() => _simulationLoop.Run(cancellationToken))
         {
-            Name         = "Simulation",
+            Name = "Simulation",
             IsBackground = false,
         };
 
         var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
         {
-            Name         = "Consumption",
+            Name = "Consumption",
             IsBackground = false,
         };
 

@@ -1,4 +1,4 @@
-using Simulation.Engine;
+﻿using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.World;
 using Xunit;
@@ -20,7 +20,7 @@ public sealed class SimulationLoopRunTests
         test.Accessor.Bootstrap();
 
         long lastTime = 100;
-        long accumulator = SimulationConstants.TickDurationNanoseconds - 200;
+        var accumulator = SimulationConstants.TickDurationNanoseconds - 200;
         clockState.NowNanoseconds = 300;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
@@ -29,7 +29,7 @@ public sealed class SimulationLoopRunTests
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.Equal(0, accumulator);
         Assert.Equal(
-            [ TimeSpan.FromMilliseconds(1) ],
+            [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
     }
 
@@ -58,7 +58,7 @@ public sealed class SimulationLoopRunTests
         Assert.Equal(150, accumulator);
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ TimeSpan.FromMilliseconds(1) ],
+            [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
     }
 
@@ -83,7 +83,7 @@ public sealed class SimulationLoopRunTests
         Assert.Equal(123, accumulator);
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Equal(
-            [ TimeSpan.FromMilliseconds(1) ],
+            [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
     }
 
@@ -102,13 +102,13 @@ public sealed class SimulationLoopRunTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        WorldSnapshot snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Same(snapshot, test.Accessor.OldestSnapshot);
         Assert.Same(snapshot, test.Shared.LatestSnapshot);
         Assert.Equal(0, snapshot.TickNumber);
         Assert.Equal(
-            [ TimeSpan.FromMilliseconds(1) ],
+            [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
     }
 

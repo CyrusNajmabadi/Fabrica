@@ -1,4 +1,4 @@
-namespace Simulation.Engine;
+﻿namespace Simulation.Engine;
 
 /// <summary>
 /// Monotonic clock abstraction.  All timestamps are in nanoseconds.

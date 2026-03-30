@@ -1,4 +1,4 @@
-namespace Simulation.Engine;
+﻿namespace Simulation.Engine;
 
 /// <summary>
 /// Temporary production renderer used until real rendering is implemented.

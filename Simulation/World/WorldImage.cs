@@ -1,4 +1,4 @@
-namespace Simulation.World;
+﻿namespace Simulation.World;
 
 /// <summary>
 /// The raw world state for one simulation tick.

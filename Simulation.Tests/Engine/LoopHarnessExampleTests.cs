@@ -1,4 +1,4 @@
-using Simulation.Engine;
+﻿using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.World;
 using Xunit;
@@ -17,7 +17,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
 
         test.ConsumptionLoop.RunIteration(); // save dispatched for T1
         Assert.True(test.Pins.IsPinned(1));
@@ -26,7 +26,7 @@ public sealed class LoopHarnessExampleTests
 
         // Advance several ticks while save is in flight.  The epoch eventually
         // passes T1, but the pin keeps it alive in the simulation's pinned queue.
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -57,13 +57,13 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
 
         test.ConsumptionLoop.RunIteration(); // save dispatched for T1
         test.Pins.Pin(1, externalOwner);
 
         // Advance several ticks so the epoch passes T1 and it enters the pinned queue.
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -125,14 +125,14 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1
 
         // Advance enough ticks that the epoch passes T1 and cleanup frees it.
         // With the one-tick-behind epoch model, an extra consumption iteration
         // is needed compared to the old model.
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -235,7 +235,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Renderer.FailWith(new InvalidOperationException("render failed"));
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        var exception = Assert.Throws<InvalidOperationException>(
             () => test.ConsumptionLoop.RunIteration());
 
         Assert.Equal("render failed", exception.Message);
@@ -271,7 +271,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Save.FailDispatchWith(new InvalidOperationException("dispatch failed"));
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+        var exception = Assert.Throws<InvalidOperationException>(
             () => test.ConsumptionLoop.RunIteration());
 
         Assert.Equal("dispatch failed", exception.Message);
@@ -331,12 +331,12 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
+        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1, no save
 
         // Advance enough ticks that the epoch passes T1 and cleanup frees it.
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
             test.SimulationLoop.RunIteration();
@@ -530,7 +530,7 @@ public sealed class LoopHarnessExampleTests
 
             public void CompletePendingSave()
             {
-                SaveInvocation invocation = Assert.Single(_state.PendingInvocations);
+                var invocation = Assert.Single(_state.PendingInvocations);
                 _state.PendingInvocations.Clear();
                 _state.Complete(invocation);
             }

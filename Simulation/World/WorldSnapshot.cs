@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace Simulation.World;
 
@@ -80,10 +80,10 @@ internal sealed class WorldSnapshot
     internal void Initialize(WorldImage image, int tickNumber)
     {
         Debug.Assert(_refCount == 0, "Initialize called on a snapshot still in use");
-        Image     = image;
+        Image = image;
         TickNumber = tickNumber;
         PublishTimeNanoseconds = 0;
-        Next      = null;
+        Next = null;
         _refCount = 1;
     }
 
@@ -130,7 +130,7 @@ internal sealed class WorldSnapshot
         if (--_refCount == 0)
         {
             Image = null!;
-            Next  = null;
+            Next = null;
         }
     }
 

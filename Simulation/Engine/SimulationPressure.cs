@@ -1,4 +1,4 @@
-namespace Simulation.Engine;
+﻿namespace Simulation.Engine;
 
 /// <summary>
 /// Pure pressure-delay calculations for the simulation loop.
@@ -29,17 +29,17 @@ internal static class SimulationPressure
         long gapNanoseconds,
         long lowWaterMarkNanoseconds,
         long bucketWidthNanoseconds,
-        int  bucketCount,
+        int bucketCount,
         long baseNanoseconds,
         long maxNanoseconds)
     {
         if (gapNanoseconds <= lowWaterMarkNanoseconds)
             return 0;
 
-        long excess = gapNanoseconds - lowWaterMarkNanoseconds;
-        int bucket = (int)Math.Min((excess - 1) / bucketWidthNanoseconds, bucketCount - 1);
+        var excess = gapNanoseconds - lowWaterMarkNanoseconds;
+        var bucket = (int)Math.Min((excess - 1) / bucketWidthNanoseconds, bucketCount - 1);
 
-        long delay = baseNanoseconds << bucket;
+        var delay = baseNanoseconds << bucket;
         return Math.Min(delay, maxNanoseconds);
     }
 }

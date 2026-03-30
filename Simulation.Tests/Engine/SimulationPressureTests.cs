@@ -1,4 +1,4 @@
-using Simulation.Engine;
+﻿using Simulation.Engine;
 using Xunit;
 
 namespace Simulation.Tests.Engine;
@@ -6,15 +6,15 @@ namespace Simulation.Tests.Engine;
 public sealed class SimulationPressureTests
 {
     private const long Tick = 25_000_000;  // one tick duration in ns (matches 40 Hz)
-    private const long Lwm  = 100_000_000; // low water mark in ns (4 ticks)
+    private const long Lwm = 100_000_000; // low water mark in ns (4 ticks)
 
     [Fact]
     public void ComputeDelay_ReturnsZero_WhenGapIsAtOrBelowLowWaterMark()
     {
-        for (int ticks = -1; ticks <= 4; ticks++)
+        for (var ticks = -1; ticks <= 4; ticks++)
         {
-            long gap = ticks * Tick;
-            long delay = SimulationPressure.ComputeDelay(
+            var gap = ticks * Tick;
+            var delay = SimulationPressure.ComputeDelay(
                 gapNanoseconds: gap,
                 lowWaterMarkNanoseconds: Lwm,
                 bucketWidthNanoseconds: Tick,
@@ -41,10 +41,10 @@ public sealed class SimulationPressureTests
             64_000_000, // 8 ticks past LWM, bucket 7 (capped at max)
         ];
 
-        for (int i = 0; i < expectedDelays.Length; i++)
+        for (var i = 0; i < expectedDelays.Length; i++)
         {
-            long gap = Lwm + (i + 1) * Tick;
-            long actual = SimulationPressure.ComputeDelay(
+            var gap = Lwm + (i + 1) * Tick;
+            var actual = SimulationPressure.ComputeDelay(
                 gapNanoseconds: gap,
                 lowWaterMarkNanoseconds: Lwm,
                 bucketWidthNanoseconds: Tick,
@@ -59,7 +59,7 @@ public sealed class SimulationPressureTests
     [Fact]
     public void ComputeDelay_IsCappedAtMaximum()
     {
-        long delay = SimulationPressure.ComputeDelay(
+        var delay = SimulationPressure.ComputeDelay(
             gapNanoseconds: Lwm + 100 * Tick,
             lowWaterMarkNanoseconds: Lwm,
             bucketWidthNanoseconds: Tick,
@@ -73,7 +73,7 @@ public sealed class SimulationPressureTests
     [Fact]
     public void ComputeDelay_JustBarelyOverLowWaterMark_ReturnsBaseDelay()
     {
-        long delay = SimulationPressure.ComputeDelay(
+        var delay = SimulationPressure.ComputeDelay(
             gapNanoseconds: Lwm + 1,
             lowWaterMarkNanoseconds: Lwm,
             bucketWidthNanoseconds: Tick,

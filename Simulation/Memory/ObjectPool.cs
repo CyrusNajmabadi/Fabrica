@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace Simulation.Memory;
 
@@ -32,7 +32,7 @@ internal sealed class ObjectPool<T> where T : class, new()
 
     private void AssertOwnerThread()
     {
-        int current = Environment.CurrentManagedThreadId;
+        var current = Environment.CurrentManagedThreadId;
         if (_ownerThreadId == -1)
             _ownerThreadId = current;
         else
@@ -46,7 +46,7 @@ internal sealed class ObjectPool<T> where T : class, new()
     public ObjectPool(int initialCapacity)
     {
         _items = new Stack<T>(initialCapacity);
-        for (int i = 0; i < initialCapacity; i++)
+        for (var i = 0; i < initialCapacity; i++)
             _items.Push(new T());
     }
 

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace Simulation.Engine;
 
@@ -24,9 +24,9 @@ internal readonly struct SystemClock : IClock
     {
         get
         {
-            long ticks     = Stopwatch.GetTimestamp();
-            long seconds   = ticks / Stopwatch.Frequency;
-            long remainder = ticks % Stopwatch.Frequency;
+            var ticks = Stopwatch.GetTimestamp();
+            var seconds = ticks / Stopwatch.Frequency;
+            var remainder = ticks % Stopwatch.Frequency;
             // Safe: remainder < Frequency < long.MaxValue / 1_000_000_000 (asserted above)
             return seconds * 1_000_000_000L + remainder * 1_000_000_000L / Stopwatch.Frequency;
         }
