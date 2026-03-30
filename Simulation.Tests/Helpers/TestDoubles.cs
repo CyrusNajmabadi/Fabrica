@@ -4,21 +4,21 @@ using Simulation.World;
 namespace Simulation.Tests.Helpers;
 
 /// <summary>
-/// Mutable clock state shared between a test and its <see cref="RecordingClock"/>.
+/// Mutable clock state shared between a test and its <see cref="TestRecordingClock"/>.
 /// </summary>
-internal sealed class ClockState
+internal sealed class TestClockState
 {
     public long NowNanoseconds { get; set; }
 }
 
 /// <summary>
-/// Clock backed by a mutable <see cref="ClockState"/> so tests can control time.
+/// Clock backed by a mutable <see cref="TestClockState"/> so tests can control time.
 /// </summary>
-internal readonly struct RecordingClock : IClock
+internal readonly struct TestRecordingClock : IClock
 {
-    private readonly ClockState _state;
+    private readonly TestClockState _state;
 
-    public RecordingClock(ClockState state) => _state = state;
+    public TestRecordingClock(TestClockState state) => _state = state;
 
     public long NowNanoseconds => _state.NowNanoseconds;
 }
@@ -28,18 +28,18 @@ internal readonly struct RecordingClock : IClock
 /// accumulator or <see cref="SimulationLoop{TClock,TWaiter}.TestAccessor.Tick"/>
 /// rather than wall-clock deltas.
 /// </summary>
-internal readonly struct FakeClock : IClock
+internal readonly struct TestFakeClock : IClock
 {
     public long NowNanoseconds => 0;
 }
 
 /// <summary>
-/// Mutable state shared between a test and its <see cref="RecordingWaiter"/>.
+/// Mutable state shared between a test and its <see cref="TestRecordingWaiter"/>.
 /// Captures every Wait call and exposes two optional hooks:
 /// <see cref="BeforeWait"/> (parameterless, for simple cancellation triggers) and
 /// <see cref="OnWait"/> (receives the duration, for duration-aware assertions).
 /// </summary>
-internal sealed class WaiterState
+internal sealed class TestWaiterState
 {
     public readonly List<TimeSpan> WaitCalls = [];
 
@@ -49,13 +49,13 @@ internal sealed class WaiterState
 
 /// <summary>
 /// Waiter that records every call and invokes optional hooks from
-/// <see cref="WaiterState"/> before checking cancellation.
+/// <see cref="TestWaiterState"/> before checking cancellation.
 /// </summary>
-internal readonly struct RecordingWaiter : IWaiter
+internal readonly struct TestRecordingWaiter : IWaiter
 {
-    private readonly WaiterState _state;
+    private readonly TestWaiterState _state;
 
-    public RecordingWaiter(WaiterState state) => _state = state;
+    public TestRecordingWaiter(TestWaiterState state) => _state = state;
 
     public void Wait(TimeSpan duration, CancellationToken cancellationToken)
     {
@@ -69,25 +69,25 @@ internal readonly struct RecordingWaiter : IWaiter
 /// <summary>
 /// Waiter that honors cancellation but does not sleep or record calls.
 /// </summary>
-internal readonly struct NoWaiter : IWaiter
+internal readonly struct TestNoOpWaiter : IWaiter
 {
     public void Wait(TimeSpan duration, CancellationToken cancellationToken) =>
         cancellationToken.ThrowIfCancellationRequested();
 }
 
-internal readonly struct NoOpSaveRunner : ISaveRunner
+internal readonly struct TestNoOpSaveRunner : ISaveRunner
 {
     public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction) { }
 }
 
-internal readonly struct NoOpSaver : ISaver
+internal readonly struct TestNoOpSaver : ISaver
 {
     public void Save(WorldImage image, int tick) { }
 }
 
-internal readonly struct NoOpRenderer : IRenderer
+internal readonly struct TestNoOpRenderer : IRenderer
 {
     public void Render(in RenderFrame frame) { }
 }
 
-internal readonly record struct SaveInvocation(WorldImage Image, int Tick, Action<WorldImage, int> SaveAction);
+internal readonly record struct TestSaveInvocation(WorldImage Image, int Tick, Action<WorldImage, int> SaveAction);

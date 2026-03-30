@@ -350,20 +350,20 @@ public sealed class LoopHarnessExampleTests
 
     private sealed class LoopHarness
     {
-        private readonly SimulationLoop<RecordingClock, NoWaiter>.TestAccessor _simulationAccessor;
-        private readonly ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor _consumptionAccessor;
+        private readonly SimulationLoop<TestRecordingClock, TestNoOpWaiter>.TestAccessor _simulationAccessor;
+        private readonly ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>.TestAccessor _consumptionAccessor;
         private long _simulationLastTime;
         private long _simulationAccumulator;
 
         private LoopHarness(
             MemorySystem memory,
             SharedState shared,
-            ClockState clockState,
-            SaveRunnerState saveRunnerState,
-            SaverState saverState,
-            RendererState rendererState,
-            SimulationLoop<RecordingClock, NoWaiter> simulationLoop,
-            ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer> consumptionLoop)
+            TestClockState clockState,
+            TestSaveRunnerState saveRunnerState,
+            TestSaverState saverState,
+            TestRendererState rendererState,
+            SimulationLoop<TestRecordingClock, TestNoOpWaiter> simulationLoop,
+            ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer> consumptionLoop)
         {
             this.Memory = memory;
             this.Shared = shared;
@@ -398,17 +398,17 @@ public sealed class LoopHarnessExampleTests
         {
             var memory = new MemorySystem(poolSize);
             var shared = new SharedState();
-            var clockState = new ClockState();
-            var saveRunnerState = new SaveRunnerState();
-            var saverState = new SaverState();
-            var rendererState = new RendererState();
-            var clock = new RecordingClock(clockState);
-            var waiter = new NoWaiter();
-            var saveRunner = new RecordingSaveRunner(saveRunnerState);
-            var saver = new RecordingSaver(saverState);
-            var renderer = new RecordingRenderer(rendererState);
-            var simulationLoop = new SimulationLoop<RecordingClock, NoWaiter>(memory, shared, new Simulator(1), clock, waiter);
-            var consumptionLoop = new ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>(
+            var clockState = new TestClockState();
+            var saveRunnerState = new TestSaveRunnerState();
+            var saverState = new TestSaverState();
+            var rendererState = new TestRendererState();
+            var clock = new TestRecordingClock(clockState);
+            var waiter = new TestNoOpWaiter();
+            var saveRunner = new TestRecordingSaveRunner(saveRunnerState);
+            var saver = new TestRecordingSaver(saverState);
+            var renderer = new TestRecordingRenderer(rendererState);
+            var simulationLoop = new SimulationLoop<TestRecordingClock, TestNoOpWaiter>(memory, shared, new Simulator(1), clock, waiter);
+            var consumptionLoop = new ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>(
                 memory,
                 shared,
                 clock,
@@ -431,11 +431,11 @@ public sealed class LoopHarnessExampleTests
         public sealed class SimulationLoopController
         {
             private readonly LoopHarness _owner;
-            private readonly SimulationLoop<RecordingClock, NoWaiter>.TestAccessor _accessor;
+            private readonly SimulationLoop<TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
 
             public SimulationLoopController(
                 LoopHarness owner,
-                SimulationLoop<RecordingClock, NoWaiter>.TestAccessor accessor)
+                SimulationLoop<TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
             {
                 _owner = owner;
                 _accessor = accessor;
@@ -461,12 +461,12 @@ public sealed class LoopHarnessExampleTests
 
         public sealed class ConsumptionLoopController
         {
-            private readonly ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor _accessor;
-            private readonly SaveRunnerState _saveRunnerState;
+            private readonly ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>.TestAccessor _accessor;
+            private readonly TestSaveRunnerState _saveRunnerState;
 
             public ConsumptionLoopController(
-                ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor accessor,
-                SaveRunnerState saveRunnerState)
+                ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer>.TestAccessor accessor,
+                TestSaveRunnerState saveRunnerState)
             {
                 _accessor = accessor;
                 _saveRunnerState = saveRunnerState;
@@ -479,9 +479,9 @@ public sealed class LoopHarnessExampleTests
 
         public sealed class ClockController
         {
-            private readonly ClockState _state;
+            private readonly TestClockState _state;
 
-            public ClockController(ClockState state) => _state = state;
+            public ClockController(TestClockState state) => _state = state;
 
             public long NowNanoseconds => _state.NowNanoseconds;
 
@@ -503,10 +503,10 @@ public sealed class LoopHarnessExampleTests
 
         public sealed class SaveController
         {
-            private readonly SaveRunnerState _state;
-            private readonly SaverState _saverState;
+            private readonly TestSaveRunnerState _state;
+            private readonly TestSaverState _saverState;
 
-            public SaveController(SaveRunnerState state, SaverState saverState)
+            public SaveController(TestSaveRunnerState state, TestSaverState saverState)
             {
                 _state = state;
                 _saverState = saverState;
@@ -530,9 +530,9 @@ public sealed class LoopHarnessExampleTests
 
         public sealed class RendererController
         {
-            private readonly RendererState _state;
+            private readonly TestRendererState _state;
 
-            public RendererController(RendererState state) => _state = state;
+            public RendererController(TestRendererState state) => _state = state;
 
             public IReadOnlyList<int> RenderedTicks => _state.RenderedTicks;
 
@@ -542,59 +542,59 @@ public sealed class LoopHarnessExampleTests
         }
     }
 
-    private sealed class SaveRunnerState
+    private sealed class TestSaveRunnerState
     {
-        public readonly List<SaveInvocation> DispatchHistory = [];
-        public readonly List<SaveInvocation> PendingInvocations = [];
+        public readonly List<TestSaveInvocation> DispatchHistory = [];
+        public readonly List<TestSaveInvocation> PendingInvocations = [];
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public void Complete(SaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
+        public void Complete(TestSaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
     }
 
-    private readonly struct RecordingSaveRunner : ISaveRunner
+    private readonly struct TestRecordingSaveRunner : ISaveRunner
     {
-        private readonly SaveRunnerState _state;
+        private readonly TestSaveRunnerState _state;
 
-        public RecordingSaveRunner(SaveRunnerState state) => _state = state;
+        public TestRecordingSaveRunner(TestSaveRunnerState state) => _state = state;
 
         public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
 
-            var invocation = new SaveInvocation(image, tick, saveAction);
+            var invocation = new TestSaveInvocation(image, tick, saveAction);
             _state.DispatchHistory.Add(invocation);
             _state.PendingInvocations.Add(invocation);
         }
     }
 
-    private sealed class SaverState
+    private sealed class TestSaverState
     {
         public readonly List<int> SaveCalls = [];
     }
 
-    private readonly struct RecordingSaver : ISaver
+    private readonly struct TestRecordingSaver : ISaver
     {
-        private readonly SaverState _state;
+        private readonly TestSaverState _state;
 
-        public RecordingSaver(SaverState state) => _state = state;
+        public TestRecordingSaver(TestSaverState state) => _state = state;
 
         public void Save(WorldImage image, int tick) => _state.SaveCalls.Add(tick);
     }
 
-    private sealed class RendererState
+    private sealed class TestRendererState
     {
         public readonly List<int> RenderedTicks = [];
 
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct RecordingRenderer : IRenderer
+    private readonly struct TestRecordingRenderer : IRenderer
     {
-        private readonly RendererState _state;
+        private readonly TestRendererState _state;
 
-        public RecordingRenderer(RendererState state) => _state = state;
+        public TestRecordingRenderer(TestRendererState state) => _state = state;
 
         public void Render(in RenderFrame frame)
         {

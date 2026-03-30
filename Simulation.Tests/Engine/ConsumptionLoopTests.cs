@@ -366,20 +366,20 @@ public sealed class ConsumptionLoopTests
 
     private static class ConsumptionLoopTestContext
     {
-        public static ConsumptionLoopTestContext<RecordingClock, RecordingWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer> Create()
+        public static ConsumptionLoopTestContext<TestRecordingClock, TestRecordingWaiter, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingRenderer> Create()
         {
-            var clockState = new ClockState();
-            var waiterState = new WaiterState();
-            var saveRunnerState = new SaveRunnerState();
-            var saverState = new SaverState();
-            var rendererState = new RendererState();
+            var clockState = new TestClockState();
+            var waiterState = new TestWaiterState();
+            var saveRunnerState = new TestSaveRunnerState();
+            var saverState = new TestSaverState();
+            var rendererState = new TestRendererState();
 
             return Create(
-                clock: new RecordingClock(clockState),
-                waiter: new RecordingWaiter(waiterState),
-                saveRunner: new RecordingSaveRunner(saveRunnerState),
-                saver: new RecordingSaver(saverState),
-                renderer: new RecordingRenderer(rendererState),
+                clock: new TestRecordingClock(clockState),
+                waiter: new TestRecordingWaiter(waiterState),
+                saveRunner: new TestRecordingSaveRunner(saveRunnerState),
+                saver: new TestRecordingSaver(saverState),
+                renderer: new TestRecordingRenderer(rendererState),
                 clockState: clockState,
                 waiterState: waiterState,
                 saveRunnerState: saveRunnerState,
@@ -393,11 +393,11 @@ public sealed class ConsumptionLoopTests
             TSaveRunner saveRunner,
             TSaver saver,
             TRenderer renderer,
-            ClockState clockState,
-            WaiterState waiterState,
-            SaveRunnerState saveRunnerState,
-            SaverState saverState,
-            RendererState rendererState,
+            TestClockState clockState,
+            TestWaiterState waiterState,
+            TestSaveRunnerState saveRunnerState,
+            TestSaverState saverState,
+            TestRendererState rendererState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
@@ -438,11 +438,11 @@ public sealed class ConsumptionLoopTests
             MemorySystem memory,
             SharedState shared,
             ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> loop,
-            ClockState clockState,
-            WaiterState waiterState,
-            SaveRunnerState saveRunnerState,
-            SaverState saverState,
-            RendererState rendererState)
+            TestClockState clockState,
+            TestWaiterState waiterState,
+            TestSaveRunnerState saveRunnerState,
+            TestSaverState saverState,
+            TestRendererState rendererState)
         {
             this.Memory = memory;
             this.Shared = shared;
@@ -463,15 +463,15 @@ public sealed class ConsumptionLoopTests
 
         public ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>.TestAccessor Accessor { get; }
 
-        public ClockState ClockState { get; }
+        public TestClockState ClockState { get; }
 
-        public WaiterState WaiterState { get; }
+        public TestWaiterState WaiterState { get; }
 
-        public SaveRunnerState SaveRunnerState { get; }
+        public TestSaveRunnerState SaveRunnerState { get; }
 
-        public SaverState SaverState { get; }
+        public TestSaverState SaverState { get; }
 
-        public RendererState RendererState { get; }
+        public TestRendererState RendererState { get; }
 
         public WorldSnapshot CreatePublishedSnapshot(int tick)
         {
@@ -483,26 +483,26 @@ public sealed class ConsumptionLoopTests
         }
     }
 
-    private sealed class SaveRunnerState
+    private sealed class TestSaveRunnerState
     {
-        public readonly List<SaveInvocation> RunCalls = [];
+        public readonly List<TestSaveInvocation> RunCalls = [];
 
-        public Action<SaveInvocation>? BeforeDispatch { get; set; }
+        public Action<TestSaveInvocation>? BeforeDispatch { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public void Complete(SaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
+        public void Complete(TestSaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
     }
 
-    private readonly struct RecordingSaveRunner : ISaveRunner
+    private readonly struct TestRecordingSaveRunner : ISaveRunner
     {
-        private readonly SaveRunnerState _state;
+        private readonly TestSaveRunnerState _state;
 
-        public RecordingSaveRunner(SaveRunnerState state) => _state = state;
+        public TestRecordingSaveRunner(TestSaveRunnerState state) => _state = state;
 
         public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
         {
-            var invocation = new SaveInvocation(image, tick, saveAction);
+            var invocation = new TestSaveInvocation(image, tick, saveAction);
             _state.RunCalls.Add(invocation);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
@@ -510,18 +510,18 @@ public sealed class ConsumptionLoopTests
         }
     }
 
-    private sealed class SaverState
+    private sealed class TestSaverState
     {
         public readonly List<int> SaveCalls = [];
 
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct RecordingSaver : ISaver
+    private readonly struct TestRecordingSaver : ISaver
     {
-        private readonly SaverState _state;
+        private readonly TestSaverState _state;
 
-        public RecordingSaver(SaverState state) => _state = state;
+        public TestRecordingSaver(TestSaverState state) => _state = state;
 
         public void Save(WorldImage image, int tick)
         {
@@ -532,7 +532,7 @@ public sealed class ConsumptionLoopTests
         }
     }
 
-    private sealed class RendererState
+    private sealed class TestRendererState
     {
         public readonly List<int> RenderedTicks = [];
         public readonly List<EngineStatus> RenderedEngineStatuses = [];
@@ -542,11 +542,11 @@ public sealed class ConsumptionLoopTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct RecordingRenderer : IRenderer
+    private readonly struct TestRecordingRenderer : IRenderer
     {
-        private readonly RendererState _state;
+        private readonly TestRendererState _state;
 
-        public RecordingRenderer(RendererState state) => _state = state;
+        public TestRecordingRenderer(TestRendererState state) => _state = state;
 
         public void Render(in RenderFrame frame)
         {

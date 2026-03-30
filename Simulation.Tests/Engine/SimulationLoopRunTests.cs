@@ -11,11 +11,11 @@ public sealed class SimulationLoopRunTests
     [Fact]
     public void RunOneIteration_UsesElapsedTimeToCrossTheTickThreshold()
     {
-        var clockState = new ClockState { NowNanoseconds = 0 };
-        var waiterState = new WaiterState();
+        var clockState = new TestClockState { NowNanoseconds = 0 };
+        var waiterState = new TestWaiterState();
         var test = SimulationLoopTestContext.Create(
-            clock: new RecordingClock(clockState),
-            waiter: new RecordingWaiter(waiterState),
+            clock: new TestRecordingClock(clockState),
+            waiter: new TestRecordingWaiter(waiterState),
             waiterState: waiterState);
 
         test.Accessor.Bootstrap();
@@ -37,11 +37,11 @@ public sealed class SimulationLoopRunTests
     [Fact]
     public void RunOneIteration_UpdatesLastTimeEvenWhenCancelledDuringIdleWait()
     {
-        var clockState = new ClockState { NowNanoseconds = 250 };
-        var waiterState = new WaiterState();
+        var clockState = new TestClockState { NowNanoseconds = 250 };
+        var waiterState = new TestWaiterState();
         var test = SimulationLoopTestContext.Create(
-            clock: new RecordingClock(clockState),
-            waiter: new RecordingWaiter(waiterState),
+            clock: new TestRecordingClock(clockState),
+            waiter: new TestRecordingWaiter(waiterState),
             waiterState: waiterState);
 
         test.Accessor.Bootstrap();
@@ -66,11 +66,11 @@ public sealed class SimulationLoopRunTests
     [Fact]
     public void RunOneIteration_ClampsNegativeClockDeltaToZero()
     {
-        var clockState = new ClockState { NowNanoseconds = 50 };
-        var waiterState = new WaiterState();
+        var clockState = new TestClockState { NowNanoseconds = 50 };
+        var waiterState = new TestWaiterState();
         var test = SimulationLoopTestContext.Create(
-            clock: new RecordingClock(clockState),
-            waiter: new RecordingWaiter(waiterState),
+            clock: new TestRecordingClock(clockState),
+            waiter: new TestRecordingWaiter(waiterState),
             waiterState: waiterState);
 
         test.Accessor.Bootstrap();
@@ -91,11 +91,11 @@ public sealed class SimulationLoopRunTests
     [Fact]
     public void Run_BootstrapsAndThrowsWhenCancelledDuringTheFirstIdleWait()
     {
-        var clockState = new ClockState { NowNanoseconds = 0 };
-        var waiterState = new WaiterState();
+        var clockState = new TestClockState { NowNanoseconds = 0 };
+        var waiterState = new TestWaiterState();
         var test = SimulationLoopTestContext.Create(
-            clock: new RecordingClock(clockState),
-            waiter: new RecordingWaiter(waiterState),
+            clock: new TestRecordingClock(clockState),
+            waiter: new TestRecordingWaiter(waiterState),
             waiterState: waiterState);
 
         using var cancellationSource = new CancellationTokenSource();
@@ -116,11 +116,11 @@ public sealed class SimulationLoopRunTests
     [Fact]
     public void Run_WhenAlreadyCancelled_ThrowsWithoutBootstrapping()
     {
-        var clockState = new ClockState { NowNanoseconds = 0 };
-        var waiterState = new WaiterState();
+        var clockState = new TestClockState { NowNanoseconds = 0 };
+        var waiterState = new TestWaiterState();
         var test = SimulationLoopTestContext.Create(
-            clock: new RecordingClock(clockState),
-            waiter: new RecordingWaiter(waiterState),
+            clock: new TestRecordingClock(clockState),
+            waiter: new TestRecordingWaiter(waiterState),
             waiterState: waiterState);
 
         using var cancellationSource = new CancellationTokenSource();
@@ -140,7 +140,7 @@ public sealed class SimulationLoopRunTests
         public static SimulationLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(
             TClock clock,
             TWaiter waiter,
-            Simulation.Tests.Helpers.WaiterState waiterState,
+            TestWaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
@@ -159,7 +159,7 @@ public sealed class SimulationLoopRunTests
         internal SimulationLoopTestContext(
             MemorySystem memory,
             SharedState shared,
-            Simulation.Tests.Helpers.WaiterState waiterState,
+            TestWaiterState waiterState,
             SimulationLoop<TClock, TWaiter> loop)
         {
             this.Memory = memory;
@@ -173,7 +173,7 @@ public sealed class SimulationLoopRunTests
 
         public SharedState Shared { get; }
 
-        public Simulation.Tests.Helpers.WaiterState WaiterState { get; }
+        public TestWaiterState WaiterState { get; }
 
         public SimulationLoop<TClock, TWaiter> Loop { get; }
 

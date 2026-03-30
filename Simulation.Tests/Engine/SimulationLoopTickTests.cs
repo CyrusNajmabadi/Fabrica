@@ -404,19 +404,19 @@ public sealed class SimulationLoopTickTests
 
     private static class SimulationLoopTestContext
     {
-        public static SimulationLoopTestContext<FakeClock, RecordingWaiter> Create()
+        public static SimulationLoopTestContext<TestFakeClock, TestRecordingWaiter> Create()
         {
-            var waiterState = new Simulation.Tests.Helpers.WaiterState();
+            var waiterState = new TestWaiterState();
             return Create(
-                clock: new FakeClock(),
-                waiter: new RecordingWaiter(waiterState),
+                clock: new TestFakeClock(),
+                waiter: new TestRecordingWaiter(waiterState),
                 waiterState: waiterState);
         }
 
         public static SimulationLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(
             TClock clock,
             TWaiter waiter,
-            Simulation.Tests.Helpers.WaiterState waiterState,
+            TestWaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
@@ -435,7 +435,7 @@ public sealed class SimulationLoopTickTests
         internal SimulationLoopTestContext(
             MemorySystem memory,
             SharedState shared,
-            Simulation.Tests.Helpers.WaiterState waiterState,
+            TestWaiterState waiterState,
             SimulationLoop<TClock, TWaiter> loop)
         {
             this.Memory = memory;
@@ -449,7 +449,7 @@ public sealed class SimulationLoopTickTests
 
         public SharedState Shared { get; }
 
-        public Simulation.Tests.Helpers.WaiterState WaiterState { get; }
+        public TestWaiterState WaiterState { get; }
 
         public SimulationLoop<TClock, TWaiter> Loop { get; }
 
