@@ -1,5 +1,3 @@
-using Simulation.World;
-
 namespace Simulation.Engine;
 
 /// <summary>
@@ -7,9 +5,9 @@ namespace Simulation.Engine;
 /// </summary>
 internal readonly struct ConsoleRenderer : IRenderer
 {
-    public void Render(WorldSnapshot? previous, WorldSnapshot current)
+    public void Render(in RenderFrame frame)
     {
         // TODO: actual rendering and interpolation.
-        Console.WriteLine($"[Render] tick={current.Image.TickNumber}");
+        Console.WriteLine($"[Render] tick={frame.Current.Image.TickNumber}");
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Simulation.Memory;
 using Simulation.World;
 
@@ -58,12 +59,18 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     where TRenderer : struct, IRenderer
 {
     private readonly object _savePinOwner = new();
+    private readonly ConcurrentQueue<SaveEvent> _saveEvents = new();
 
     // The snapshot passed as 'current' on the most recent successful Render call.
     // Null before the first render.
     // Passed as 'previous' on the next Render call so the renderer can diff the two.
     // Only touched by the consumption thread — no synchronisation needed.
     private WorldSnapshot? _lastRendered;
+
+    // Local save tracking — written only by the consumption thread (after draining
+    // the concurrent queue), so no synchronisation needed for reads.
+    private bool _saveInFlight;
+    private SaveEvent? _lastSaveResult;
 
     private readonly MemorySystem _memory;
     private readonly SharedState _shared;
@@ -103,16 +110,28 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     {
         long frameStart = _clock.NowNanoseconds;
 
+        DrainSaveEvents();
+
         WorldSnapshot? snapshot = _shared.LatestSnapshot;
         if (snapshot is not null)
         {
             MaybeStartSave(snapshot);
 
-            // Render is called every frame regardless of whether the simulation has
-            // published a new snapshot since the last call.  When it has not,
-            // _lastRendered and snapshot are the same object reference.
-            // See IRenderer.Render for the full same-snapshot semantics.
-            _renderer.Render(_lastRendered, snapshot);
+            var frame = new RenderFrame
+            {
+                Previous = _lastRendered,
+                Current = snapshot,
+                EngineStatus = new EngineStatus
+                {
+                    Save = new SaveStatus
+                    {
+                        InFlight = _saveInFlight,
+                        LastResult = _lastSaveResult,
+                    },
+                },
+            };
+
+            _renderer.Render(in frame);
 
             // Advance epoch: simulation may now free anything strictly before this tick.
             _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
@@ -120,6 +139,15 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         }
 
         ThrottleToFrameRate(frameStart, cancellationToken);
+    }
+
+    private void DrainSaveEvents()
+    {
+        while (_saveEvents.TryDequeue(out SaveEvent saveEvent))
+        {
+            _saveInFlight = false;
+            _lastSaveResult = saveEvent;
+        }
     }
 
     /// <summary>
@@ -158,6 +186,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         try
         {
             _saveRunner.RunSave(imageToSave, tickToSave, RunSaveTask);
+            _saveInFlight = true;
         }
         catch
         {
@@ -170,6 +199,11 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     /// <summary>
     /// Executed on the threadpool (via ISaveRunner) to perform the actual save.
     ///
+    /// Exceptions from the saver are caught and reported via the save event queue
+    /// rather than propagating as unobserved task exceptions.  The consumption
+    /// thread drains the queue each frame and surfaces the result through
+    /// <see cref="EngineStatus.Save"/> in the <see cref="RenderFrame"/>.
+    ///
     /// The finally block runs regardless of success or failure, guaranteeing:
     ///   - The pin is always released so the simulation is never permanently stalled
     ///     waiting for a save that failed or was never completed.
@@ -180,10 +214,15 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         try
         {
             _saver.Save(image, tick);
+            _saveEvents.Enqueue(new SaveEvent(tick, Succeeded: true, Error: null));
+        }
+        catch (Exception ex)
+        {
+            _saveEvents.Enqueue(new SaveEvent(tick, Succeeded: false, Error: ex));
         }
         finally
         {
-            // Always unpin - even on failure - so the simulation is never permanently stalled.
+            // Always unpin — even on failure — so the simulation is never permanently stalled.
             _memory.PinnedVersions.Unpin(tick, _savePinOwner);
 
             // Schedule the next save relative to the tick we just saved.

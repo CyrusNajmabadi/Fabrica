@@ -28,7 +28,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         WorldSnapshot snapshot = test.CreatePublishedSnapshot(tick: 12);
         int epochAtRender = -1;
-        test.RendererState.BeforeRender = (_, _) => epochAtRender = test.Shared.ConsumptionEpoch;
+        test.RendererState.BeforeRender = _ => epochAtRender = test.Shared.ConsumptionEpoch;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -142,13 +142,22 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
         SaveInvocation invocation = Assert.Single(test.SaveRunnerState.RunCalls);
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-            () => test.SaveRunnerState.Complete(invocation));
+        // Exception is captured in the save event queue, not propagated.
+        test.SaveRunnerState.Complete(invocation);
 
-        Assert.Equal("boom", exception.Message);
         Assert.False(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
         Assert.Equal(invocation.Tick + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
         Assert.Equal([(invocation.Image.TickNumber, invocation.Tick)], test.SaverState.SaveCalls);
+
+        // Failure surfaces via EngineStatus on the next render frame.
+        test.SaverState.ExceptionToThrow = null;
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        EngineStatus status = test.RendererState.RenderedEngineStatuses[1];
+        Assert.False(status.Save.InFlight);
+        Assert.NotNull(status.Save.LastResult);
+        Assert.False(status.Save.LastResult.Value.Succeeded);
+        Assert.Equal("boom", status.Save.LastResult.Value.Error!.Message);
     }
 
     [Fact]
@@ -255,7 +264,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: 5);
         test.ClockState.NowNanoseconds = 0;
-        test.RendererState.BeforeRender = (_, _) => test.ClockState.NowNanoseconds = 5_000_000;
+        test.RendererState.BeforeRender = _ => test.ClockState.NowNanoseconds = 5_000_000;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -270,7 +279,7 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create();
         test.CreatePublishedSnapshot(tick: 5);
         test.RendererState.BeforeRender =
-            (_, _) => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
+            _ => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -578,8 +587,9 @@ public sealed class ConsumptionLoopTests
     private sealed class RendererState
     {
         public readonly List<int> RenderedTicks = [];
+        public readonly List<EngineStatus> RenderedEngineStatuses = [];
 
-        public Action<WorldSnapshot?, WorldSnapshot>? BeforeRender { get; set; }
+        public Action<RenderFrame>? BeforeRender { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -593,12 +603,13 @@ public sealed class ConsumptionLoopTests
             _state = state;
         }
 
-        public void Render(WorldSnapshot? previous, WorldSnapshot current)
+        public void Render(in RenderFrame frame)
         {
-            _state.BeforeRender?.Invoke(previous, current);
+            _state.BeforeRender?.Invoke(frame);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(current.Image.TickNumber);
+            _state.RenderedTicks.Add(frame.Current.Image.TickNumber);
+            _state.RenderedEngineStatuses.Add(frame.EngineStatus);
         }
     }
 }

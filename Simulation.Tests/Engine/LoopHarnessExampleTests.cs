@@ -657,11 +657,11 @@ public sealed class LoopHarnessExampleTests
             _state = state;
         }
 
-        public void Render(WorldSnapshot? previous, WorldSnapshot current)
+        public void Render(in RenderFrame frame)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(current.Image.TickNumber);
+            _state.RenderedTicks.Add(frame.Current.Image.TickNumber);
         }
     }
 }

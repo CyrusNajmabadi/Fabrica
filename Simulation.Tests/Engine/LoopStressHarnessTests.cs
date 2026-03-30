@@ -302,7 +302,7 @@ public sealed class LoopStressHarnessTests
 
     private readonly struct RecordingRenderer : IRenderer
     {
-        public void Render(WorldSnapshot? previous, WorldSnapshot current)
+        public void Render(in RenderFrame frame)
         {
         }
     }
