@@ -27,7 +27,7 @@ public sealed class SimulationLoopTickTests
         Assert.Same(snapshot, test.Accessor.OldestSnapshot);
         Assert.Same(snapshot, test.Shared.LatestSnapshot);
         Assert.Equal(0, snapshot.TickNumber);
-        Assert.Null(snapshot.Next);
+        Assert.Null(snapshot.NextInChain);
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class SimulationLoopTickTests
         Assert.NotSame(initial, test.Accessor.CurrentSnapshot);
         Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
         Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
-        Assert.Same(test.Accessor.CurrentSnapshot, initial.Next);
+        Assert.Same(test.Accessor.CurrentSnapshot, initial.NextInChain);
     }
 
     [Fact]
@@ -163,8 +163,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(); // tick 3
 
         var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        var tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
-        var tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
+        var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
+        var tick2 = Assert.IsType<WorldSnapshot>(tick1.NextInChain);
         var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
         test.Memory.PinnedVersions.Pin(tick1.TickNumber, pinOwner);
@@ -175,7 +175,7 @@ public sealed class SimulationLoopTickTests
         Assert.Same(tick3, test.Accessor.CurrentSnapshot);
         Assert.Same(tick3, test.Accessor.OldestSnapshot);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
-        Assert.Null(tick1.Next);
+        Assert.Null(tick1.NextInChain);
         Assert.Equal(1, tick1.TickNumber);
         Assert.Equal(3, tick3.TickNumber);
 

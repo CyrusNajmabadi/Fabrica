@@ -31,8 +31,9 @@ namespace Simulation.Engine;
 ///   The full forward-linked chain from _previous to _latest is guaranteed
 ///   alive during the Render call.  When the simulation publishes multiple
 ///   ticks between render frames, _previous and _latest may be several ticks
-///   apart — the renderer can walk Previous.Next to visit every intermediate
-///   snapshot if desired, or simply interpolate between the two endpoints.
+///   apart — the renderer uses <see cref="RenderFrame.Chain"/> to iterate
+///   every intermediate snapshot, or simply interpolates between the two
+///   endpoints.
 ///
 ///   The interpolation factor progresses from 0 (show previous) to 1 (show
 ///   latest) over one tick duration, based on wall-clock time elapsed since

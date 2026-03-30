@@ -15,7 +15,7 @@ public sealed class WorldSnapshotTests
 
         Assert.Same(image, snapshot.Image);
         Assert.Equal(5, snapshot.TickNumber);
-        Assert.Null(snapshot.Next);
+        Assert.Null(snapshot.NextInChain);
         Assert.False(snapshot.IsUnreferenced);
     }
 
@@ -30,7 +30,7 @@ public sealed class WorldSnapshotTests
 
         first.SetNext(second);
 
-        Assert.Same(second, first.Next);
+        Assert.Same(second, first.NextInChain);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class WorldSnapshotTests
 
         first.ClearNext();
 
-        Assert.Null(first.Next);
+        Assert.Null(first.NextInChain);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class WorldSnapshotTests
         snapshot.Release();
 
         Assert.True(snapshot.IsUnreferenced);
-        Assert.Null(snapshot.Next);
+        Assert.Null(snapshot.NextInChain);
         Assert.Null(snapshot.Image);
     }
 }

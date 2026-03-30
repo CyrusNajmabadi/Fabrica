@@ -21,13 +21,10 @@ namespace Simulation.Engine;
 ///   When the simulation publishes multiple ticks between render frames,
 ///   <see cref="Previous"/> and <see cref="Latest"/> may be several ticks apart.
 ///   The full forward-linked chain from Previous to Latest is guaranteed alive
-///   during the Render call — the renderer can walk <c>Previous.Next</c>
-///   repeatedly to visit every intermediate snapshot if desired.
-///
-///   IMPORTANT: <see cref="Latest"/>.<c>Next</c> MUST NOT be read.  The
-///   simulation thread may concurrently link a new node after Latest, so the
-///   pointer is unreliable without an additional acquire fence.  Treat Latest
-///   as the exclusive end of the walkable chain.
+///   during the Render call.  Use <see cref="Chain"/> to iterate every snapshot
+///   in the range — it returns a zero-allocation struct iterator that walks the
+///   internal forward pointers and stops at Latest, so the renderer never
+///   accidentally reads past the published frontier.
 ///
 /// INTERPOLATION MODEL
 ///   The consumption loop holds two distinct snapshot references and rotates
@@ -53,6 +50,14 @@ internal readonly struct RenderFrame
     public required WorldSnapshot Latest { get; init; }
     public required InterpolationClock Interpolation { get; init; }
     public required EngineStatus EngineStatus { get; init; }
+
+    /// <summary>
+    /// Returns a zero-allocation struct iterator over the snapshot chain from
+    /// <see cref="Previous"/> (or <see cref="Latest"/> when Previous is null)
+    /// through <see cref="Latest"/> inclusive.  Safely bounded — never reads
+    /// past the published frontier.
+    /// </summary>
+    public WorldSnapshot.SnapshotChain Chain => WorldSnapshot.Chain(this.Previous, this.Latest);
 }
 
 /// <summary>

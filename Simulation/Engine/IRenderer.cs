@@ -22,11 +22,10 @@ internal interface IRenderer
     ///   or release the snapshots immediately after this method returns.
     ///
     /// CHAIN ACCESS:
-    ///   The full forward-linked chain from Previous to Latest is alive during
-    ///   this call.  The renderer may walk <c>Previous.Next</c> to visit every
-    ///   intermediate snapshot between the two endpoints.  <c>Latest.Next</c>
-    ///   MUST NOT be read — the simulation may concurrently link a new node,
-    ///   making the pointer unreliable.
+    ///   The full chain from Previous to Latest is alive during this call.
+    ///   Use <see cref="RenderFrame.Chain"/> to iterate every snapshot in the
+    ///   range — it returns a zero-allocation struct iterator that stops at
+    ///   Latest, enforcing the published frontier at the type level.
     ///
     /// INTERPOLATION:
     ///   Under normal operation, <see cref="RenderFrame.Previous"/> and

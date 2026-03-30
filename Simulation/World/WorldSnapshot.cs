@@ -12,8 +12,13 @@ namespace Simulation.World;
 ///     [tick 0] → [tick 1] → [tick 2] → … → [tick N]
 ///      _oldest                                _current / LatestSnapshot
 ///
-///   Only the simulation thread reads or writes the chain.  The Next pointer and
-///   ref-count are therefore not synchronised — no atomics, no locks needed.
+///   Only the simulation thread reads or writes the chain.  The forward pointer
+///   and ref-count are therefore not synchronised — no atomics, no locks needed.
+///
+///   The forward pointer (<c>_next</c>) is private.  The simulation loop accesses
+///   it via <see cref="NextInChain"/> for chain management.  Consumers (renderers)
+///   use <see cref="Chain"/> to obtain a safe, bounded struct iterator that stops
+///   at a given endpoint — preventing accidental reads past the published frontier.
 ///
 /// REF COUNTING
 ///   Each snapshot starts with refcount = 1 (set by Initialize).  AddRef and
@@ -63,12 +68,15 @@ internal sealed class WorldSnapshot
     /// </summary>
     public long PublishTimeNanoseconds { get; private set; }
 
-    // Forward pointer: old → new.
-    // Set once via SetNext; may be cleared via ClearNext when the snapshot is extracted
-    // from the live chain into the pinned queue.
-    public WorldSnapshot? Next { get; private set; }
-
+    private WorldSnapshot? _next;
     private int _refCount;
+
+    /// <summary>
+    /// Internal accessor for the simulation loop's chain management (cleanup,
+    /// pinned-queue extraction).  Not for use by consumers — use
+    /// <see cref="Chain"/> instead.
+    /// </summary>
+    internal WorldSnapshot? NextInChain => _next;
 
     /// <summary>
     /// Prepares this snapshot for use after being rented from the pool.
@@ -83,7 +91,7 @@ internal sealed class WorldSnapshot
         this.Image = image;
         this.TickNumber = tickNumber;
         this.PublishTimeNanoseconds = 0;
-        this.Next = null;
+        _next = null;
         _refCount = 1;
     }
 
@@ -97,15 +105,15 @@ internal sealed class WorldSnapshot
     /// <summary>Links the next snapshot in the chain. Called once per snapshot by the simulation thread.</summary>
     internal void SetNext(WorldSnapshot next)
     {
-        Debug.Assert(this.Next is null, "SetNext called more than once on the same snapshot");
-        this.Next = next;
+        Debug.Assert(_next is null, "SetNext called more than once on the same snapshot");
+        _next = next;
     }
 
     /// <summary>
     /// Severs the forward pointer when this snapshot is extracted from the live chain
     /// into the pinned queue, so that the snapshots that followed it can be freed normally.
     /// </summary>
-    internal void ClearNext() => this.Next = null;
+    internal void ClearNext() => _next = null;
 
     internal void AddRef()
     {
@@ -115,8 +123,8 @@ internal sealed class WorldSnapshot
 
     /// <summary>
     /// Decrements the ref count.  When it reaches zero the caller must return this
-    /// snapshot to the pool.  Nulls out Image and Next so pooled instances do not
-    /// keep objects alive unnecessarily.
+    /// snapshot to the pool.  Nulls out Image and forward pointer so pooled instances
+    /// do not keep objects alive unnecessarily.
     /// </summary>
     internal void Release()
     {
@@ -124,9 +132,81 @@ internal sealed class WorldSnapshot
         if (--_refCount == 0)
         {
             this.Image = null!;
-            this.Next = null;
+            _next = null;
         }
     }
 
     internal bool IsUnreferenced => _refCount == 0;
+
+    // ── Safe chain iteration ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a struct-based iterable over the chain from <paramref name="start"/>
+    /// through <paramref name="end"/> (inclusive).  If <paramref name="start"/> is
+    /// null, the chain contains only <paramref name="end"/>.
+    ///
+    /// The returned <see cref="SnapshotChain"/> supports <c>foreach</c> with zero
+    /// allocation.  It walks the private forward pointers internally, stopping at
+    /// <paramref name="end"/> — the caller never touches the forward pointer and
+    /// cannot accidentally read past the published frontier.
+    /// </summary>
+    internal static SnapshotChain Chain(WorldSnapshot? start, WorldSnapshot end) =>
+        new(start ?? end, end);
+
+    /// <summary>
+    /// A struct-based iterable over a bounded segment of the snapshot chain.
+    /// Supports <c>foreach</c> via <see cref="GetEnumerator"/> with zero allocation.
+    /// </summary>
+    internal readonly struct SnapshotChain
+    {
+        private readonly WorldSnapshot _start;
+        private readonly WorldSnapshot _end;
+
+        internal SnapshotChain(WorldSnapshot start, WorldSnapshot end)
+        {
+            _start = start;
+            _end = end;
+        }
+
+        public Enumerator GetEnumerator() => new(_start, _end);
+
+        /// <summary>
+        /// Struct enumerator that walks the snapshot chain from start to end
+        /// (inclusive).  Accesses the private <c>_next</c> field of
+        /// <see cref="WorldSnapshot"/> — safe because this is a nested type.
+        /// </summary>
+        public struct Enumerator
+        {
+            private readonly WorldSnapshot _end;
+            private WorldSnapshot? _current;
+            private bool _started;
+
+            internal Enumerator(WorldSnapshot start, WorldSnapshot end)
+            {
+                _current = start;
+                _end = end;
+                _started = false;
+            }
+
+            public readonly WorldSnapshot Current => _current!;
+
+            public bool MoveNext()
+            {
+                if (!_started)
+                {
+                    _started = true;
+                    return _current is not null;
+                }
+
+                if (_current is null || ReferenceEquals(_current, _end))
+                {
+                    _current = null;
+                    return false;
+                }
+
+                _current = _current._next;
+                return _current is not null;
+            }
+        }
+    }
 }
