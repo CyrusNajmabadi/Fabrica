@@ -16,7 +16,7 @@ namespace Simulation.Engine;
 ///     3. SIGNAL — all workers are woken from their park state.
 ///     4. JOIN — <see cref="WorkerGroup{TState,TExecutor}.Dispatch"/> waits
 ///        on every worker's done signal via <see cref="WaitHandleBatch"/>.
-///     5. REF-COUNT — the Simulator walks each worker's created-nodes list
+///     5. REF-COUNT — the SimulationCoordinator walks each worker's created-nodes list
 ///        and performs AddRef on shared subtree nodes.  This is the only
 ///        phase that touches ref-counts, and it runs on a single thread —
 ///        no interlocked operations needed.
@@ -36,11 +36,11 @@ namespace Simulation.Engine;
 ///   containerised environments, or macOS (not supported).  The simulation
 ///   is correct regardless — pinning is purely a cache-affinity optimisation.
 /// </summary>
-internal sealed class Simulator : IDisposable
+internal sealed class SimulationCoordinator : IDisposable
 {
     private readonly WorkerGroup<SimulationTickState, SimulationExecutor> _group;
 
-    public Simulator(int workerCount) =>
+    public SimulationCoordinator(int workerCount) =>
         _group = new WorkerGroup<SimulationTickState, SimulationExecutor>(
             workerCount,
             static i => new SimulationExecutor(new WorkerResources()),
