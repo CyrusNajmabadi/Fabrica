@@ -49,6 +49,58 @@ public sealed class WorldSnapshotTests
     }
 
     [Fact]
+    public void Initialize_ClearsPublishTime()
+    {
+        var snapshot = new WorldSnapshot();
+        snapshot.Initialize(new WorldImage(), 0);
+        snapshot.MarkPublished(999);
+        snapshot.Release();
+
+        snapshot.Initialize(new WorldImage(), 1);
+
+        Assert.Equal(0, snapshot.PublishTimeNanoseconds);
+    }
+
+    [Fact]
+    public void MarkPublished_SetsPublishTime()
+    {
+        var snapshot = new WorldSnapshot();
+        snapshot.Initialize(new WorldImage(), 0);
+
+        snapshot.MarkPublished(42_000_000);
+
+        Assert.Equal(42_000_000, snapshot.PublishTimeNanoseconds);
+    }
+
+    [Fact]
+    public void AddRef_PreventsReleaseFromClearingReferences()
+    {
+        var image = new WorldImage();
+        var snapshot = new WorldSnapshot();
+        snapshot.Initialize(image, tickNumber: 5);
+
+        snapshot.AddRef();
+        snapshot.Release();
+
+        Assert.False(snapshot.IsUnreferenced);
+        Assert.Same(image, snapshot.Image);
+    }
+
+    [Fact]
+    public void AddRef_ThenFullRelease_ClearsReferences()
+    {
+        var snapshot = new WorldSnapshot();
+        snapshot.Initialize(new WorldImage(), tickNumber: 5);
+
+        snapshot.AddRef();
+        snapshot.Release();
+        snapshot.Release();
+
+        Assert.True(snapshot.IsUnreferenced);
+        Assert.Null(snapshot.Image);
+    }
+
+    [Fact]
     public void Release_ToZero_ClearsReferences()
     {
         var image = new WorldImage();
