@@ -1,5 +1,6 @@
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -110,7 +111,7 @@ public sealed class LoopStressHarnessTests
             ClockState clockState,
             WaiterState waiterState,
             SimulationLoop<RecordingClock, RecordingWaiter> simulationLoop,
-            ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer> consumptionLoop)
+            ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, NoOpRenderer> consumptionLoop)
         {
             this.Shared = shared;
             this.Clock = new ClockController(clockState);
@@ -142,14 +143,14 @@ public sealed class LoopStressHarnessTests
                 new Simulator(1),
                 clock,
                 new RecordingWaiter(waiterState));
-            var consumptionLoop = new ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>(
+            var consumptionLoop = new ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, NoOpRenderer>(
                 memory,
                 shared,
                 clock,
                 new NoWaiter(),
                 new RecordingSaveRunner(),
                 new RecordingSaver(),
-                new RecordingRenderer());
+                new NoOpRenderer());
 
             return new LoopStressHarness(
                 shared,
@@ -219,53 +220,13 @@ public sealed class LoopStressHarnessTests
 
         public sealed class ConsumptionLoopController
         {
-            private readonly ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor _accessor;
+            private readonly ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, NoOpRenderer>.TestAccessor _accessor;
 
             public ConsumptionLoopController(
-                ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor accessor) => _accessor = accessor;
+                ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, NoOpRenderer>.TestAccessor accessor) => _accessor = accessor;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
-    }
-
-    private sealed class ClockState
-    {
-        public long NowNanoseconds { get; set; }
-    }
-
-    private readonly struct RecordingClock : IClock
-    {
-        private readonly ClockState _state;
-
-        public RecordingClock(ClockState state) => _state = state;
-
-        public long NowNanoseconds => _state.NowNanoseconds;
-    }
-
-    private sealed class WaiterState
-    {
-        public readonly List<TimeSpan> WaitCalls = [];
-
-        public Action<TimeSpan>? OnWait { get; set; }
-    }
-
-    private readonly struct RecordingWaiter : IWaiter
-    {
-        private readonly WaiterState _state;
-
-        public RecordingWaiter(WaiterState state) => _state = state;
-
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            _state.WaitCalls.Add(duration);
-            _state.OnWait?.Invoke(duration);
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-    }
-
-    private readonly struct NoWaiter : IWaiter
-    {
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken) => cancellationToken.ThrowIfCancellationRequested();
     }
 
     private readonly struct RecordingSaveRunner : ISaveRunner
@@ -278,12 +239,5 @@ public sealed class LoopStressHarnessTests
     {
         public void Save(WorldImage image, int tick) =>
             throw new InvalidOperationException("Save execution is not part of this stress harness.");
-    }
-
-    private readonly struct RecordingRenderer : IRenderer
-    {
-        public void Render(in RenderFrame frame)
-        {
-        }
     }
 }

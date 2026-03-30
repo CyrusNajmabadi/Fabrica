@@ -1,5 +1,6 @@
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -481,43 +482,6 @@ public sealed class ConsumptionLoopTests
             return snapshot;
         }
     }
-
-    private sealed class ClockState
-    {
-        public long NowNanoseconds { get; set; }
-    }
-
-    private readonly struct RecordingClock : IClock
-    {
-        private readonly ClockState _state;
-
-        public RecordingClock(ClockState state) => _state = state;
-
-        public long NowNanoseconds => _state.NowNanoseconds;
-    }
-
-    private sealed class WaiterState
-    {
-        public readonly List<TimeSpan> WaitCalls = [];
-
-        public Action? BeforeWait { get; set; }
-    }
-
-    private readonly struct RecordingWaiter : IWaiter
-    {
-        private readonly WaiterState _state;
-
-        public RecordingWaiter(WaiterState state) => _state = state;
-
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            _state.WaitCalls.Add(duration);
-            _state.BeforeWait?.Invoke();
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-    }
-
-    private readonly record struct SaveInvocation(WorldImage Image, int Tick, Action<WorldImage, int> SaveAction);
 
     private sealed class SaveRunnerState
     {

@@ -1,5 +1,6 @@
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -540,27 +541,6 @@ public sealed class LoopHarnessExampleTests
             public void ClearFailure() => _state.ExceptionToThrow = null;
         }
     }
-
-    private sealed class ClockState
-    {
-        public long NowNanoseconds { get; set; }
-    }
-
-    private readonly struct RecordingClock : IClock
-    {
-        private readonly ClockState _state;
-
-        public RecordingClock(ClockState state) => _state = state;
-
-        public long NowNanoseconds => _state.NowNanoseconds;
-    }
-
-    private readonly struct NoWaiter : IWaiter
-    {
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken) => cancellationToken.ThrowIfCancellationRequested();
-    }
-
-    private readonly record struct SaveInvocation(WorldImage Image, int Tick, Action<WorldImage, int> SaveAction);
 
     private sealed class SaveRunnerState
     {

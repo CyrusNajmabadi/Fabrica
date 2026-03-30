@@ -1,5 +1,6 @@
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -189,7 +190,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_DoesNotTick_WhenAccumulatorIsBelowThreshold()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
 
@@ -208,7 +209,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_TicksOnce_WhenAccumulatorReachesThreshold()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
 
@@ -227,7 +228,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_ThrowsWhenCancelledDuringIdleWait()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
 
@@ -249,7 +250,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_ProcessesMultipleTicks_AndPreservesLeftoverAccumulator()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
 
@@ -270,7 +271,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_AppliesPressureDelay_WhenTickEpochGapExceedsLowWaterMark()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
@@ -296,7 +297,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_ThrowsWhenCancelledDuringPressureDelay()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
@@ -326,7 +327,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_BlocksAtHardCeiling_UntilConsumptionCatchesUp()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < HardCeilingTicks; i++)
@@ -359,7 +360,7 @@ public sealed class SimulationLoopTickTests
     [Fact]
     public void RunOneIteration_ThrowsWhenCancelledDuringHardCeilingWait()
     {
-        var test = SimulationLoopTestContext.CreateManual();
+        var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < HardCeilingTicks; i++)
@@ -405,18 +406,9 @@ public sealed class SimulationLoopTickTests
     {
         public static SimulationLoopTestContext<FakeClock, RecordingWaiter> Create()
         {
-            var waiterState = new WaiterState();
+            var waiterState = new Simulation.Tests.Helpers.WaiterState();
             return Create(
                 clock: new FakeClock(),
-                waiter: new RecordingWaiter(waiterState),
-                waiterState: waiterState);
-        }
-
-        public static SimulationLoopTestContext<ManualClock, RecordingWaiter> CreateManual()
-        {
-            var waiterState = new WaiterState();
-            return Create(
-                clock: new ManualClock(),
                 waiter: new RecordingWaiter(waiterState),
                 waiterState: waiterState);
         }
@@ -424,7 +416,7 @@ public sealed class SimulationLoopTickTests
         public static SimulationLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(
             TClock clock,
             TWaiter waiter,
-            WaiterState waiterState,
+            Simulation.Tests.Helpers.WaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
@@ -443,7 +435,7 @@ public sealed class SimulationLoopTickTests
         internal SimulationLoopTestContext(
             MemorySystem memory,
             SharedState shared,
-            WaiterState waiterState,
+            Simulation.Tests.Helpers.WaiterState waiterState,
             SimulationLoop<TClock, TWaiter> loop)
         {
             this.Memory = memory;
@@ -457,41 +449,10 @@ public sealed class SimulationLoopTickTests
 
         public SharedState Shared { get; }
 
-        public WaiterState WaiterState { get; }
+        public Simulation.Tests.Helpers.WaiterState WaiterState { get; }
 
         public SimulationLoop<TClock, TWaiter> Loop { get; }
 
         public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
-    }
-
-    internal readonly struct FakeClock : IClock
-    {
-        public long NowNanoseconds => 0;
-    }
-
-    internal readonly struct ManualClock : IClock
-    {
-        public long NowNanoseconds => 0;
-    }
-
-    internal sealed class WaiterState
-    {
-        public readonly List<TimeSpan> WaitCalls = [];
-
-        public Action? BeforeWait { get; set; }
-    }
-
-    internal readonly struct RecordingWaiter : IWaiter
-    {
-        private readonly WaiterState _state;
-
-        public RecordingWaiter(WaiterState state) => _state = state;
-
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            _state.WaitCalls.Add(duration);
-            _state.BeforeWait?.Invoke();
-            cancellationToken.ThrowIfCancellationRequested();
-        }
     }
 }

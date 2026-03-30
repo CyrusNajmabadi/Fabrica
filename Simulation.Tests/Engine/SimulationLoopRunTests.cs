@@ -1,5 +1,6 @@
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -139,7 +140,7 @@ public sealed class SimulationLoopRunTests
         public static SimulationLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(
             TClock clock,
             TWaiter waiter,
-            WaiterState waiterState,
+            Simulation.Tests.Helpers.WaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
@@ -158,7 +159,7 @@ public sealed class SimulationLoopRunTests
         internal SimulationLoopTestContext(
             MemorySystem memory,
             SharedState shared,
-            WaiterState waiterState,
+            Simulation.Tests.Helpers.WaiterState waiterState,
             SimulationLoop<TClock, TWaiter> loop)
         {
             this.Memory = memory;
@@ -172,45 +173,10 @@ public sealed class SimulationLoopRunTests
 
         public SharedState Shared { get; }
 
-        public WaiterState WaiterState { get; }
+        public Simulation.Tests.Helpers.WaiterState WaiterState { get; }
 
         public SimulationLoop<TClock, TWaiter> Loop { get; }
 
         public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
-    }
-
-    private sealed class ClockState
-    {
-        public long NowNanoseconds { get; set; }
-    }
-
-    private readonly struct RecordingClock : IClock
-    {
-        private readonly ClockState _state;
-
-        public RecordingClock(ClockState state) => _state = state;
-
-        public long NowNanoseconds => _state.NowNanoseconds;
-    }
-
-    private sealed class WaiterState
-    {
-        public readonly List<TimeSpan> WaitCalls = [];
-
-        public Action? BeforeWait { get; set; }
-    }
-
-    private readonly struct RecordingWaiter : IWaiter
-    {
-        private readonly WaiterState _state;
-
-        public RecordingWaiter(WaiterState state) => _state = state;
-
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            _state.WaitCalls.Add(duration);
-            _state.BeforeWait?.Invoke();
-            cancellationToken.ThrowIfCancellationRequested();
-        }
     }
 }

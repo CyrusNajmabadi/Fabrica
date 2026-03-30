@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Simulation.Engine;
 using Simulation.Memory;
+using Simulation.Tests.Helpers;
 using Simulation.World;
 using Xunit;
 
@@ -233,16 +234,6 @@ public sealed class ConcurrencyStressTests
             if (_renderDelayMilliseconds > 0)
                 Thread.Sleep(_renderDelayMilliseconds);
         }
-    }
-
-    private readonly struct NoOpSaveRunner : ISaveRunner
-    {
-        public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction) { }
-    }
-
-    private readonly struct NoOpSaver : ISaver
-    {
-        public void Save(WorldImage image, int tick) { }
     }
 
     private readonly struct SlowSaver : ISaver
