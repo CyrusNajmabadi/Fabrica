@@ -22,12 +22,14 @@ namespace Simulation.World;
 /// </summary>
 internal sealed class WorldImage
 {
-    public int TickNumber;
-
     // TODO: belt state, machine state, etc.
 
-    internal void Reset()
+    /// <summary>
+    /// Called by <see cref="Memory.MemorySystem.ReturnImage"/> when the image is
+    /// returned to the pool.  Clears all simulation state so a future rent
+    /// receives a clean slate.
+    /// </summary>
+    internal void ResetForPool()
     {
-        TickNumber = 0;
     }
 }

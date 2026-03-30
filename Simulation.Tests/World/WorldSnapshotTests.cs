@@ -6,14 +6,15 @@ namespace Simulation.Tests.World;
 public sealed class WorldSnapshotTests
 {
     [Fact]
-    public void Initialize_SetsImageAndClearsNext()
+    public void Initialize_SetsImageAndTickAndClearsNext()
     {
-        var image = new WorldImage { TickNumber = 5 };
+        var image = new WorldImage();
         var snapshot = new WorldSnapshot();
 
-        snapshot.Initialize(image);
+        snapshot.Initialize(image, tickNumber: 5);
 
         Assert.Same(image, snapshot.Image);
+        Assert.Equal(5, snapshot.TickNumber);
         Assert.Null(snapshot.Next);
         Assert.False(snapshot.IsUnreferenced);
     }
@@ -24,8 +25,8 @@ public sealed class WorldSnapshotTests
         var first = new WorldSnapshot();
         var second = new WorldSnapshot();
 
-        first.Initialize(new WorldImage());
-        second.Initialize(new WorldImage());
+        first.Initialize(new WorldImage(), 0);
+        second.Initialize(new WorldImage(), 1);
 
         first.SetNext(second);
 
@@ -38,8 +39,8 @@ public sealed class WorldSnapshotTests
         var first = new WorldSnapshot();
         var second = new WorldSnapshot();
 
-        first.Initialize(new WorldImage());
-        second.Initialize(new WorldImage());
+        first.Initialize(new WorldImage(), 0);
+        second.Initialize(new WorldImage(), 1);
         first.SetNext(second);
 
         first.ClearNext();
@@ -50,12 +51,12 @@ public sealed class WorldSnapshotTests
     [Fact]
     public void Release_ToZero_ClearsReferences()
     {
-        var image = new WorldImage { TickNumber = 10 };
+        var image = new WorldImage();
         var next = new WorldSnapshot();
         var snapshot = new WorldSnapshot();
 
-        snapshot.Initialize(image);
-        next.Initialize(new WorldImage());
+        snapshot.Initialize(image, tickNumber: 10);
+        next.Initialize(new WorldImage(), 0);
         snapshot.SetNext(next);
 
         snapshot.Release();

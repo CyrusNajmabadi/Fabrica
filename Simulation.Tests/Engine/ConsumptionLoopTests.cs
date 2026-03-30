@@ -51,7 +51,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Empty(test.SaveRunnerState.RunCalls);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(SimulationConstants.SaveIntervalTicks, test.Shared.ConsumptionEpoch);
     }
 
@@ -64,7 +64,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Empty(test.SaveRunnerState.RunCalls);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
     }
 
@@ -129,7 +129,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.False(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
         Assert.Equal(invocation.Tick + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-        Assert.Equal([(invocation.Image.TickNumber, invocation.Tick)], test.SaverState.SaveCalls);
+        Assert.Equal([invocation.Tick], test.SaverState.SaveCalls);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.False(test.Memory.PinnedVersions.IsPinned(invocation.Tick));
         Assert.Equal(invocation.Tick + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-        Assert.Equal([(invocation.Image.TickNumber, invocation.Tick)], test.SaverState.SaveCalls);
+        Assert.Equal([invocation.Tick], test.SaverState.SaveCalls);
 
         // Failure surfaces via EngineStatus on the next render frame.
         test.SaverState.ExceptionToThrow = null;
@@ -171,8 +171,8 @@ public sealed class ConsumptionLoopTests
             () => test.Accessor.RunOneIteration(CancellationToken.None));
 
         Assert.Equal("dispatch failed", exception.Message);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
-        Assert.Equal(snapshot.Image.TickNumber, test.Shared.NextSaveAtTick);
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.Equal(snapshot.TickNumber, test.Shared.NextSaveAtTick);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
         Assert.Empty(test.RendererState.RenderedTicks);
         Assert.Empty(test.SaverState.SaveCalls);
@@ -190,15 +190,15 @@ public sealed class ConsumptionLoopTests
 
         Assert.Equal("render failed", exception.Message);
         SaveInvocation invocation = Assert.Single(test.SaveRunnerState.RunCalls);
-        Assert.True(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.True(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
         Assert.Equal(0, test.Shared.NextSaveAtTick);
         Assert.Empty(test.RendererState.RenderedTicks);
 
         test.SaveRunnerState.Complete(invocation);
 
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
-        Assert.Equal(snapshot.Image.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
+        Assert.Equal(snapshot.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.Equal("render failed", exception.Message);
         Assert.Empty(test.SaveRunnerState.RunCalls);
-        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber));
+        Assert.False(test.Memory.PinnedVersions.IsPinned(snapshot.TickNumber));
         Assert.Equal(0, test.Shared.NextSaveAtTick);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
         Assert.Empty(test.RendererState.RenderedTicks);
@@ -235,9 +235,9 @@ public sealed class ConsumptionLoopTests
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal([snapshot.Image.TickNumber], test.RendererState.RenderedTicks);
-        Assert.Equal(snapshot.Image.TickNumber, test.Shared.ConsumptionEpoch);
-        Assert.Equal(snapshot.Image.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
+        Assert.Equal([snapshot.TickNumber], test.RendererState.RenderedTicks);
+        Assert.Equal(snapshot.TickNumber, test.Shared.ConsumptionEpoch);
+        Assert.Equal(snapshot.TickNumber + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
         Assert.Single(test.SaveRunnerState.RunCalls);
     }
 
@@ -476,8 +476,7 @@ public sealed class ConsumptionLoopTests
         {
             WorldImage image = Assert.IsType<WorldImage>(Memory.RentImage());
             WorldSnapshot snapshot = Assert.IsType<WorldSnapshot>(Memory.RentSnapshot());
-            image.TickNumber = tick;
-            snapshot.Initialize(image);
+            snapshot.Initialize(image, tick);
             Shared.LatestSnapshot = snapshot;
             return snapshot;
         }
@@ -561,7 +560,7 @@ public sealed class ConsumptionLoopTests
 
     private sealed class SaverState
     {
-        public readonly List<(int imageTick, int tick)> SaveCalls = [];
+        public readonly List<int> SaveCalls = [];
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -577,7 +576,7 @@ public sealed class ConsumptionLoopTests
 
         public void Save(WorldImage image, int tick)
         {
-            _state.SaveCalls.Add((image.TickNumber, tick));
+            _state.SaveCalls.Add(tick);
 
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
@@ -608,7 +607,7 @@ public sealed class ConsumptionLoopTests
             _state.BeforeRender?.Invoke(frame);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(frame.Current.Image.TickNumber);
+            _state.RenderedTicks.Add(frame.Current.TickNumber);
             _state.RenderedEngineStatuses.Add(frame.EngineStatus);
         }
     }

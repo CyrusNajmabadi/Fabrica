@@ -34,7 +34,34 @@ namespace Simulation.World;
 /// </summary>
 internal sealed class WorldSnapshot
 {
-    public WorldImage Image = null!;
+    /// <summary>
+    /// The underlying world state for this snapshot.  Contains simulation data
+    /// (belt state, machine state, etc.) that the renderer reads during
+    /// interpolation.
+    /// </summary>
+    public WorldImage Image { get; private set; } = null!;
+
+    /// <summary>
+    /// Monotonically increasing simulation tick that produced this snapshot.
+    /// Tick 0 is the initial state created by Bootstrap.  Each call to
+    /// <c>SimulationLoop.Tick</c> increments by 1.
+    ///
+    /// Used for epoch management, save scheduling, pin identification, and
+    /// ordering within the snapshot chain.
+    /// </summary>
+    public int TickNumber { get; private set; }
+
+    /// <summary>
+    /// Wall-clock time (nanoseconds) when the simulation published this snapshot
+    /// via the volatile write to LatestSnapshot.  Set on the simulation thread
+    /// before the release fence, so it is visible to any thread that reads the
+    /// snapshot via the matching acquire fence.
+    ///
+    /// Used by the consumption loop to compute the interpolation factor between
+    /// consecutive snapshots for smooth rendering.  Lives on the snapshot (not
+    /// on WorldImage) because it is publication metadata, not world state.
+    /// </summary>
+    public long PublishTimeNanoseconds { get; private set; }
 
     // Forward pointer: old → new.
     // Set once via SetNext; may be cleared via ClearNext when the snapshot is extracted
@@ -43,13 +70,31 @@ internal sealed class WorldSnapshot
 
     private int _refCount;
 
-    /// <summary>Called by MemorySystem when renting from pool.</summary>
-    internal void Initialize(WorldImage image)
+    /// <summary>
+    /// Prepares this snapshot for use after being rented from the pool.
+    /// Sets the image, tick number, clears the forward pointer, and initialises
+    /// the ref count to 1.
+    ///
+    /// Called by the simulation thread via <see cref="Memory.MemorySystem.RentSnapshot"/>.
+    /// </summary>
+    internal void Initialize(WorldImage image, int tickNumber)
     {
         Debug.Assert(_refCount == 0, "Initialize called on a snapshot still in use");
         Image     = image;
+        TickNumber = tickNumber;
+        PublishTimeNanoseconds = 0;
         Next      = null;
         _refCount = 1;
+    }
+
+    /// <summary>
+    /// Records the wall-clock publish time.  Called by the simulation thread
+    /// immediately before the volatile write to LatestSnapshot, so the
+    /// release/acquire pair makes the value visible to consumers.
+    /// </summary>
+    internal void MarkPublished(long timeNanoseconds)
+    {
+        PublishTimeNanoseconds = timeNanoseconds;
     }
 
     /// <summary>Links the next snapshot in the chain. Called once per snapshot by the simulation thread.</summary>

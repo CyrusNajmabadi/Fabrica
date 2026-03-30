@@ -106,7 +106,7 @@ public sealed class SimulationLoopRunTests
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Same(snapshot, test.Accessor.OldestSnapshot);
         Assert.Same(snapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(0, snapshot.Image.TickNumber);
+        Assert.Equal(0, snapshot.TickNumber);
         Assert.Equal(
             [ TimeSpan.FromMilliseconds(1) ],
             test.WaiterState.WaitCalls);

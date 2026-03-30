@@ -9,24 +9,40 @@ namespace Simulation.Engine;
 /// and coordinates periodic saves.
 ///
 /// FRAME LOOP  (RunOneIteration)
-///   1. Volatile-read LatestSnapshot (acquire fence: all image writes by the
+///   1. DrainSaveEvents: process any completed save results from the threadpool.
+///   2. Volatile-read LatestSnapshot (acquire fence: all image writes by the
 ///      simulation thread are now visible).
-///   2. MaybeStartSave: if a save is due and not in flight, pin the snapshot
-///      and dispatch to the save task.  The epoch has NOT yet advanced past
-///      this tick, so the simulation already holds the snapshot alive.
-///   3. Render(_lastRendered, snapshot): always fires — see RENDER SEMANTICS.
-///   4. ConsumptionEpoch = snapshot.TickNumber (volatile release fence).
-///   5. _lastRendered = snapshot.
-///   6. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
+///   3. Rotate the render pair if a new snapshot has arrived (see below).
+///   4. MaybeStartSave: if a save is due and not in flight, pin the snapshot
+///      and dispatch to the save task.
+///   5. Build RenderFrame (snapshots + interpolation factor + engine status).
+///   6. Render(frame): the renderer uses the snapshots for the duration of the
+///      call only — it must not store them.
+///   7. ConsumptionEpoch = _renderPrevious.TickNumber (or _renderCurrent's if
+///      no previous exists yet).  This keeps both held snapshots alive.
+///   8. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
 ///
-/// RENDER SEMANTICS
-///   Render is called every frame regardless of whether the simulation has
-///   produced a new snapshot since the last call.  When the simulation is
-///   running behind the render rate, LatestSnapshot returns the same object on
-///   multiple consecutive frames, so previous == current (same reference).
-///   The renderer may use this to drive sub-tick animation or interpolation, or
-///   detect the no-change case cheaply via ReferenceEquals(previous, current).
-///   See IRenderer.Render for full details.
+/// "ONE TICK BEHIND" INTERPOLATION MODEL
+///   The loop holds two distinct snapshot references: _renderPrevious and
+///   _renderCurrent.  When LatestSnapshot changes (a new tick), the pair
+///   rotates: old current becomes previous, new snapshot becomes current.
+///   Between rotations the pair is stable.
+///
+///   The interpolation factor progresses from 0 (show previous) to 1 (show
+///   current) over one tick duration, based on wall-clock time elapsed since
+///   current was published.  This gives the renderer two real simulation
+///   endpoints to blend between — no extrapolation needed.
+///
+///   Visual latency: ~one tick (25 ms at 40 Hz).  Imperceptible for a factory
+///   simulation where events occur on timescales of seconds.
+///
+/// EPOCH ADVANCEMENT
+///   The epoch is set to _renderPrevious.TickNumber when both snapshots exist,
+///   or _renderCurrent.TickNumber on the first frame (no previous yet).
+///   This advances one tick behind the latest consumed snapshot, keeping both
+///   held snapshots alive: previous at tick N is safe (N is not &lt; N), and
+///   current at tick &gt; N is safe.  The simulation retains one extra snapshot
+///   compared to the old model — negligible with a 256-slot pool.
 ///
 /// SAVE PIN DISCIPLINE
 ///   The ordering within a save-triggering frame is load-bearing:
@@ -34,18 +50,13 @@ namespace Simulation.Engine;
 ///     1. Pin(tick)         ← epoch hasn't advanced; simulation holds snapshot alive
 ///     2. RunSave(image)    ← dispatch to save task
 ///     3. Render(…)         ← may throw; epoch still not advanced (safe)
-///     4. ConsumptionEpoch = tick  ← simulation may now look past this tick
+///     4. ConsumptionEpoch  ← simulation may now look past older ticks
 ///
 ///   If RunSave throws (dispatch failure): pin is released, NextSaveAtTick is
 ///   restored to the current tick, and the save will be retried next frame.
 ///   If Render throws after a successful dispatch: the pin remains so the save
 ///   task can still safely read the image.  The save task's finally block always
 ///   clears the pin and reschedules NextSaveAtTick.
-///
-/// EPOCH ORDERING GUARANTEE
-///   ConsumptionEpoch = N implies Render(…, tickN) has already returned
-///   successfully and _lastRendered == tickN.  The simulation can therefore
-///   safely reclaim tickN's snapshot once epoch advances past it.
 ///
 /// Generic constraints (struct IClock, IWaiter, etc.) eliminate interface
 /// dispatch on every call in the hot frame loop.  See Engine summary for
@@ -61,11 +72,11 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     private readonly object _savePinOwner = new();
     private readonly ConcurrentQueue<SaveEvent> _saveEvents = new();
 
-    // The snapshot passed as 'current' on the most recent successful Render call.
-    // Null before the first render.
-    // Passed as 'previous' on the next Render call so the renderer can diff the two.
+    // The two snapshots the renderer interpolates between.
     // Only touched by the consumption thread — no synchronisation needed.
-    private WorldSnapshot? _lastRendered;
+    // _renderPrevious is null before two distinct snapshots have been observed.
+    private WorldSnapshot? _renderPrevious;
+    private WorldSnapshot? _renderCurrent;
 
     // Local save tracking — written only by the consumption thread (after draining
     // the concurrent queue), so no synchronisation needed for reads.
@@ -112,15 +123,26 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
         DrainSaveEvents();
 
-        WorldSnapshot? snapshot = _shared.LatestSnapshot;
-        if (snapshot is not null)
+        WorldSnapshot? latestSnapshot = _shared.LatestSnapshot;
+        if (latestSnapshot is not null)
         {
-            MaybeStartSave(snapshot);
+            if (!ReferenceEquals(latestSnapshot, _renderCurrent))
+            {
+                _renderPrevious = _renderCurrent;
+                _renderCurrent = latestSnapshot;
+            }
+
+            MaybeStartSave(_renderCurrent!);
 
             var frame = new RenderFrame
             {
-                Previous = _lastRendered,
-                Current = snapshot,
+                Previous = _renderPrevious,
+                Current = _renderCurrent!,
+                Interpolation = new InterpolationClock
+                {
+                    ElapsedNanoseconds = frameStart - _renderCurrent!.PublishTimeNanoseconds,
+                    TickDurationNanoseconds = SimulationConstants.TickDurationNanoseconds,
+                },
                 EngineStatus = new EngineStatus
                 {
                     Save = new SaveStatus
@@ -133,9 +155,11 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
             _renderer.Render(in frame);
 
-            // Advance epoch: simulation may now free anything strictly before this tick.
-            _shared.ConsumptionEpoch = snapshot.Image.TickNumber;
-            _lastRendered = snapshot;
+            // Epoch protects both held snapshots.  When we have a previous,
+            // set epoch to its tick — cleanup frees strictly below, so both
+            // previous (tick N, not < N) and current (tick > N) remain alive.
+            _shared.ConsumptionEpoch = _renderPrevious?.TickNumber
+                                       ?? _renderCurrent!.TickNumber;
         }
 
         ThrottleToFrameRate(frameStart, cancellationToken);
@@ -169,10 +193,10 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     {
         int nextSaveAt = _shared.NextSaveAtTick;
 
-        if (nextSaveAt == 0 || snapshot.Image.TickNumber < nextSaveAt)
+        if (nextSaveAt == 0 || snapshot.TickNumber < nextSaveAt)
             return;
 
-        int tickToSave = snapshot.Image.TickNumber;
+        int tickToSave = snapshot.TickNumber;
 
         // Clear the timer BEFORE firing so the save task controls the next trigger.
         _shared.NextSaveAtTick = 0;

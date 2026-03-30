@@ -132,13 +132,13 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             throw new InvalidOperationException("Snapshot pool empty at startup.");
         }
 
-        image.TickNumber = 0;
-        snapshot.Initialize(image);
+        snapshot.Initialize(image, tickNumber: 0);
 
         _currentSnapshot = snapshot;
         _oldestSnapshot  = snapshot;
         _currentTick     = 0;
 
+        snapshot.MarkPublished(_clock.NowNanoseconds);
         _shared.LatestSnapshot = snapshot;
     }
 
@@ -177,13 +177,13 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         }
 
         _currentTick++;
-        image!.TickNumber = _currentTick;
         // TODO: advance world state into image
 
-        snapshot.Initialize(image);
+        snapshot.Initialize(image!, _currentTick);
         _currentSnapshot!.SetNext(snapshot);
         _currentSnapshot = snapshot;
 
+        snapshot.MarkPublished(_clock.NowNanoseconds);
         _shared.LatestSnapshot = snapshot;
     }
 
@@ -217,12 +217,12 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         // keeping the entire tail alive whenever a single snapshot is pinned.
         while (_oldestSnapshot is not null
                && _oldestSnapshot != _currentSnapshot
-               && _oldestSnapshot.Image.TickNumber < consumptionEpoch)
+               && _oldestSnapshot.TickNumber < consumptionEpoch)
         {
             WorldSnapshot toProcess = _oldestSnapshot;
             _oldestSnapshot = toProcess.Next;
 
-            if (_memory.PinnedVersions.IsPinned(toProcess.Image.TickNumber))
+            if (_memory.PinnedVersions.IsPinned(toProcess.TickNumber))
             {
                 toProcess.ClearNext();
                 if (!_pinnedQueue.Add(toProcess))
@@ -237,7 +237,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         // Drain any pinned snapshots whose pins have since been released.
         _pinnedQueue.RemoveWhere(snapshot =>
         {
-            if (_memory.PinnedVersions.IsPinned(snapshot.Image.TickNumber))
+            if (_memory.PinnedVersions.IsPinned(snapshot.TickNumber))
                 return false;
             FreeSnapshot(snapshot);
             return true;

@@ -36,7 +36,7 @@ public sealed class SimulationLoopAdditionalTests
             ],
             test.WaiterState.WaitCalls);
         Assert.Equal(3, test.Accessor.CurrentTick);
-        Assert.Equal(3, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.Equal(3, test.Accessor.CurrentSnapshot!.TickNumber);
         Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
     }
 
@@ -123,8 +123,8 @@ public sealed class SimulationLoopAdditionalTests
         WorldSnapshot tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
         WorldSnapshot tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Memory.PinnedVersions.Pin(tick0.Image.TickNumber, tick0Owner);
-        test.Memory.PinnedVersions.Pin(tick1.Image.TickNumber, tick1Owner);
+        test.Memory.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
+        test.Memory.PinnedVersions.Pin(tick1.TickNumber, tick1Owner);
         test.Shared.ConsumptionEpoch = 3;
 
         test.Accessor.CleanupStaleSnapshots();
@@ -136,8 +136,8 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Null(tick1.Next);
         Assert.True(tick2.IsUnreferenced);
 
-        test.Memory.PinnedVersions.Unpin(tick0.Image.TickNumber, tick0Owner);
-        test.Memory.PinnedVersions.Unpin(tick1.Image.TickNumber, tick1Owner);
+        test.Memory.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
+        test.Memory.PinnedVersions.Unpin(tick1.TickNumber, tick1Owner);
 
         test.Accessor.CleanupStaleSnapshots();
 
@@ -160,15 +160,15 @@ public sealed class SimulationLoopAdditionalTests
         WorldSnapshot tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
         WorldSnapshot tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Memory.PinnedVersions.Pin(tick0.Image.TickNumber, tick0Owner);
-        test.Memory.PinnedVersions.Pin(tick1.Image.TickNumber, tick1Owner);
+        test.Memory.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
+        test.Memory.PinnedVersions.Pin(tick1.TickNumber, tick1Owner);
         test.Shared.ConsumptionEpoch = 3;
 
         test.Accessor.CleanupStaleSnapshots();
 
         Assert.Equal(2, test.Accessor.PinnedQueueCount);
 
-        test.Memory.PinnedVersions.Unpin(tick0.Image.TickNumber, tick0Owner);
+        test.Memory.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
         test.Accessor.CleanupStaleSnapshots();
 
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
@@ -176,7 +176,7 @@ public sealed class SimulationLoopAdditionalTests
         Assert.False(tick1.IsUnreferenced);
         Assert.Same(tick3, test.Accessor.OldestSnapshot);
 
-        test.Memory.PinnedVersions.Unpin(tick1.Image.TickNumber, tick1Owner);
+        test.Memory.PinnedVersions.Unpin(tick1.TickNumber, tick1Owner);
         test.Accessor.CleanupStaleSnapshots();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
@@ -197,7 +197,7 @@ public sealed class SimulationLoopAdditionalTests
         WorldSnapshot tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
         WorldSnapshot tick1 = Assert.IsType<WorldSnapshot>(tick0.Next);
 
-        test.Memory.PinnedVersions.Pin(tick0.Image.TickNumber, pinOwner);
+        test.Memory.PinnedVersions.Pin(tick0.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
         test.Accessor.CleanupStaleSnapshots();
 
@@ -209,7 +209,7 @@ public sealed class SimulationLoopAdditionalTests
             test.Accessor.CleanupStaleSnapshots);
 
         Assert.Contains("more than once", exception.Message);
-        Assert.Equal(3, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).Image.TickNumber);
+        Assert.Equal(3, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).TickNumber);
     }
 
     [Fact]

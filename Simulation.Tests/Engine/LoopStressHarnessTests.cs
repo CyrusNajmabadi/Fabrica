@@ -15,12 +15,19 @@ public sealed class LoopStressHarnessTests
         test.SimulationLoop.Bootstrap();
         test.Shared.NextSaveAtTick = 0;
 
+        // Run two full sim+cons cycles so the render pair is established.
+        // Leave the third sim tick unconsumed so the consumption inside
+        // OnWait can rotate to it and advance the epoch.
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
-        test.ConsumptionLoop.RunIteration(); // epoch 1
+        test.SimulationLoop.RunIteration(); // T1
+        test.ConsumptionLoop.RunIteration(); // prev=null, curr=T1, epoch=1
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 2
+        test.SimulationLoop.RunIteration(); // T2
+        test.ConsumptionLoop.RunIteration(); // prev=T1, curr=T2, epoch=1
+
+        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+        test.SimulationLoop.RunIteration(); // T3 — NOT consumed yet
 
         test.Memory.DrainSnapshots();
         Assert.Equal(0, test.Memory.AvailableSnapshots);
@@ -32,14 +39,14 @@ public sealed class LoopStressHarnessTests
             waitCount++;
 
             if (waitCount == 1)
-                test.ConsumptionLoop.RunIteration(); // epoch 2 while simulation is under pressure
+                test.ConsumptionLoop.RunIteration(); // rotates to T3: prev=T2, curr=T3, epoch=2
         };
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        test.SimulationLoop.RunIteration(); // cleanup frees T1 (epoch=2), then produces T4
 
-        Assert.Equal(3, test.SimulationLoop.CurrentTick);
-        Assert.Equal(3, Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot).Image.TickNumber);
+        Assert.Equal(4, test.SimulationLoop.CurrentTick);
+        Assert.Equal(4, Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot).TickNumber);
         Assert.Equal(2, test.Shared.ConsumptionEpoch);
         Assert.Equal(3, test.Waiter.WaitCalls.Count);
         Assert.Equal(GetExpectedPressureDelay(availableSnapshots: 0, capacity: test.Memory.SnapshotPoolCapacity), test.Waiter.WaitCalls[0]);

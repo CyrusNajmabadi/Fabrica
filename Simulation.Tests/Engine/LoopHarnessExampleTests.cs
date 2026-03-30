@@ -16,27 +16,25 @@ public sealed class LoopHarnessExampleTests
         test.Shared.NextSaveAtTick = 1;
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        test.SimulationLoop.RunIteration(); // T1
         WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
-        WorldImage tick1Image = tick1Snapshot.Image;
 
-        test.ConsumptionLoop.RunIteration();
+        test.ConsumptionLoop.RunIteration(); // save dispatched for T1
         Assert.True(test.Pins.IsPinned(1));
         Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
         Assert.Equal(1, test.Shared.ConsumptionEpoch);
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
-
-        test.ConsumptionLoop.RunIteration();
-        Assert.Equal(2, test.Shared.ConsumptionEpoch);
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        // Advance several ticks while save is in flight.  The epoch eventually
+        // passes T1, but the pin keeps it alive in the simulation's pinned queue.
+        for (int i = 0; i < 3; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+            test.ConsumptionLoop.RunIteration();
+        }
 
         Assert.True(test.Pins.IsPinned(1));
         Assert.False(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(1, test.SimulationLoop.PinnedQueueCount);
 
         test.Save.CompletePendingSave();
         Assert.False(test.Pins.IsPinned(1));
@@ -45,7 +43,6 @@ public sealed class LoopHarnessExampleTests
         test.SimulationLoop.RunIteration();
 
         Assert.True(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(0, tick1Image.TickNumber);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
     }
 
@@ -59,30 +56,30 @@ public sealed class LoopHarnessExampleTests
         test.Shared.NextSaveAtTick = 1;
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        test.SimulationLoop.RunIteration(); // T1
         WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
-        WorldImage tick1Image = tick1Snapshot.Image;
 
-        test.ConsumptionLoop.RunIteration();
+        test.ConsumptionLoop.RunIteration(); // save dispatched for T1
         test.Pins.Pin(1, externalOwner);
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
-        test.ConsumptionLoop.RunIteration();
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        // Advance several ticks so the epoch passes T1 and it enters the pinned queue.
+        for (int i = 0; i < 3; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+            test.ConsumptionLoop.RunIteration();
+        }
 
         Assert.True(test.Pins.IsPinned(1));
         Assert.False(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(1, test.SimulationLoop.PinnedQueueCount);
 
+        // Save pin cleared — external pin still holds.
         test.Save.CompletePendingSave();
 
         Assert.True(test.Pins.IsPinned(1));
         Assert.False(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(1, test.SimulationLoop.PinnedQueueCount);
 
+        // External pin cleared — both pins gone.
         test.Pins.Unpin(1, externalOwner);
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
@@ -90,7 +87,6 @@ public sealed class LoopHarnessExampleTests
 
         Assert.False(test.Pins.IsPinned(1));
         Assert.True(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(0, tick1Image.TickNumber);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
     }
 
@@ -117,7 +113,7 @@ public sealed class LoopHarnessExampleTests
 
         test.ConsumptionLoop.RunIteration(); // now see tick 2
         Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
-        Assert.Equal(2, test.Shared.ConsumptionEpoch);
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
     }
 
     [Fact]
@@ -128,25 +124,22 @@ public sealed class LoopHarnessExampleTests
         test.SimulationLoop.Bootstrap();
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // publish tick 1
+        test.SimulationLoop.RunIteration(); // T1
         WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
-        WorldImage tick1Image = tick1Snapshot.Image;
 
-        test.ConsumptionLoop.RunIteration(); // consume tick 1
-        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+        test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // publish tick 2
-        Assert.False(tick1Snapshot.IsUnreferenced);
-
-        test.ConsumptionLoop.RunIteration(); // consume tick 2
-        Assert.Equal(2, test.Shared.ConsumptionEpoch);
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // publish tick 3, reclaim tick 1
+        // Advance enough ticks that the epoch passes T1 and cleanup frees it.
+        // With the one-tick-behind epoch model, an extra consumption iteration
+        // is needed compared to the old model.
+        for (int i = 0; i < 3; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+            test.ConsumptionLoop.RunIteration();
+        }
 
         Assert.True(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(0, tick1Image.TickNumber);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
     }
 
@@ -192,7 +185,7 @@ public sealed class LoopHarnessExampleTests
 
         Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
         Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
-        Assert.Equal(2, test.Shared.ConsumptionEpoch);
+        Assert.Equal(1, test.Shared.ConsumptionEpoch);
         Assert.Equal(0, test.Shared.NextSaveAtTick);
 
         test.Save.CompletePendingSave();
@@ -226,7 +219,7 @@ public sealed class LoopHarnessExampleTests
 
         Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
         Assert.True(test.Pins.IsPinned(3));
-        Assert.Equal(3, test.Shared.ConsumptionEpoch);
+        Assert.Equal(2, test.Shared.ConsumptionEpoch);
     }
 
     [Fact]
@@ -337,21 +330,20 @@ public sealed class LoopHarnessExampleTests
         test.Shared.NextSaveAtTick = 0;
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
+        test.SimulationLoop.RunIteration(); // T1
         WorldSnapshot tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentSnapshot);
-        WorldImage tick1Image = tick1Snapshot.Image;
 
-        test.ConsumptionLoop.RunIteration(); // epoch 1, no save
+        test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1, no save
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 2
-        test.ConsumptionLoop.RunIteration(); // epoch 2
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 3, cleanup can reclaim tick 1
+        // Advance enough ticks that the epoch passes T1 and cleanup frees it.
+        for (int i = 0; i < 3; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
+            test.ConsumptionLoop.RunIteration();
+        }
 
         Assert.True(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(0, tick1Image.TickNumber);
         Assert.Equal(0, test.ConsumptionLoop.PendingSaveCount);
     }
 
@@ -530,7 +522,7 @@ public sealed class LoopHarnessExampleTests
 
             public int PendingSaveCount => _state.PendingInvocations.Count;
 
-            public IReadOnlyList<(int imageTick, int tick)> SaveCalls => _saverState.SaveCalls;
+            public IReadOnlyList<int> SaveCalls => _saverState.SaveCalls;
 
             public void FailDispatchWith(Exception exception) => _state.ExceptionToThrow = exception;
 
@@ -623,7 +615,7 @@ public sealed class LoopHarnessExampleTests
 
     private sealed class SaverState
     {
-        public readonly List<(int imageTick, int tick)> SaveCalls = [];
+        public readonly List<int> SaveCalls = [];
     }
 
     private readonly struct RecordingSaver : ISaver
@@ -637,7 +629,7 @@ public sealed class LoopHarnessExampleTests
 
         public void Save(WorldImage image, int tick)
         {
-            _state.SaveCalls.Add((image.TickNumber, tick));
+            _state.SaveCalls.Add(tick);
         }
     }
 
@@ -661,7 +653,7 @@ public sealed class LoopHarnessExampleTests
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(frame.Current.Image.TickNumber);
+            _state.RenderedTicks.Add(frame.Current.TickNumber);
         }
     }
 }

@@ -41,7 +41,7 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Same(snapshot, test.Accessor.OldestSnapshot);
         Assert.Same(snapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(0, snapshot.Image.TickNumber);
+        Assert.Equal(0, snapshot.TickNumber);
         Assert.Null(snapshot.Next);
     }
 
@@ -58,7 +58,7 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(1, test.Accessor.CurrentTick);
         Assert.NotSame(initial, test.Accessor.CurrentSnapshot);
         Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
         Assert.Same(test.Accessor.CurrentSnapshot, initial.Next);
     }
 
@@ -79,7 +79,7 @@ public sealed class SimulationLoopTickTests
             [ GetPoolRetryWait() ],
             test.WaiterState.WaitCalls);
         Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public sealed class SimulationLoopTickTests
             test.WaiterState.WaitCalls);
         Assert.Equal(imagesAvailableBefore - 1, test.CountAvailableImages());
         Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class SimulationLoopTickTests
             ],
             test.WaiterState.WaitCalls);
         Assert.Equal(1, test.Accessor.CurrentTick);
-        Assert.Equal(1, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.Equal(1, test.Accessor.CurrentSnapshot!.TickNumber);
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class SimulationLoopTickTests
             [ GetPoolRetryWait() ],
             test.WaiterState.WaitCalls);
         Assert.Equal(3, test.Accessor.CurrentTick);
-        Assert.Equal(3, test.Accessor.CurrentSnapshot!.Image.TickNumber);
+        Assert.Equal(3, test.Accessor.CurrentSnapshot!.TickNumber);
         Assert.NotSame(latestBefore, test.Accessor.CurrentSnapshot);
         Assert.Same(test.Accessor.CurrentSnapshot, test.Shared.LatestSnapshot);
         Assert.Equal(imagesAvailableBefore + 1, test.CountAvailableImages());
@@ -185,7 +185,7 @@ public sealed class SimulationLoopTickTests
         Assert.Equal(0, test.Accessor.CurrentTick);
         Assert.Same(initialSnapshot, test.Accessor.CurrentSnapshot);
         Assert.Same(initialSnapshot, test.Shared.LatestSnapshot);
-        Assert.Equal(0, initialSnapshot.Image.TickNumber);
+        Assert.Equal(0, initialSnapshot.TickNumber);
         Assert.Equal(
             [ GetPoolRetryWait() ],
             test.WaiterState.WaitCalls);
@@ -222,14 +222,12 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(CancellationToken.None);
 
         WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
-        WorldImage firstImage = firstSnapshot.Image;
 
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.CleanupStaleSnapshots();
 
         Assert.True(firstSnapshot.IsUnreferenced);
-        Assert.Equal(0, firstImage.TickNumber);
     }
 
     [Fact]
@@ -263,8 +261,8 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.CleanupStaleSnapshots();
 
-        Assert.Equal(1, Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot).Image.TickNumber);
-        Assert.Equal(2, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).Image.TickNumber);
+        Assert.Equal(1, Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot).TickNumber);
+        Assert.Equal(2, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).TickNumber);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -281,7 +279,7 @@ public sealed class SimulationLoopTickTests
         WorldSnapshot firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
         WorldSnapshot latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Memory.PinnedVersions.Pin(firstSnapshot.Image.TickNumber, pinOwner);
+        test.Memory.PinnedVersions.Pin(firstSnapshot.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.CleanupStaleSnapshots();
@@ -290,7 +288,7 @@ public sealed class SimulationLoopTickTests
         Assert.Same(latestSnapshot, test.Accessor.CurrentSnapshot);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
 
-        test.Memory.PinnedVersions.Unpin(firstSnapshot.Image.TickNumber, pinOwner);
+        test.Memory.PinnedVersions.Unpin(firstSnapshot.TickNumber, pinOwner);
 
         test.Accessor.CleanupStaleSnapshots();
 
@@ -313,7 +311,7 @@ public sealed class SimulationLoopTickTests
         WorldSnapshot tick2 = Assert.IsType<WorldSnapshot>(tick1.Next);
         WorldSnapshot tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
 
-        test.Memory.PinnedVersions.Pin(tick1.Image.TickNumber, pinOwner);
+        test.Memory.PinnedVersions.Pin(tick1.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 3;
 
         test.Accessor.CleanupStaleSnapshots();
@@ -322,10 +320,10 @@ public sealed class SimulationLoopTickTests
         Assert.Same(tick3, test.Accessor.OldestSnapshot);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
         Assert.Null(tick1.Next);
-        Assert.Equal(1, tick1.Image.TickNumber);
-        Assert.Equal(3, tick3.Image.TickNumber);
+        Assert.Equal(1, tick1.TickNumber);
+        Assert.Equal(3, tick3.TickNumber);
 
-        test.Memory.PinnedVersions.Unpin(tick1.Image.TickNumber, pinOwner);
+        test.Memory.PinnedVersions.Unpin(tick1.TickNumber, pinOwner);
         test.Accessor.CleanupStaleSnapshots();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);

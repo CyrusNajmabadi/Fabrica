@@ -52,7 +52,7 @@ internal sealed class MemorySystem
     // ── Image pool (simulation thread only) ──────────────────────────────────
 
     public WorldImage? RentImage()              => _imagePool.Rent();
-    public void        ReturnImage(WorldImage image) { image.Reset(); _imagePool.Return(image); }
+    public void        ReturnImage(WorldImage image) { image.ResetForPool(); _imagePool.Return(image); }
 
     // ── Pool capacity (simulation thread reads) ───────────────────────────────
 
