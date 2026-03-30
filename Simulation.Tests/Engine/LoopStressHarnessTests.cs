@@ -112,11 +112,11 @@ public sealed class LoopStressHarnessTests
             SimulationLoop<RecordingClock, RecordingWaiter> simulationLoop,
             ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer> consumptionLoop)
         {
-            Shared = shared;
-            Clock = new ClockController(clockState);
-            Waiter = new WaiterController(waiterState);
-            SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
-            ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
+            this.Shared = shared;
+            this.Clock = new ClockController(clockState);
+            this.Waiter = new WaiterController(waiterState);
+            this.SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
+            this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
         }
 
         public SharedState Shared { get; }
@@ -162,10 +162,7 @@ public sealed class LoopStressHarnessTests
         {
             private readonly ClockState _state;
 
-            public ClockController(ClockState state)
-            {
-                _state = state;
-            }
+            public ClockController(ClockState state) => _state = state;
 
             public void AdvanceBy(long nanoseconds) => _state.NowNanoseconds += nanoseconds;
         }
@@ -174,10 +171,7 @@ public sealed class LoopStressHarnessTests
         {
             private readonly WaiterState _state;
 
-            public WaiterController(WaiterState state)
-            {
-                _state = state;
-            }
+            public WaiterController(WaiterState state) => _state = state;
 
             public IReadOnlyList<TimeSpan> WaitCalls => _state.WaitCalls;
 
@@ -216,13 +210,10 @@ public sealed class LoopStressHarnessTests
                 _owner._simulationAccumulator = 0;
             }
 
-            public void RunIteration()
-            {
-                _accessor.RunOneIteration(
+            public void RunIteration() => _accessor.RunOneIteration(
                     CancellationToken.None,
                     ref _owner._simulationLastTime,
                     ref _owner._simulationAccumulator);
-            }
         }
 
         public sealed class ConsumptionLoopController
@@ -230,10 +221,7 @@ public sealed class LoopStressHarnessTests
             private readonly ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor _accessor;
 
             public ConsumptionLoopController(
-                ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor accessor)
-            {
-                _accessor = accessor;
-            }
+                ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer>.TestAccessor accessor) => _accessor = accessor;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
@@ -248,10 +236,7 @@ public sealed class LoopStressHarnessTests
     {
         private readonly ClockState _state;
 
-        public RecordingClock(ClockState state)
-        {
-            _state = state;
-        }
+        public RecordingClock(ClockState state) => _state = state;
 
         public long NowNanoseconds => _state.NowNanoseconds;
     }
@@ -267,10 +252,7 @@ public sealed class LoopStressHarnessTests
     {
         private readonly WaiterState _state;
 
-        public RecordingWaiter(WaiterState state)
-        {
-            _state = state;
-        }
+        public RecordingWaiter(WaiterState state) => _state = state;
 
         public void Wait(TimeSpan duration, CancellationToken cancellationToken)
         {
@@ -282,10 +264,7 @@ public sealed class LoopStressHarnessTests
 
     private readonly struct NoWaiter : IWaiter
     {
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
+        public void Wait(TimeSpan duration, CancellationToken cancellationToken) => cancellationToken.ThrowIfCancellationRequested();
     }
 
     private readonly struct RecordingSaveRunner : ISaveRunner

@@ -80,10 +80,10 @@ internal sealed class WorldSnapshot
     internal void Initialize(WorldImage image, int tickNumber)
     {
         Debug.Assert(_refCount == 0, "Initialize called on a snapshot still in use");
-        Image = image;
-        TickNumber = tickNumber;
-        PublishTimeNanoseconds = 0;
-        Next = null;
+        this.Image = image;
+        this.TickNumber = tickNumber;
+        this.PublishTimeNanoseconds = 0;
+        this.Next = null;
         _refCount = 1;
     }
 
@@ -92,26 +92,20 @@ internal sealed class WorldSnapshot
     /// immediately before the volatile write to LatestSnapshot, so the
     /// release/acquire pair makes the value visible to consumers.
     /// </summary>
-    internal void MarkPublished(long timeNanoseconds)
-    {
-        PublishTimeNanoseconds = timeNanoseconds;
-    }
+    internal void MarkPublished(long timeNanoseconds) => this.PublishTimeNanoseconds = timeNanoseconds;
 
     /// <summary>Links the next snapshot in the chain. Called once per snapshot by the simulation thread.</summary>
     internal void SetNext(WorldSnapshot next)
     {
-        Debug.Assert(Next is null, "SetNext called more than once on the same snapshot");
-        Next = next;
+        Debug.Assert(this.Next is null, "SetNext called more than once on the same snapshot");
+        this.Next = next;
     }
 
     /// <summary>
     /// Severs the forward pointer when this snapshot is extracted from the live chain
     /// into the pinned queue, so that the snapshots that followed it can be freed normally.
     /// </summary>
-    internal void ClearNext()
-    {
-        Next = null;
-    }
+    internal void ClearNext() => this.Next = null;
 
     internal void AddRef()
     {
@@ -129,8 +123,8 @@ internal sealed class WorldSnapshot
         Debug.Assert(_refCount > 0, "Release called more times than AddRef");
         if (--_refCount == 0)
         {
-            Image = null!;
-            Next = null;
+            this.Image = null!;
+            this.Next = null;
         }
     }
 

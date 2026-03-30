@@ -114,14 +114,14 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         cancellationToken.ThrowIfCancellationRequested();
 
         while (!cancellationToken.IsCancellationRequested)
-            RunOneIteration(cancellationToken);
+            this.RunOneIteration(cancellationToken);
     }
 
     private void RunOneIteration(CancellationToken cancellationToken)
     {
         var frameStart = _clock.NowNanoseconds;
 
-        DrainSaveEvents();
+        this.DrainSaveEvents();
 
         var latestSnapshot = _shared.LatestSnapshot;
         if (latestSnapshot is not null)
@@ -132,7 +132,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
                 _renderCurrent = latestSnapshot;
             }
 
-            MaybeStartSave(_renderCurrent!);
+            this.MaybeStartSave(_renderCurrent!);
 
             var frame = new RenderFrame
             {
@@ -162,7 +162,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
                                        ?? _renderCurrent!.TickNumber;
         }
 
-        ThrottleToFrameRate(frameStart, cancellationToken);
+        this.ThrottleToFrameRate(frameStart, cancellationToken);
     }
 
     private void DrainSaveEvents()
@@ -209,7 +209,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
         var imageToSave = snapshot.Image;
         try
         {
-            _saveRunner.RunSave(imageToSave, tickToSave, RunSaveTask);
+            _saveRunner.RunSave(imageToSave, tickToSave, this.RunSaveTask);
             _saveInFlight = true;
         }
         catch
@@ -269,10 +269,7 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     {
         private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _loop;
 
-        public TestAccessor(ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> loop)
-        {
-            _loop = loop;
-        }
+        public TestAccessor(ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> loop) => _loop = loop;
 
         public void RunOneIteration(CancellationToken cancellationToken) => _loop.RunOneIteration(cancellationToken);
 

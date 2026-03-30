@@ -7,8 +7,5 @@ namespace Simulation.Engine;
 /// </summary>
 internal readonly struct TaskSaveRunner : ISaveRunner
 {
-    public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
-    {
-        Task.Run(() => saveAction(image, tick));
-    }
+    public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction) => Task.Run(() => saveAction(image, tick));
 }

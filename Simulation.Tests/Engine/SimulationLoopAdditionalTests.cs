@@ -298,10 +298,10 @@ public sealed class SimulationLoopAdditionalTests
             WaiterState waiterState,
             SimulationLoop<TClock, TWaiter> loop)
         {
-            Memory = memory;
-            Shared = shared;
-            WaiterState = waiterState;
-            Accessor = loop.GetTestAccessor();
+            this.Memory = memory;
+            this.Shared = shared;
+            this.WaiterState = waiterState;
+            this.Accessor = loop.GetTestAccessor();
         }
 
         public MemorySystem Memory { get; }
@@ -334,10 +334,7 @@ public sealed class SimulationLoopAdditionalTests
     {
         private readonly WaiterState _state;
 
-        public RecordingWaiter(WaiterState state)
-        {
-            _state = state;
-        }
+        public RecordingWaiter(WaiterState state) => _state = state;
 
         public void Wait(TimeSpan duration, CancellationToken cancellationToken)
         {

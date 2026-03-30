@@ -50,7 +50,7 @@ internal sealed class SharedState
         set
         {
 #if DEBUG
-            AssertSingleWriter(ref _latestSnapshotWriterThreadId, nameof(LatestSnapshot));
+            AssertSingleWriter(ref _latestSnapshotWriterThreadId, nameof(this.LatestSnapshot));
 #endif
             _latestSnapshot = value;
         }
@@ -73,7 +73,7 @@ internal sealed class SharedState
         set
         {
 #if DEBUG
-            AssertSingleWriter(ref _consumptionEpochWriterThreadId, nameof(ConsumptionEpoch));
+            AssertSingleWriter(ref _consumptionEpochWriterThreadId, nameof(this.ConsumptionEpoch));
 #endif
             _consumptionEpoch = value;
         }
@@ -94,7 +94,13 @@ internal sealed class SharedState
     //
     // Initial value = SaveIntervalTicks so the first save fires at tick 12000 (5 min).
 
-    public volatile int NextSaveAtTick = SimulationConstants.SaveIntervalTicks;
+    private volatile int _nextSaveAtTick = SimulationConstants.SaveIntervalTicks;
+
+    public int NextSaveAtTick
+    {
+        get => _nextSaveAtTick;
+        set => _nextSaveAtTick = value;
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

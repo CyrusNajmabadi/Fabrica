@@ -84,13 +84,13 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        Bootstrap();
+        this.Bootstrap();
 
         var lastTime = _clock.NowNanoseconds;
         long accumulator = 0;
 
         while (!cancellationToken.IsCancellationRequested)
-            RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
+            this.RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
     }
 
     private void RunOneIteration(
@@ -103,7 +103,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         lastTime = now;
         accumulator += delta;
 
-        ProcessAvailableTicks(cancellationToken, ref accumulator);
+        this.ProcessAvailableTicks(cancellationToken, ref accumulator);
 
         _waiter.Wait(new TimeSpan(SimulationConstants.IdleYieldNanoseconds / 100), cancellationToken);
     }
@@ -112,9 +112,9 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     {
         while (accumulator >= SimulationConstants.TickDurationNanoseconds)
         {
-            ApplyPressureDelay(cancellationToken);
-            Tick();
-            CleanupStaleSnapshots();
+            this.ApplyPressureDelay(cancellationToken);
+            this.Tick();
+            this.CleanupStaleSnapshots();
             accumulator -= SimulationConstants.TickDurationNanoseconds;
         }
     }
@@ -211,7 +211,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
             }
             else
             {
-                FreeSnapshot(toProcess);
+                this.FreeSnapshot(toProcess);
             }
         }
 
@@ -220,7 +220,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
         {
             if (_memory.PinnedVersions.IsPinned(snapshot.TickNumber))
                 return false;
-            FreeSnapshot(snapshot);
+            this.FreeSnapshot(snapshot);
             return true;
         });
     }
@@ -279,10 +279,7 @@ internal sealed class SimulationLoop<TClock, TWaiter>
     {
         private readonly SimulationLoop<TClock, TWaiter> _loop;
 
-        public TestAccessor(SimulationLoop<TClock, TWaiter> loop)
-        {
-            _loop = loop;
-        }
+        public TestAccessor(SimulationLoop<TClock, TWaiter> loop) => _loop = loop;
 
         public void Bootstrap() => _loop.Bootstrap();
 

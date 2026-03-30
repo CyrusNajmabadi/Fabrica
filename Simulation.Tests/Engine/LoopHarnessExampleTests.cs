@@ -364,14 +364,14 @@ public sealed class LoopHarnessExampleTests
             SimulationLoop<RecordingClock, NoWaiter> simulationLoop,
             ConsumptionLoop<RecordingClock, NoWaiter, RecordingSaveRunner, RecordingSaver, RecordingRenderer> consumptionLoop)
         {
-            Memory = memory;
-            Shared = shared;
-            Clock = new ClockController(clockState);
-            Pins = new PinController(memory.PinnedVersions);
-            Save = new SaveController(saveRunnerState, saverState);
-            ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor(), saveRunnerState);
-            SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
-            Renderer = new RendererController(rendererState);
+            this.Memory = memory;
+            this.Shared = shared;
+            this.Clock = new ClockController(clockState);
+            this.Pins = new PinController(memory.PinnedVersions);
+            this.Save = new SaveController(saveRunnerState, saverState);
+            this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor(), saveRunnerState);
+            this.SimulationLoop = new SimulationLoopController(this, simulationLoop.GetTestAccessor());
+            this.Renderer = new RendererController(rendererState);
 
             _simulationAccessor = simulationLoop.GetTestAccessor();
             _consumptionAccessor = consumptionLoop.GetTestAccessor();
@@ -451,13 +451,10 @@ public sealed class LoopHarnessExampleTests
                 _owner._simulationAccumulator = 0;
             }
 
-            public void RunIteration()
-            {
-                _accessor.RunOneIteration(
+            public void RunIteration() => _accessor.RunOneIteration(
                     CancellationToken.None,
                     ref _owner._simulationLastTime,
                     ref _owner._simulationAccumulator);
-            }
 
         }
 
@@ -483,10 +480,7 @@ public sealed class LoopHarnessExampleTests
         {
             private readonly ClockState _state;
 
-            public ClockController(ClockState state)
-            {
-                _state = state;
-            }
+            public ClockController(ClockState state) => _state = state;
 
             public long NowNanoseconds => _state.NowNanoseconds;
 
@@ -497,10 +491,7 @@ public sealed class LoopHarnessExampleTests
         {
             private readonly PinnedVersions _pins;
 
-            public PinController(PinnedVersions pins)
-            {
-                _pins = pins;
-            }
+            public PinController(PinnedVersions pins) => _pins = pins;
 
             public void Pin(int tick, object owner) => _pins.Pin(tick, owner);
 
@@ -540,10 +531,7 @@ public sealed class LoopHarnessExampleTests
         {
             private readonly RendererState _state;
 
-            public RendererController(RendererState state)
-            {
-                _state = state;
-            }
+            public RendererController(RendererState state) => _state = state;
 
             public IReadOnlyList<int> RenderedTicks => _state.RenderedTicks;
 
@@ -562,20 +550,14 @@ public sealed class LoopHarnessExampleTests
     {
         private readonly ClockState _state;
 
-        public RecordingClock(ClockState state)
-        {
-            _state = state;
-        }
+        public RecordingClock(ClockState state) => _state = state;
 
         public long NowNanoseconds => _state.NowNanoseconds;
     }
 
     private readonly struct NoWaiter : IWaiter
     {
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
+        public void Wait(TimeSpan duration, CancellationToken cancellationToken) => cancellationToken.ThrowIfCancellationRequested();
     }
 
     private readonly record struct SaveInvocation(WorldImage Image, int Tick, Action<WorldImage, int> SaveAction);
@@ -587,20 +569,14 @@ public sealed class LoopHarnessExampleTests
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public void Complete(SaveInvocation invocation)
-        {
-            invocation.SaveAction(invocation.Image, invocation.Tick);
-        }
+        public void Complete(SaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
     }
 
     private readonly struct RecordingSaveRunner : ISaveRunner
     {
         private readonly SaveRunnerState _state;
 
-        public RecordingSaveRunner(SaveRunnerState state)
-        {
-            _state = state;
-        }
+        public RecordingSaveRunner(SaveRunnerState state) => _state = state;
 
         public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
         {
@@ -622,15 +598,9 @@ public sealed class LoopHarnessExampleTests
     {
         private readonly SaverState _state;
 
-        public RecordingSaver(SaverState state)
-        {
-            _state = state;
-        }
+        public RecordingSaver(SaverState state) => _state = state;
 
-        public void Save(WorldImage image, int tick)
-        {
-            _state.SaveCalls.Add(tick);
-        }
+        public void Save(WorldImage image, int tick) => _state.SaveCalls.Add(tick);
     }
 
     private sealed class RendererState
@@ -644,10 +614,7 @@ public sealed class LoopHarnessExampleTests
     {
         private readonly RendererState _state;
 
-        public RecordingRenderer(RendererState state)
-        {
-            _state = state;
-        }
+        public RecordingRenderer(RendererState state) => _state = state;
 
         public void Render(in RenderFrame frame)
         {

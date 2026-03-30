@@ -57,7 +57,7 @@ internal sealed class ObjectPool<T> where T : class, new()
     public T Rent()
     {
 #if DEBUG
-        AssertOwnerThread();
+        this.AssertOwnerThread();
 #endif
         return _items.Count > 0 ? _items.Pop() : new T();
     }
@@ -66,7 +66,7 @@ internal sealed class ObjectPool<T> where T : class, new()
     public void Return(T item)
     {
 #if DEBUG
-        AssertOwnerThread();
+        this.AssertOwnerThread();
 #endif
         _items.Push(item);
     }

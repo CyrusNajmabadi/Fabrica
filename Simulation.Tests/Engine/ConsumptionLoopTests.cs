@@ -443,15 +443,15 @@ public sealed class ConsumptionLoopTests
             SaverState saverState,
             RendererState rendererState)
         {
-            Memory = memory;
-            Shared = shared;
-            Loop = loop;
-            Accessor = loop.GetTestAccessor();
-            ClockState = clockState;
-            WaiterState = waiterState;
-            SaveRunnerState = saveRunnerState;
-            SaverState = saverState;
-            RendererState = rendererState;
+            this.Memory = memory;
+            this.Shared = shared;
+            this.Loop = loop;
+            this.Accessor = loop.GetTestAccessor();
+            this.ClockState = clockState;
+            this.WaiterState = waiterState;
+            this.SaveRunnerState = saveRunnerState;
+            this.SaverState = saverState;
+            this.RendererState = rendererState;
         }
 
         public MemorySystem Memory { get; }
@@ -474,10 +474,10 @@ public sealed class ConsumptionLoopTests
 
         public WorldSnapshot CreatePublishedSnapshot(int tick)
         {
-            var image = Assert.IsType<WorldImage>(Memory.RentImage());
-            var snapshot = Assert.IsType<WorldSnapshot>(Memory.RentSnapshot());
+            var image = Assert.IsType<WorldImage>(this.Memory.RentImage());
+            var snapshot = Assert.IsType<WorldSnapshot>(this.Memory.RentSnapshot());
             snapshot.Initialize(image, tick);
-            Shared.LatestSnapshot = snapshot;
+            this.Shared.LatestSnapshot = snapshot;
             return snapshot;
         }
     }
@@ -491,10 +491,7 @@ public sealed class ConsumptionLoopTests
     {
         private readonly ClockState _state;
 
-        public RecordingClock(ClockState state)
-        {
-            _state = state;
-        }
+        public RecordingClock(ClockState state) => _state = state;
 
         public long NowNanoseconds => _state.NowNanoseconds;
     }
@@ -510,10 +507,7 @@ public sealed class ConsumptionLoopTests
     {
         private readonly WaiterState _state;
 
-        public RecordingWaiter(WaiterState state)
-        {
-            _state = state;
-        }
+        public RecordingWaiter(WaiterState state) => _state = state;
 
         public void Wait(TimeSpan duration, CancellationToken cancellationToken)
         {
@@ -533,20 +527,14 @@ public sealed class ConsumptionLoopTests
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public void Complete(SaveInvocation invocation)
-        {
-            invocation.SaveAction(invocation.Image, invocation.Tick);
-        }
+        public void Complete(SaveInvocation invocation) => invocation.SaveAction(invocation.Image, invocation.Tick);
     }
 
     private readonly struct RecordingSaveRunner : ISaveRunner
     {
         private readonly SaveRunnerState _state;
 
-        public RecordingSaveRunner(SaveRunnerState state)
-        {
-            _state = state;
-        }
+        public RecordingSaveRunner(SaveRunnerState state) => _state = state;
 
         public void RunSave(WorldImage image, int tick, Action<WorldImage, int> saveAction)
         {
@@ -569,10 +557,7 @@ public sealed class ConsumptionLoopTests
     {
         private readonly SaverState _state;
 
-        public RecordingSaver(SaverState state)
-        {
-            _state = state;
-        }
+        public RecordingSaver(SaverState state) => _state = state;
 
         public void Save(WorldImage image, int tick)
         {
@@ -597,10 +582,7 @@ public sealed class ConsumptionLoopTests
     {
         private readonly RendererState _state;
 
-        public RecordingRenderer(RendererState state)
-        {
-            _state = state;
-        }
+        public RecordingRenderer(RendererState state) => _state = state;
 
         public void Render(in RenderFrame frame)
         {
