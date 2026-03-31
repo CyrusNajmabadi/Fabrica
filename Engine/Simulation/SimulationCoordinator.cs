@@ -10,7 +10,7 @@ namespace Engine.Simulation;
 ///   <see cref="AdvanceTick"/> runs once per simulation tick, called by
 ///   <see cref="SimulationProducer"/>:
 ///
-///     1. PREPARE — each worker's <see cref="SimulationCoordinator.SimulationExecutor.Prepare"/>
+///     1. PREPARE — each worker's <see cref="SimulationExecutor.Prepare"/>
 ///        clears per-tick accumulation state via <see cref="WorkerResources"/>.
 ///     2. SET UP — previous and next images and the cancellation token are
 ///        written to each worker as a <see cref="SimulationTickState"/>.
@@ -39,7 +39,7 @@ namespace Engine.Simulation;
 /// </summary>
 internal sealed partial class SimulationCoordinator(int workerCount)
 {
-    private readonly WorkerGroup<SimulationTickState, SimulationCoordinator.SimulationExecutor> _group = new(
+    private readonly WorkerGroup<SimulationTickState, SimulationExecutor> _group = new(
         workerCount,
         static i => new SimulationExecutor(new WorkerResources()),
         "SimWorker");

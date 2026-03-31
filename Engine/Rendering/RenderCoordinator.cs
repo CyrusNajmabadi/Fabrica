@@ -9,7 +9,7 @@ namespace Engine.Rendering;
 ///   <see cref="DispatchFrame"/> runs once per consumption-loop frame, called
 ///   by <see cref="RenderConsumer{TRenderer}"/>:
 ///
-///     1. PREPARE — each worker's <see cref="RenderCoordinator.RenderExecutor.Prepare"/>
+///     1. PREPARE — each worker's <see cref="RenderExecutor.Prepare"/>
 ///        clears per-frame state via <see cref="RenderWorkerResources"/>.
 ///     2. SET UP — the <see cref="RenderFrame"/> and cancellation token are
 ///        written to each worker as a <see cref="RenderDispatchState"/>.
@@ -22,16 +22,16 @@ namespace Engine.Rendering;
 ///   and the simulation may then reclaim the snapshots.
 ///
 /// THREAD PINNING
-///   Render workers are pinned starting at <c>coreIndexOffset</c> so they
-///   do not overlap with simulation workers (which pin to cores 0..N-1).
+///   Each worker attempts to pin itself to a specific logical core at thread
+///   startup via <see cref="ThreadPinningNative"/>.  This is best-effort and
+///   purely a cache-affinity optimisation.
 /// </summary>
-internal sealed partial class RenderCoordinator(int workerCount, int coreIndexOffset = 0)
+internal sealed partial class RenderCoordinator(int workerCount)
 {
-    private readonly WorkerGroup<RenderDispatchState, RenderCoordinator.RenderExecutor> _group = new(
+    private readonly WorkerGroup<RenderDispatchState, RenderExecutor> _group = new(
         workerCount,
         static i => new RenderExecutor(new RenderWorkerResources()),
-        "RenderWorker",
-        coreIndexOffset);
+        "RenderWorker");
 
     public int WorkerCount => _group.WorkerCount;
 
