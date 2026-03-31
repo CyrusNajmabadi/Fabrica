@@ -9,243 +9,14 @@ namespace Engine.Pipeline;
 /// in DEBUG builds its mutation surface can be hidden behind a private derived
 /// type (<c>PrivateChainNode</c>), giving compile-time enforcement that only
 /// the production loop can mutate nodes.  In RELEASE the two types collapse
-/// into a single sealed class with zero overhead.
+/// into a single class via <c>partial</c> with zero overhead.
 ///
 /// The derived <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}"/>
 /// adds the tick loop, backpressure, and domain-specific producer/consumer
 /// coordination.  It calls the protected chain helpers defined here.
 /// </summary>
-internal abstract class BaseProductionLoop<TPayload>
+internal abstract partial class BaseProductionLoop<TPayload>
 {
-    // ═════════════════════════════ CHAIN NODE ═════════════════════════════════
-
-#if DEBUG
-    /// <summary>
-    /// DEBUG: abstract base — holds all state and read-only properties directly.
-    /// The private <c>PrivateChainNode</c> adds only the forward-link (<c>_next</c>)
-    /// and all mutation methods.  Because <c>PrivateChainNode</c> is private, code
-    /// outside <see cref="BaseProductionLoop{TPayload}"/> cannot see the mutation
-    /// API or walk the chain.  Any accidental use fails to compile.
-    /// </summary>
-    public abstract class ChainNode
-    {
-        private protected int _sequenceNumber;
-        private protected long _publishTimeNanoseconds;
-        private protected TPayload _payload = default!;
-        private protected int _refCount;
-
-        private protected ChainNode() { }
-
-        public int SequenceNumber => _sequenceNumber;
-        public long PublishTimeNanoseconds => _publishTimeNanoseconds;
-        public TPayload Payload => _payload;
-        internal bool IsUnreferenced => _refCount == 0;
-
-        internal static ChainSegment Chain(ChainNode? start, ChainNode end) =>
-            new(start ?? end, end);
-
-        internal readonly struct ChainSegment
-        {
-            private readonly ChainNode _start;
-            private readonly ChainNode _end;
-
-            internal ChainSegment(ChainNode start, ChainNode end)
-            {
-                _start = start;
-                _end = end;
-            }
-
-            public Enumerator GetEnumerator() => new(_start, _end);
-
-            public struct Enumerator
-            {
-                private readonly ChainNode _end;
-                private ChainNode? _current;
-                private bool _started;
-
-                internal Enumerator(ChainNode start, ChainNode end)
-                {
-                    _current = start;
-                    _end = end;
-                    _started = false;
-                }
-
-                public readonly ChainNode Current => _current!;
-
-                public bool MoveNext()
-                {
-                    if (!_started)
-                    {
-                        _started = true;
-                        return _current is not null;
-                    }
-
-                    if (_current is null || ReferenceEquals(_current, _end))
-                    {
-                        _current = null;
-                        return false;
-                    }
-
-                    _current = ((PrivateChainNode)_current).Next;
-                    return _current is not null;
-                }
-            }
-        }
-    }
-
-    private sealed class PrivateChainNode : ChainNode
-    {
-        private PrivateChainNode? _next;
-
-        public PrivateChainNode? Next => _next;
-
-        public void InitializeBase(int sequenceNumber)
-        {
-            Debug.Assert(_refCount == 0, "InitializeBase called on a node still in use");
-            _sequenceNumber = sequenceNumber;
-            _publishTimeNanoseconds = 0;
-            _next = null;
-            _refCount = 1;
-        }
-
-        public void SetPayload(TPayload payload) => _payload = payload;
-
-        public void MarkPublished(long timeNanoseconds) => _publishTimeNanoseconds = timeNanoseconds;
-
-        public void SetNext(PrivateChainNode next)
-        {
-            Debug.Assert(_next is null, "SetNext called more than once on the same node");
-            _next = next;
-        }
-
-        public void ClearNext() => _next = null;
-
-        public void ClearPayload() => _payload = default!;
-
-        public void AddRef()
-        {
-            Debug.Assert(_refCount > 0, "AddRef on a zero-refcount (freed) node");
-            _refCount++;
-        }
-
-        public void Release()
-        {
-            Debug.Assert(_refCount > 0, "Release called more times than AddRef");
-            if (--_refCount == 0)
-                _next = null;
-        }
-    }
-
-#else
-    /// <summary>
-    /// RELEASE: single sealed class with all members.  In release builds anyone
-    /// in the assembly <em>could</em> call the internal mutation methods, but the
-    /// DEBUG build (which CI also runs) will catch that at compile time because
-    /// those methods do not exist on the abstract <see cref="ChainNode"/>.
-    /// </summary>
-    public sealed class ChainNode
-    {
-        private int _sequenceNumber;
-        private long _publishTimeNanoseconds;
-        private TPayload _payload = default!;
-        private ChainNode? _next;
-        private int _refCount;
-
-        public int SequenceNumber => _sequenceNumber;
-        public long PublishTimeNanoseconds => _publishTimeNanoseconds;
-        public TPayload Payload => _payload;
-        internal ChainNode? NextInChain => _next;
-        internal bool IsUnreferenced => _refCount == 0;
-
-        internal void InitializeBase(int sequenceNumber)
-        {
-            Debug.Assert(_refCount == 0, "InitializeBase called on a node still in use");
-            _sequenceNumber = sequenceNumber;
-            _publishTimeNanoseconds = 0;
-            _next = null;
-            _refCount = 1;
-        }
-
-        internal void SetPayload(TPayload payload) => _payload = payload;
-
-        internal void MarkPublished(long timeNanoseconds) => _publishTimeNanoseconds = timeNanoseconds;
-
-        internal void SetNext(ChainNode next)
-        {
-            Debug.Assert(_next is null, "SetNext called more than once on the same node");
-            _next = next;
-        }
-
-        internal void ClearNext() => _next = null;
-
-        internal void ClearPayload() => _payload = default!;
-
-        internal void AddRef()
-        {
-            Debug.Assert(_refCount > 0, "AddRef on a zero-refcount (freed) node");
-            _refCount++;
-        }
-
-        internal void Release()
-        {
-            Debug.Assert(_refCount > 0, "Release called more times than AddRef");
-            if (--_refCount == 0)
-                _next = null;
-        }
-
-        internal static ChainSegment Chain(ChainNode? start, ChainNode end) =>
-            new(start ?? end, end);
-
-        internal readonly struct ChainSegment
-        {
-            private readonly ChainNode _start;
-            private readonly ChainNode _end;
-
-            internal ChainSegment(ChainNode start, ChainNode end)
-            {
-                _start = start;
-                _end = end;
-            }
-
-            public Enumerator GetEnumerator() => new(_start, _end);
-
-            public struct Enumerator
-            {
-                private readonly ChainNode _end;
-                private ChainNode? _current;
-                private bool _started;
-
-                internal Enumerator(ChainNode start, ChainNode end)
-                {
-                    _current = start;
-                    _end = end;
-                    _started = false;
-                }
-
-                public readonly ChainNode Current => _current!;
-
-                public bool MoveNext()
-                {
-                    if (!_started)
-                    {
-                        _started = true;
-                        return _current is not null;
-                    }
-
-                    if (_current is null || ReferenceEquals(_current, _end))
-                    {
-                        _current = null;
-                        return false;
-                    }
-
-                    _current = _current.NextInChain;
-                    return _current is not null;
-                }
-            }
-        }
-    }
-#endif
-
     // ═══════════════════════════ NODE ALLOCATOR ═══════════════════════════════
 
     /// <summary>
@@ -282,24 +53,12 @@ internal abstract class BaseProductionLoop<TPayload>
         public void InitializeBase(int seq) => _node.InitializeBase(seq);
         public void SetPayload(TPayload payload) => _node.SetPayload(payload);
         public void MarkPublished(long time) => _node.MarkPublished(time);
+        public void SetNext(ChainNode next) => _node.SetNext(next);
+        public ChainNode? GetNext() => _node.NextInChain;
         public void ClearNext() => _node.ClearNext();
         public void ClearPayload() => _node.ClearPayload();
         public void AddRef() => _node.AddRef();
         public void Release() => _node.Release();
-
-        public void SetNext(ChainNode next) =>
-#if DEBUG
-            _node.SetNext((PrivateChainNode)next);
-#else
-            _node.SetNext(next);
-#endif
-
-        public ChainNode? GetNext() =>
-#if DEBUG
-            _node.Next;
-#else
-            _node.NextInChain;
-#endif
     }
 
     private static NodeMutation Mutate(ChainNode node) => new(node);
