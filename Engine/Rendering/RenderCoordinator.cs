@@ -9,7 +9,7 @@ namespace Engine.Rendering;
 ///   <see cref="DispatchFrame"/> runs once per consumption-loop frame, called
 ///   by <see cref="RenderConsumer{TRenderer}"/>:
 ///
-///     1. PREPARE — each worker's <see cref="RenderExecutor.Prepare"/>
+///     1. PREPARE — each worker's <see cref="RenderCoordinator.RenderExecutor.Prepare"/>
 ///        clears per-frame state via <see cref="RenderWorkerResources"/>.
 ///     2. SET UP — the <see cref="RenderFrame"/> and cancellation token are
 ///        written to each worker as a <see cref="RenderDispatchState"/>.
@@ -25,7 +25,7 @@ namespace Engine.Rendering;
 ///   Render workers are pinned starting at <c>coreIndexOffset</c> so they
 ///   do not overlap with simulation workers (which pin to cores 0..N-1).
 /// </summary>
-internal sealed class RenderCoordinator : IDisposable
+internal sealed partial class RenderCoordinator : IDisposable
 {
     private readonly WorkerGroup<RenderDispatchState, RenderExecutor> _group;
 

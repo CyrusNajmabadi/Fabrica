@@ -1,7 +1,12 @@
+using Engine.Pipeline;
 using Engine.Simulation;
+using Engine.Tests.Helpers;
+using Engine.World;
 using Xunit;
 
 namespace Engine.Tests;
+
+using SimulationPressure = ProductionLoop<WorldImage, SimulationProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
 
 public sealed class SimulationPressureTests
 {

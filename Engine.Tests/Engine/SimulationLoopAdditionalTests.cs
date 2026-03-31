@@ -10,6 +10,7 @@ namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
 using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using SimulationPressure = ProductionLoop<WorldImage, SimulationProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
 
 public sealed class SimulationLoopAdditionalTests
 {
