@@ -163,6 +163,8 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
 
         public int PinnedQueueCount => _chain.PinnedQueueCount;
 
+        public ChainNode? GetNext(ChainNode node) => _chain.GetNext(node);
+
         public void SetOldestNodeForTesting(ChainNode node) => _chain.SetOldestNodeForTesting(node);
     }
 }

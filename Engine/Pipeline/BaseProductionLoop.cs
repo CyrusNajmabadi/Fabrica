@@ -21,19 +21,25 @@ internal abstract class BaseProductionLoop<TPayload>
 
 #if DEBUG
     /// <summary>
-    /// DEBUG: abstract shell — exposes only the read-only surface.
-    /// The concrete <c>PrivateChainNode</c> (private to this class) holds all
-    /// state and mutation methods.  Because <c>PrivateChainNode</c> is private,
-    /// code outside <see cref="BaseProductionLoop{TPayload}"/> cannot see the
-    /// mutation API.  Any accidental use fails to compile.
+    /// DEBUG: abstract base — holds all state and read-only properties directly.
+    /// The private <c>PrivateChainNode</c> adds only the forward-link (<c>_next</c>)
+    /// and all mutation methods.  Because <c>PrivateChainNode</c> is private, code
+    /// outside <see cref="BaseProductionLoop{TPayload}"/> cannot see the mutation
+    /// API or walk the chain.  Any accidental use fails to compile.
     /// </summary>
     public abstract class ChainNode
     {
-        public abstract int SequenceNumber { get; }
-        public abstract long PublishTimeNanoseconds { get; }
-        public abstract TPayload Payload { get; }
-        internal abstract ChainNode? NextInChain { get; }
-        internal abstract bool IsUnreferenced { get; }
+        private protected int _sequenceNumber;
+        private protected long _publishTimeNanoseconds;
+        private protected TPayload _payload = default!;
+        private protected int _refCount;
+
+        private protected ChainNode() { }
+
+        public int SequenceNumber => _sequenceNumber;
+        public long PublishTimeNanoseconds => _publishTimeNanoseconds;
+        public TPayload Payload => _payload;
+        internal bool IsUnreferenced => _refCount == 0;
 
         internal static ChainSegment Chain(ChainNode? start, ChainNode end) =>
             new(start ?? end, end);
@@ -80,7 +86,7 @@ internal abstract class BaseProductionLoop<TPayload>
                         return false;
                     }
 
-                    _current = _current.NextInChain;
+                    _current = ((PrivateChainNode)_current).Next;
                     return _current is not null;
                 }
             }
@@ -89,17 +95,9 @@ internal abstract class BaseProductionLoop<TPayload>
 
     private sealed class PrivateChainNode : ChainNode
     {
-        private int _sequenceNumber;
-        private long _publishTimeNanoseconds;
-        private TPayload _payload = default!;
         private PrivateChainNode? _next;
-        private int _refCount;
 
-        public override int SequenceNumber => _sequenceNumber;
-        public override long PublishTimeNanoseconds => _publishTimeNanoseconds;
-        public override TPayload Payload => _payload;
-        internal override ChainNode? NextInChain => _next;
-        internal override bool IsUnreferenced => _refCount == 0;
+        public PrivateChainNode? Next => _next;
 
         public void InitializeBase(int sequenceNumber)
         {
@@ -147,26 +145,30 @@ internal abstract class BaseProductionLoop<TPayload>
     /// </summary>
     public sealed class ChainNode
     {
-        public int SequenceNumber { get; private set; }
-        public long PublishTimeNanoseconds { get; private set; }
-        public TPayload Payload { get; internal set; } = default!;
-
+        private int _sequenceNumber;
+        private long _publishTimeNanoseconds;
+        private TPayload _payload = default!;
         private ChainNode? _next;
         private int _refCount;
 
+        public int SequenceNumber => _sequenceNumber;
+        public long PublishTimeNanoseconds => _publishTimeNanoseconds;
+        public TPayload Payload => _payload;
         internal ChainNode? NextInChain => _next;
         internal bool IsUnreferenced => _refCount == 0;
 
         internal void InitializeBase(int sequenceNumber)
         {
             Debug.Assert(_refCount == 0, "InitializeBase called on a node still in use");
-            this.SequenceNumber = sequenceNumber;
-            this.PublishTimeNanoseconds = 0;
+            _sequenceNumber = sequenceNumber;
+            _publishTimeNanoseconds = 0;
             _next = null;
             _refCount = 1;
         }
 
-        internal void MarkPublished(long timeNanoseconds) => this.PublishTimeNanoseconds = timeNanoseconds;
+        internal void SetPayload(TPayload payload) => _payload = payload;
+
+        internal void MarkPublished(long timeNanoseconds) => _publishTimeNanoseconds = timeNanoseconds;
 
         internal void SetNext(ChainNode next)
         {
@@ -176,7 +178,7 @@ internal abstract class BaseProductionLoop<TPayload>
 
         internal void ClearNext() => _next = null;
 
-        internal void ClearPayload() => this.Payload = default!;
+        internal void ClearPayload() => _payload = default!;
 
         internal void AddRef()
         {
@@ -278,19 +280,12 @@ internal abstract class BaseProductionLoop<TPayload>
 #endif
 
         public void InitializeBase(int seq) => _node.InitializeBase(seq);
+        public void SetPayload(TPayload payload) => _node.SetPayload(payload);
         public void MarkPublished(long time) => _node.MarkPublished(time);
         public void ClearNext() => _node.ClearNext();
         public void ClearPayload() => _node.ClearPayload();
         public void AddRef() => _node.AddRef();
         public void Release() => _node.Release();
-
-        public void SetPayload(TPayload payload) =>
-#if DEBUG
-            _node.SetPayload(payload);
-#else
-            _node.Payload = payload;
-#endif
-
 
         public void SetNext(ChainNode next) =>
 #if DEBUG
@@ -299,6 +294,12 @@ internal abstract class BaseProductionLoop<TPayload>
             _node.SetNext(next);
 #endif
 
+        public ChainNode? GetNext() =>
+#if DEBUG
+            _node.Next;
+#else
+            _node.NextInChain;
+#endif
     }
 
     private static NodeMutation Mutate(ChainNode node) => new(node);
@@ -386,7 +387,7 @@ internal abstract class BaseProductionLoop<TPayload>
                && _oldestNode.SequenceNumber < consumptionEpoch)
         {
             var toProcess = _oldestNode;
-            _oldestNode = toProcess.NextInChain;
+            _oldestNode = Mutate(toProcess).GetNext();
 
             if (_pinnedVersions.IsPinned(toProcess.SequenceNumber))
             {
@@ -449,6 +450,8 @@ internal abstract class BaseProductionLoop<TPayload>
 
         public void MarkPublished(ChainNode node, long timeNanoseconds) =>
             Mutate(node).MarkPublished(timeNanoseconds);
+
+        public ChainNode? GetNext(ChainNode node) => Mutate(node).GetNext();
 
         public void LinkNodes(ChainNode current, ChainNode next) =>
             Mutate(current).SetNext(next);

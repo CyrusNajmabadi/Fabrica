@@ -33,7 +33,7 @@ public sealed class SimulationLoopTickTests
         Assert.Same(node, test.Accessor.OldestNode);
         Assert.Same(node, test.Shared.LatestNode);
         Assert.Equal(0, node.SequenceNumber);
-        Assert.Null(node.NextInChain);
+        Assert.Null(test.Accessor.GetNext(node));
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed class SimulationLoopTickTests
         Assert.NotSame(initial, test.Accessor.CurrentNode);
         Assert.Same(test.Accessor.CurrentNode, test.Shared.LatestNode);
         Assert.Equal(1, test.Accessor.CurrentNode!.SequenceNumber);
-        Assert.Same(test.Accessor.CurrentNode, initial.NextInChain);
+        Assert.Same(test.Accessor.CurrentNode, test.Accessor.GetNext(initial));
     }
 
     [Fact]
@@ -169,8 +169,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(); // tick 3
 
         var tick0 = test.Accessor.OldestNode!;
-        var tick1 = tick0.NextInChain!;
-        var tick2 = tick1.NextInChain!;
+        var tick1 = test.Accessor.GetNext(tick0)!;
+        var tick2 = test.Accessor.GetNext(tick1)!;
         var tick3 = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(tick1.SequenceNumber, pinOwner);
@@ -181,7 +181,7 @@ public sealed class SimulationLoopTickTests
         Assert.Same(tick3, test.Accessor.CurrentNode);
         Assert.Same(tick3, test.Accessor.OldestNode);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
-        Assert.Null(tick1.NextInChain);
+        Assert.Null(test.Accessor.GetNext(tick1));
         Assert.Equal(1, tick1.SequenceNumber);
         Assert.Equal(3, tick3.SequenceNumber);
 

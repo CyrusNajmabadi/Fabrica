@@ -30,7 +30,7 @@ public sealed class ChainNodeTests
 
         Assert.Equal(7, node.SequenceNumber);
         Assert.Equal(0, node.PublishTimeNanoseconds);
-        Assert.Null(node.NextInChain);
+        Assert.Null(this.Accessor.GetNext(node));
         Assert.False(node.IsUnreferenced);
     }
 
@@ -42,7 +42,7 @@ public sealed class ChainNodeTests
 
         this.Accessor.LinkNodes(first, second);
 
-        Assert.Same(second, first.NextInChain);
+        Assert.Same(second, this.Accessor.GetNext(first));
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class ChainNodeTests
 
         this.Accessor.ClearNext(first);
 
-        Assert.Null(first.NextInChain);
+        Assert.Null(this.Accessor.GetNext(first));
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class ChainNodeTests
         this.Accessor.Release(node);
 
         Assert.True(node.IsUnreferenced);
-        Assert.Null(node.NextInChain);
+        Assert.Null(this.Accessor.GetNext(node));
     }
 
     [Fact]

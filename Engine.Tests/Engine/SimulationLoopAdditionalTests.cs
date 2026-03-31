@@ -30,8 +30,8 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
 
         var tick0 = test.Accessor.OldestNode!;
-        var tick1 = tick0.NextInChain!;
-        var tick2 = tick1.NextInChain!;
+        var tick1 = test.Accessor.GetNext(tick0)!;
+        var tick2 = test.Accessor.GetNext(tick1)!;
         var tick3 = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(tick0.SequenceNumber, tick0Owner);
@@ -43,8 +43,8 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Same(tick3, test.Accessor.OldestNode);
         Assert.Same(tick3, test.Accessor.CurrentNode);
         Assert.Equal(2, test.Accessor.PinnedQueueCount);
-        Assert.Null(tick0.NextInChain);
-        Assert.Null(tick1.NextInChain);
+        Assert.Null(test.Accessor.GetNext(tick0));
+        Assert.Null(test.Accessor.GetNext(tick1));
         Assert.True(tick2.IsUnreferenced);
 
         test.PinnedVersions.Unpin(tick0.SequenceNumber, tick0Owner);
@@ -68,7 +68,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
 
         var tick0 = test.Accessor.OldestNode!;
-        var tick1 = tick0.NextInChain!;
+        var tick1 = test.Accessor.GetNext(tick0)!;
         var tick3 = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(tick0.SequenceNumber, tick0Owner);
