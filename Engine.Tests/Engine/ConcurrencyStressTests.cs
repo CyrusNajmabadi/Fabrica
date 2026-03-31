@@ -170,18 +170,13 @@ public sealed class ConcurrencyStressTests
             IsBackground = false,
         };
 
-        try
-        {
-            simulationThread.Start();
-            consumptionThread.Start();
+        simulationThread.Start();
+        consumptionThread.Start();
 
-            simulationThread.Join();
-            consumptionThread.Join();
-        }
-        finally
-        {
-            simulator.Dispose();
-        }
+        simulationThread.Join();
+        consumptionThread.Join();
+
+        simulator.Shutdown();
 
         var simEx = Volatile.Read(ref simulationException);
         var conEx = Volatile.Read(ref consumptionException);

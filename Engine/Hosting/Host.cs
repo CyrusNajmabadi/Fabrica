@@ -144,16 +144,13 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>
 {
     private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _productionLoop;
     private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _consumptionLoop;
-    private readonly IDisposable[] _disposables;
 
     public Host(
         ProductionLoop<TPayload, TProducer, TClock, TWaiter> productionLoop,
-        ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> consumptionLoop,
-        params IDisposable[] disposables)
+        ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> consumptionLoop)
     {
         _productionLoop = productionLoop;
         _consumptionLoop = consumptionLoop;
-        _disposables = disposables;
     }
 
     /// <summary>
@@ -161,31 +158,23 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>
     /// </summary>
     public void Run(CancellationToken cancellationToken)
     {
-        try
+        var productionThread = new Thread(() => _productionLoop.Run(cancellationToken))
         {
-            var productionThread = new Thread(() => _productionLoop.Run(cancellationToken))
-            {
-                Name = "Production",
-                IsBackground = false,
-            };
+            Name = "Production",
+            IsBackground = false,
+        };
 
-            var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
-            {
-                Name = "Consumption",
-                IsBackground = false,
-            };
-
-            productionThread.Start();
-            consumptionThread.Start();
-
-            productionThread.Join();
-            consumptionThread.Join();
-        }
-        finally
+        var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
         {
-            foreach (var disposable in _disposables)
-                disposable.Dispose();
-        }
+            Name = "Consumption",
+            IsBackground = false,
+        };
+
+        productionThread.Start();
+        consumptionThread.Start();
+
+        productionThread.Join();
+        consumptionThread.Join();
     }
 }
 
@@ -219,8 +208,6 @@ internal static class SimulationEngine
             new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
                 nodePool, shared, producer, clock, waiter),
             new ConsumptionLoop<WorldImage, RenderConsumer<TRenderer>, TClock, TWaiter>(
-                shared, consumer, clock, waiter, deferredConsumers),
-            simulationCoordinator,
-            renderCoordinator);
+                shared, consumer, clock, waiter, deferredConsumers));
     }
 }

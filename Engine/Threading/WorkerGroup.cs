@@ -24,10 +24,10 @@ namespace Engine.Threading;
 ///   cores N..N+M-1, avoiding overlap.
 ///
 /// OWNERSHIP
-///   The group owns the workers and their threads.  <see cref="Dispose"/> shuts
-///   down all workers, joins their threads, and releases OS handles.
+///   The group owns the workers and their threads.  <see cref="Shutdown"/> signals
+///   all workers to exit and blocks until their threads have terminated.
 /// </summary>
-internal sealed partial class WorkerGroup<TState, TExecutor> : IDisposable
+internal sealed partial class WorkerGroup<TState, TExecutor>
     where TState : struct
     where TExecutor : struct, IThreadExecutor<TState>
 {
@@ -84,15 +84,12 @@ internal sealed partial class WorkerGroup<TState, TExecutor> : IDisposable
         _doneBatch.WaitAll();
     }
 
-    public void Dispose()
+    public void Shutdown()
     {
         foreach (var worker in _workers)
             worker.Shutdown();
 
         foreach (var worker in _workers)
             worker.Join();
-
-        foreach (var worker in _workers)
-            worker.Cleanup();
     }
 }
