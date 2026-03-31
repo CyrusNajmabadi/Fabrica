@@ -25,9 +25,9 @@ internal sealed class WorldImage
     // TODO: belt state, machine state, etc.
 
     /// <summary>
-    /// Called by <see cref="MemorySystem.ReturnImage"/> when the image is
-    /// returned to the pool.  Clears all simulation state so a future rent
-    /// receives a clean slate.
+    /// Clears all simulation state so a pooled instance starts with a clean
+    /// slate.  Called by <see cref="WorldImageAllocator.Reset"/> when the
+    /// pool reclaims the image.
     /// </summary>
     internal void ResetForPool()
     {

@@ -133,8 +133,8 @@ public sealed class LoopStressHarnessTests
 
         public static LoopStressHarness Create(int poolSize = 64)
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
-            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();

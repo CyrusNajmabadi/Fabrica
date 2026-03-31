@@ -54,7 +54,7 @@ public sealed class LoopHarnessExampleTests
     public void DeferredConsumerPinAndExternalPin_BothMustClearBeforeSimulationCanReclaim()
     {
         var test = LoopHarness.Create();
-        object externalOwner = new();
+        var externalOwner = new ExternalPinOwner();
 
         test.SimulationLoop.Bootstrap();
 
@@ -242,8 +242,8 @@ public sealed class LoopHarnessExampleTests
             DeferredConsumerRegistration<WorldImage>[] deferredConsumers,
             TestDeferredConsumerState deferredState)
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
-            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();
@@ -327,9 +327,9 @@ public sealed class LoopHarnessExampleTests
 
             public PinController(PinnedVersions pins) => _pins = pins;
 
-            public void Pin(int tick, object owner) => _pins.Pin(tick, owner);
+            public void Pin(int tick, IPinOwner owner) => _pins.Pin(tick, owner);
 
-            public void Unpin(int tick, object owner) => _pins.Unpin(tick, owner);
+            public void Unpin(int tick, IPinOwner owner) => _pins.Unpin(tick, owner);
 
             public bool IsPinned(int tick) => _pins.IsPinned(tick);
         }
@@ -411,4 +411,6 @@ public sealed class LoopHarnessExampleTests
             _state.RenderedTicks.Add(latest.SequenceNumber);
         }
     }
+
+    private sealed class ExternalPinOwner : IPinOwner;
 }

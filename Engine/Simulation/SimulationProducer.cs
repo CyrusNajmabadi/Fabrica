@@ -8,16 +8,17 @@ namespace Engine.Simulation;
 /// Adapts the simulation-specific tick logic to the generic
 /// <see cref="IProducer{TPayload}"/> interface.
 ///
-/// Owns the <see cref="ObjectPool{WorldImage}"/> (image allocation is a
-/// producer concern) and delegates parallel tick work to the
-/// <see cref="SimulationCoordinator"/>.
+/// Owns the image pool (allocation is a producer concern) and delegates
+/// parallel tick work to the <see cref="SimulationCoordinator"/>.
+/// The pool's allocator handles <see cref="WorldImage.ResetForPool"/> on
+/// return, so <see cref="ReleaseResources"/> just returns to the pool.
 /// </summary>
 internal struct SimulationProducer : IProducer<WorldImage>
 {
-    private readonly ObjectPool<WorldImage> _imagePool;
+    private readonly ObjectPool<WorldImage, WorldImageAllocator> _imagePool;
     private readonly SimulationCoordinator _coordinator;
 
-    public SimulationProducer(ObjectPool<WorldImage> imagePool, SimulationCoordinator coordinator)
+    public SimulationProducer(ObjectPool<WorldImage, WorldImageAllocator> imagePool, SimulationCoordinator coordinator)
     {
         _imagePool = imagePool;
         _coordinator = coordinator;
@@ -33,9 +34,6 @@ internal struct SimulationProducer : IProducer<WorldImage>
         return image;
     }
 
-    public void ReleaseResources(WorldImage payload)
-    {
-        payload.ResetForPool();
+    public void ReleaseResources(WorldImage payload) =>
         _imagePool.Return(payload);
-    }
 }

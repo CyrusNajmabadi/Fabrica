@@ -1,7 +1,13 @@
+using Engine.Memory;
+
 namespace Engine.Pipeline;
 
 /// <summary>
 /// A slow consumer that runs asynchronously on a configurable schedule.
+///
+/// Extends <see cref="IPinOwner"/> so the consumption loop can pass the
+/// consumer itself as the pin identity to <see cref="PinnedVersions"/> —
+/// no synthetic owner objects needed.
 ///
 /// The consumption loop auto-pins the node before calling <see cref="ConsumeAsync"/>
 /// and auto-unpins it when the returned task completes.  The consumer receives
@@ -21,7 +27,7 @@ namespace Engine.Pipeline;
 /// EXAMPLE: saving is one deferred consumer.  Its ConsumeAsync dispatches the
 /// actual I/O to a threadpool task and returns the next save time when done.
 /// </summary>
-internal interface IDeferredConsumer<in TPayload>
+internal interface IDeferredConsumer<in TPayload> : IPinOwner
 {
     Task<long> ConsumeAsync(TPayload payload, int sequenceNumber, CancellationToken cancellationToken);
 }

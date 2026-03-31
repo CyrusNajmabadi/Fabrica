@@ -97,8 +97,8 @@ public sealed class ConcurrencyStressTests
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        var nodePool = new ObjectPool<ChainNode<WorldImage>>(SimulationConstants.SnapshotPoolSize);
-        var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
@@ -119,8 +119,8 @@ public sealed class ConcurrencyStressTests
         SimulationCoordinator simulator,
         CancellationToken cancellationToken)
     {
-        var nodePool = new ObjectPool<ChainNode<WorldImage>>(SimulationConstants.SnapshotPoolSize);
-        var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
