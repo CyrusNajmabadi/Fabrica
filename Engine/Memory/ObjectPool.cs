@@ -34,7 +34,7 @@ internal sealed class ObjectPool<T, TAllocator>
 {
     private readonly Stack<T> _items;
 #pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
-    private TAllocator _allocator;
+    private TAllocator _allocator = default;
 #pragma warning restore IDE0044
 
 #if DEBUG
@@ -53,9 +53,8 @@ internal sealed class ObjectPool<T, TAllocator>
     }
 #endif
 
-    public ObjectPool(int initialCapacity, TAllocator allocator = default)
+    public ObjectPool(int initialCapacity)
     {
-        _allocator = allocator;
         _items = new Stack<T>(initialCapacity);
         for (var i = 0; i < initialCapacity; i++)
             _items.Push(_allocator.Allocate());
