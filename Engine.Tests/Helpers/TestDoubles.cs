@@ -3,10 +3,11 @@ using Engine.Pipeline;
 using Engine.Rendering;
 using Engine.Threading;
 using Engine.World;
-using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
-using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
 
 namespace Engine.Tests.Helpers;
+
+using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
+using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
 
 /// <summary>
 /// Mutable clock state shared between a test and its <see cref="TestRecordingClock"/>.

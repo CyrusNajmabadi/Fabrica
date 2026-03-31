@@ -2,9 +2,10 @@ using Engine.Pipeline;
 using Engine.Tests.Helpers;
 using Engine.World;
 using Xunit;
-using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
 
 namespace Engine.Tests.World;
+
+using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
 
 /// <summary>
 /// Tests for <see cref="ChainNode"/> mechanics, exercised

@@ -7,10 +7,10 @@ using Engine.Threading;
 using Engine.World;
 using Xunit;
 
-using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
-using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
-
 namespace Engine.Tests;
+
+using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
+using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
 
 public sealed class SimulationLoopTickTests
 {
