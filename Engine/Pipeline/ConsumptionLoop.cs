@@ -102,11 +102,11 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
 
             if (_previous is not null)
             {
-                _deferred.MaybeRunConsumers(_latest!, frameStart, cancellationToken);
+                _deferred.MaybeRunConsumers(latestNode, frameStart, cancellationToken);
 
                 _consumer.Consume(
                     _previous,
-                    _latest!,
+                    latestNode,
                     frameStart,
                     cancellationToken);
 
