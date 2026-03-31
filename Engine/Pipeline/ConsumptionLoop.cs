@@ -110,6 +110,10 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
                     frameStart,
                     cancellationToken);
 
+                // Epoch = _previous.SequenceNumber, not _latest: cleanup frees
+                // sequence < epoch, so _previous (N) survives (N is not < N).
+                // We can't advance to _latest because _previous is reused on the
+                // next frame if no new node arrives — freeing it would be UAF.
                 _shared.ConsumptionEpoch = _previous.SequenceNumber;
             }
         }
