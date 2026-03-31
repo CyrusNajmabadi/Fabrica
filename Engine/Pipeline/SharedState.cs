@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Engine.Memory;
 
 namespace Engine.Pipeline;
 
@@ -24,6 +25,12 @@ namespace Engine.Pipeline;
 ///   ConsumptionEpoch: if the production loop reads a slightly stale (lower)
 ///   epoch it retains a node one extra cleanup pass — never frees prematurely.
 ///
+/// PinnedVersions
+///   Thread-safe registry of snapshot sequences that deferred consumers are
+///   still using.  Consumption thread pins before dispatching; threadpool
+///   tasks unpin on completion; production thread reads IsPinned during
+///   cleanup.  See <see cref="PinnedVersions"/> for full concurrency details.
+///
 /// #if DEBUG ASSERTIONS
 ///   Each single-writer field uses AssertSingleWriter to catch accidental
 ///   writes from the wrong thread in debug builds.  This fires on the first
@@ -32,6 +39,12 @@ namespace Engine.Pipeline;
 /// </summary>
 internal sealed class SharedState<TPayload>
 {
+    // ── PinnedVersions ───────────────────────────────────────────────────────
+    // Thread-safe.  Written by consumption thread and threadpool tasks.
+    // Read by production thread during cleanup.
+
+    public PinnedVersions PinnedVersions { get; } = new();
+
     // ── LatestNode ───────────────────────────────────────────────────────────
     // Written by production thread only.  Read by consumption thread.
 

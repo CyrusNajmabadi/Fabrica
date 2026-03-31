@@ -50,6 +50,7 @@ public sealed class LoopStressHarnessTests
         var test = LoopStressHarness.Create();
 
         test.SimulationLoop.Bootstrap();
+        test.ConsumptionLoop.RunIteration(); // pick up T0
 
         for (var i = 0; i < 10; i++)
         {
@@ -73,6 +74,7 @@ public sealed class LoopStressHarnessTests
         var test = LoopStressHarness.Create();
 
         test.SimulationLoop.Bootstrap();
+        test.ConsumptionLoop.RunIteration(); // pick up T0
 
         for (var i = 0; i < LowWaterMarkTicks + 3; i++)
         {
@@ -90,8 +92,15 @@ public sealed class LoopStressHarnessTests
             .ToList();
         Assert.NotEmpty(pressureWaitsBeforeConsumption);
 
+        // Advance epoch by producing new ticks and letting consumption catch up.
+        // Each consumption iteration advances the epoch to _previous.SequenceNumber,
+        // and _previous only changes when a new LatestNode appears.
         for (var i = 0; i < LowWaterMarkTicks + 3; i++)
+        {
+            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
+            test.SimulationLoop.RunIteration();
             test.ConsumptionLoop.RunIteration();
+        }
 
         test.Waiter.ClearCalls();
 
@@ -138,7 +147,6 @@ public sealed class LoopStressHarnessTests
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
-            var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
@@ -146,9 +154,9 @@ public sealed class LoopStressHarnessTests
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
 
             var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
-                nodePool, pinnedVersions, shared, producer, clock, new TestRecordingWaiter(waiterState));
+                nodePool, shared, producer, clock, new TestRecordingWaiter(waiterState));
             var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
-                pinnedVersions, shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), []);
+                shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), []);
 
             return new LoopStressHarness(
                 shared,

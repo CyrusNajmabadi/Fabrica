@@ -212,3 +212,6 @@ dotnet_diagnostic.IDE0004.severity = warning
 
 # IDE0060: Remove unused parameter (suggestion for now; elevate once stubs are filled in)
 dotnet_diagnostic.IDE0060.severity = suggestion
+
+# IDE0370: Remove unnecessary nullable suppression
+dotnet_diagnostic.IDE0370.severity = warning

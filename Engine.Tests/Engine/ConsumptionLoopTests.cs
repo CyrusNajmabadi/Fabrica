@@ -28,10 +28,25 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
+    public void RunOneIteration_DoesNotConsumeUntilTwoDistinctNodesExist()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedNode(tick: 12);
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
+        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+    }
+
+    [Fact]
     public void RunOneIteration_RendersSnapshot_ThenAdvancesConsumptionEpoch()
     {
         var test = ConsumptionLoopTestContext.Create();
-        var node = test.CreatePublishedNode(tick: 12);
+        var first = test.CreatePublishedNode(tick: 11);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        var second = test.CreatePublishedNode(tick: 12);
         var epochAtConsume = -1;
         test.ConsumerState.BeforeConsume = (_, _, _) => epochAtConsume = test.Shared.ConsumptionEpoch;
 
@@ -39,17 +54,18 @@ public sealed class ConsumptionLoopTests
 
         Assert.Equal([12], test.ConsumerState.ConsumedTicks);
         Assert.Equal(0, epochAtConsume);
-        Assert.Equal(12, test.Shared.ConsumptionEpoch);
-        Assert.Equal(
-            [GetRenderInterval()],
-            test.WaiterState.WaitCalls);
-        Assert.Same(node, test.Shared.LatestNode);
+        Assert.Equal(11, test.Shared.ConsumptionEpoch);
+        Assert.Same(second, test.Shared.LatestNode);
     }
 
     [Fact]
     public void RunOneIteration_ThrottlesOnlyTheRemainingFrameBudget()
     {
         var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedNode(tick: 4);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        test.WaiterState.WaitCalls.Clear();
+
         test.CreatePublishedNode(tick: 5);
         test.ClockState.NowNanoseconds = 0;
         test.ConsumerState.BeforeConsume = (_, _, _) => test.ClockState.NowNanoseconds = 5_000_000;
@@ -65,6 +81,10 @@ public sealed class ConsumptionLoopTests
     public void RunOneIteration_DoesNotThrottleWhenFrameAlreadyExceededBudget()
     {
         var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedNode(tick: 4);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        test.WaiterState.WaitCalls.Clear();
+
         test.CreatePublishedNode(tick: 5);
         test.ConsumerState.BeforeConsume =
             (_, _, _) => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
@@ -91,6 +111,10 @@ public sealed class ConsumptionLoopTests
     public void RunOneIteration_ThrowsWhenCancelledDuringThrottleWait()
     {
         var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedNode(tick: 4);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        test.WaiterState.WaitCalls.Clear();
+
         test.CreatePublishedNode(tick: 5);
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = cancellationSource.Cancel;
@@ -107,9 +131,21 @@ public sealed class ConsumptionLoopTests
     public void Run_ThrowsWhenCancelledDuringThrottleWait()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 5);
+        test.CreatePublishedNode(tick: 4);
+        var callCount = 0;
         using var cancellationSource = new CancellationTokenSource();
-        test.WaiterState.BeforeWait = cancellationSource.Cancel;
+        test.WaiterState.BeforeWait = () =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                test.CreatePublishedNode(tick: 5);
+            }
+            else
+            {
+                cancellationSource.Cancel();
+            }
+        };
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
@@ -120,6 +156,7 @@ public sealed class ConsumptionLoopTests
     public void Run_WhenAlreadyCancelled_DoesNothing()
     {
         var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedNode(tick: 4);
         test.CreatePublishedNode(tick: 5);
 
         using var cancellationSource = new CancellationTokenSource();
@@ -136,13 +173,16 @@ public sealed class ConsumptionLoopTests
     public void RepeatedIterations_RenderTheSameLatestSnapshotUntilSimulationPublishesANewerOne()
     {
         var test = ConsumptionLoopTestContext.Create();
+        test.CreatePublishedNode(tick: 4);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
         test.CreatePublishedNode(tick: 5);
 
         test.Accessor.RunOneIteration(CancellationToken.None);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Equal([5, 5], test.ConsumerState.ConsumedTicks);
-        Assert.Equal(5, test.Shared.ConsumptionEpoch);
+        Assert.Equal(4, test.Shared.ConsumptionEpoch);
     }
 
     [Fact]
@@ -211,40 +251,29 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
-    public void RunOneIteration_PreviousAndLatestAreAlwaysDistinctReferences_WhenBothNonNull()
+    public void RunOneIteration_PreviousAndLatestAreAlwaysDistinctReferences()
     {
         var test = ConsumptionLoopTestContext.Create();
 
         test.CreatePublishedNode(tick: 1);
         test.Accessor.RunOneIteration(CancellationToken.None);
-
-        ChainNode? previous2 = null;
-        ChainNode? latest2 = null;
-        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
-        {
-            previous2 = prev;
-            latest2 = latest;
-        };
-        test.Accessor.RunOneIteration(CancellationToken.None);
-
-        Assert.NotNull(latest2);
-        Assert.Null(previous2);
+        Assert.Empty(test.ConsumerState.ConsumedTicks);
 
         test.CreatePublishedNode(tick: 2);
-        ChainNode? previous3 = null;
-        ChainNode? latest3 = null;
+        ChainNode? capturedPrevious = null;
+        ChainNode? capturedLatest = null;
         test.ConsumerState.BeforeConsume = (prev, latest, _) =>
         {
-            previous3 = prev;
-            latest3 = latest;
+            capturedPrevious = prev;
+            capturedLatest = latest;
         };
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(latest3);
-        Assert.NotNull(previous3);
-        Assert.NotSame(previous3, latest3);
-        Assert.Equal(1, previous3!.SequenceNumber);
-        Assert.Equal(2, latest3!.SequenceNumber);
+        Assert.NotNull(capturedLatest);
+        Assert.NotNull(capturedPrevious);
+        Assert.NotSame(capturedPrevious, capturedLatest);
+        Assert.Equal(1, capturedPrevious!.SequenceNumber);
+        Assert.Equal(2, capturedLatest!.SequenceNumber);
     }
 
     [Fact]
@@ -252,10 +281,11 @@ public sealed class ConsumptionLoopTests
     {
         var test = ConsumptionLoopTestContext.Create();
 
-        test.CreatePublishedNode(tick: 1);
+        var tick1 = test.CreatePublishedNode(tick: 1);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        test.CreatePublishedChain(startTick: 2, endTick: 10);
+        var chain = test.CreatePublishedChain(startTick: 2, endTick: 10);
+        test.LinkNodes(tick1, chain[0]);
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -272,6 +302,9 @@ public sealed class ConsumptionLoopTests
             deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
                 new TestDeferredConsumer(deferredState), 1_000_000_000L)]);
 
+        test.CreatePublishedNode(tick: 0);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
         test.CreatePublishedNode(tick: 1);
         test.ClockState.NowNanoseconds = 500_000_000L;
 
@@ -287,6 +320,9 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
                 new TestDeferredConsumer(deferredState), 0L)]);
+
+        test.CreatePublishedNode(tick: 4);
+        test.Accessor.RunOneIteration(CancellationToken.None);
 
         test.CreatePublishedNode(tick: 5);
         test.ClockState.NowNanoseconds = 200L;
@@ -306,6 +342,9 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
                 new TestDeferredConsumer(deferredState), 0L)]);
+
+        test.CreatePublishedNode(tick: 2);
+        test.Accessor.RunOneIteration(CancellationToken.None);
 
         test.CreatePublishedNode(tick: 3);
         test.ClockState.NowNanoseconds = 100L;
@@ -329,6 +368,9 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
                 new TestDeferredConsumer(deferredState), 0L)]);
+
+        test.CreatePublishedNode(tick: 6);
+        test.Accessor.RunOneIteration(CancellationToken.None);
 
         test.CreatePublishedNode(tick: 7);
         test.ClockState.NowNanoseconds = 100L;
@@ -377,9 +419,9 @@ public sealed class ConsumptionLoopTests
     private sealed class TestConsumerState
     {
         public readonly List<int> ConsumedTicks = [];
-        public readonly List<(ChainNode? Previous, ChainNode Latest)> ConsumedPairs = [];
+        public readonly List<(ChainNode Previous, ChainNode Latest)> ConsumedPairs = [];
 
-        public Action<ChainNode?, ChainNode, long>? BeforeConsume { get; set; }
+        public Action<ChainNode, ChainNode, long>? BeforeConsume { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -391,7 +433,7 @@ public sealed class ConsumptionLoopTests
         public TestRecordingConsumer(TestConsumerState state) => _state = state;
 
         public void Consume(
-            ChainNode? previous,
+            ChainNode previous,
             ChainNode latest,
             long frameStartNanoseconds,
             CancellationToken cancellationToken)
@@ -433,21 +475,18 @@ public sealed class ConsumptionLoopTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var pinnedVersions = new PinnedVersions();
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var shared = new SharedState<WorldImage>();
             var consumer = new TestRecordingConsumer(consumerState);
             var loop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter>(
-                pinnedVersions,
                 shared,
                 consumer,
                 clock,
                 waiter,
                 deferredConsumers ?? []);
-            var harness = new TestChainHarness(nodePool, pinnedVersions);
+            var harness = new TestChainHarness(nodePool, shared.PinnedVersions);
             return new ConsumptionLoopTestContext<TClock, TWaiter>(
-                pinnedVersions,
                 harness,
                 imagePool,
                 shared,
@@ -467,7 +506,6 @@ public sealed class ConsumptionLoopTests
         private readonly BaseProductionLoop<WorldImage>.ChainTestAccessor _chainAccessor;
 
         internal ConsumptionLoopTestContext(
-            PinnedVersions pinnedVersions,
             TestChainHarness harness,
             ObjectPool<WorldImage, WorldImageAllocator> imagePool,
             SharedState<WorldImage> shared,
@@ -476,7 +514,6 @@ public sealed class ConsumptionLoopTests
             TestClockState clockState,
             TestWaiterState waiterState)
         {
-            this.PinnedVersions = pinnedVersions;
             _harness = harness;
             _imagePool = imagePool;
             _chainAccessor = harness.GetChainTestAccessor();
@@ -488,7 +525,7 @@ public sealed class ConsumptionLoopTests
             this.WaiterState = waiterState;
         }
 
-        public PinnedVersions PinnedVersions { get; }
+        public PinnedVersions PinnedVersions => this.Shared.PinnedVersions;
 
         public SharedState<WorldImage> Shared { get; }
 

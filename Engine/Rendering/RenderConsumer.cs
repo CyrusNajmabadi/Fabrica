@@ -25,7 +25,7 @@ internal struct RenderConsumer<TRenderer> : IConsumer<WorldImage>
     }
 
     public void Consume(
-        BaseProductionLoop<WorldImage>.ChainNode? previous,
+        BaseProductionLoop<WorldImage>.ChainNode previous,
         BaseProductionLoop<WorldImage>.ChainNode latest,
         long frameStartNanoseconds,
         CancellationToken cancellationToken)
