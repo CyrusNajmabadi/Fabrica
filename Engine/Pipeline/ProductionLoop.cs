@@ -1,5 +1,4 @@
 using Engine.Memory;
-using Engine.Simulation;
 using Engine.Threading;
 
 namespace Engine.Pipeline;
@@ -16,7 +15,7 @@ namespace Engine.Pipeline;
 /// Generic on all type parameters (all constrained to struct) so the JIT/AOT
 /// devirtualises all calls — zero interface-dispatch overhead in the hot path.
 /// </summary>
-internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
+internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
     ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
     SharedState<TPayload> shared,
     TProducer producer,

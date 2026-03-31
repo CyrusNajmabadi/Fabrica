@@ -8,12 +8,12 @@ namespace Engine;
 internal readonly struct EngineStatus
 {
     public EngineStatistics Statistics { get; init; }
-}
 
-/// <summary>
-/// Placeholder for future engine diagnostics: tick rate, pool pressure,
-/// frame times, producer/consumer throughput, etc.
-/// </summary>
-internal readonly struct EngineStatistics
-{
+    /// <summary>
+    /// Placeholder for future engine diagnostics: tick rate, pool pressure,
+    /// frame times, producer/consumer throughput, etc.
+    /// </summary>
+    public readonly struct EngineStatistics
+    {
+    }
 }

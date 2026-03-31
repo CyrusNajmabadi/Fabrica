@@ -1,7 +1,7 @@
 namespace Engine.Threading;
 
 /// <summary>
-/// Domain-specific work executed by a <see cref="ThreadWorker{TState,TExecutor}"/>
+/// Domain-specific work executed by a <see cref="WorkerGroup{TState,TExecutor}.ThreadWorker"/>
 /// on its dedicated thread.
 ///
 /// The struct constraint enables the JIT to specialize each generic instantiation,

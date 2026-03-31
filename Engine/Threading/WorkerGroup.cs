@@ -1,7 +1,7 @@
 namespace Engine.Threading;
 
 /// <summary>
-/// Coordinates N <see cref="ThreadWorker{TState,TExecutor}"/> instances through
+/// Coordinates N <see cref="WorkerGroup{TState,TExecutor}.ThreadWorker"/> instances through
 /// a parallel dispatch cycle: prepare → set state → signal all → wait all.
 ///
 /// DISPATCH CYCLE (<see cref="Dispatch"/>)
@@ -10,7 +10,7 @@ namespace Engine.Threading;
 ///   2. SET UP — the shared <typeparamref name="TState"/> and cancellation token
 ///      are written to each worker.
 ///   3. SIGNAL — all workers are woken from their park state.
-///   4. JOIN — a single <see cref="WaitHandleBatch.WaitAll"/> call waits on every
+///   4. JOIN — a single <see cref="WorkerGroup{TState,TExecutor}.WaitHandleBatch.WaitAll"/> call waits on every
 ///      worker's done signal.  <see cref="AutoResetEvent"/> handles auto-reset
 ///      when the wait completes, so no manual reset is needed between dispatches.
 ///
@@ -27,11 +27,11 @@ namespace Engine.Threading;
 ///   The group owns the workers and their threads.  <see cref="Dispose"/> shuts
 ///   down all workers, joins their threads, and releases OS handles.
 /// </summary>
-internal sealed class WorkerGroup<TState, TExecutor> : IDisposable
+internal sealed partial class WorkerGroup<TState, TExecutor> : IDisposable
     where TState : struct
     where TExecutor : struct, IThreadExecutor<TState>
 {
-    private readonly ThreadWorker<TState, TExecutor>[] _workers;
+    private readonly ThreadWorker[] _workers;
     private readonly WaitHandleBatch _doneBatch;
 
     public WorkerGroup(int workerCount, Func<int, TExecutor> executorFactory, string threadNamePrefix, int coreIndexOffset = 0)
@@ -39,13 +39,13 @@ internal sealed class WorkerGroup<TState, TExecutor> : IDisposable
         if (workerCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(workerCount));
 
-        _workers = new ThreadWorker<TState, TExecutor>[workerCount];
+        _workers = new ThreadWorker[workerCount];
 
         var doneEvents = new WaitHandle[workerCount];
         for (var i = 0; i < workerCount; i++)
         {
             var executor = executorFactory(i);
-            _workers[i] = new ThreadWorker<TState, TExecutor>(
+            _workers[i] = new ThreadWorker(
                 executor,
                 coreIndexOffset + i,
                 $"{threadNamePrefix}-{i}");
@@ -61,7 +61,7 @@ internal sealed class WorkerGroup<TState, TExecutor> : IDisposable
     /// Direct access to workers for post-join inspection of executor state
     /// (e.g. reading created-nodes lists, render results).
     /// </summary>
-    public ReadOnlySpan<ThreadWorker<TState, TExecutor>> Workers => _workers;
+    public ReadOnlySpan<ThreadWorker> Workers => _workers;
 
     /// <summary>
     /// Dispatches one unit of work across all workers and blocks until all
