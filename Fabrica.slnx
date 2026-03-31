@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="Simulation/Simulation.csproj" />
-  <Project Path="Simulation.Tests/Simulation.Tests.csproj" />
+  <Project Path="Engine/Engine.csproj" />
+  <Project Path="Engine.Tests/Engine.Tests.csproj" />
 </Solution>
