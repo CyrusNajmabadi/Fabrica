@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Simulation.Memory;
 using Simulation.World;
 
@@ -6,15 +5,16 @@ namespace Simulation.Engine;
 
 /// <summary>
 /// The consumption ("consumer") thread.  Processes the latest node at ≈60 fps
-/// and coordinates periodic saves.
+/// and coordinates deferred consumers (e.g. periodic saves) via a min-heap schedule.
 ///
 /// FRAME LOOP  (RunOneIteration)
-///   1. DrainSaveEvents: process any completed save results from the threadpool.
+///   1. DrainCompletedDeferredTasks: unpin nodes whose deferred tasks have finished
+///      and re-insert the consumer into the schedule with its next run time.
 ///   2. Volatile-read LatestNode (acquire fence: all payload writes by the
 ///      production thread are now visible).
 ///   3. Rotate the node pair if a new node has arrived (see below).
-///   4. MaybeStartSave: if a save is due and not in flight, pin the node
-///      and dispatch to the save task.
+///   4. MaybeRunDeferredConsumers: peek the schedule heap — if the head entry's
+///      time ≤ now, pop, pin, and dispatch.  O(1) when nothing is due.
 ///   5. Consume: the consumer processes the previous/latest pair for the
 ///      duration of the call only — it must not store them.
 ///   6. ConsumptionEpoch = _previous.SequenceNumber (or _latest's if no
@@ -43,64 +43,71 @@ namespace Simulation.Engine;
 ///   not &lt; N) and _latest (sequence &gt; N) remain alive — along with the
 ///   entire chain between them.
 ///
-/// SAVE PIN DISCIPLINE
-///   The ordering within a save-triggering frame is load-bearing:
-///
-///     1. Pin(sequence)     ← epoch hasn't advanced; production holds node alive
-///     2. RunSave(node)     ← dispatch to save task
-///     3. Consume(…)        ← may throw; epoch still not advanced (safe)
-///     4. ConsumptionEpoch  ← production may now look past older nodes
-///
-///   If RunSave throws (dispatch failure): pin is released, NextSaveAtTick is
-///   restored to the current sequence, and the save will be retried next frame.
-///   If Consume throws after a successful dispatch: the pin remains so the save
-///   task can still safely read the node.  The save task's finally block always
-///   clears the pin and reschedules NextSaveAtTick.
+/// DEFERRED CONSUMER SCHEDULING
+///   Deferred consumers are stored in a flat array.  A PriorityQueue maps
+///   consumer indices to their next-run wall-clock timestamp.  Each frame:
+///     - Peek O(1): if nothing is due, skip entirely — no virtual calls.
+///     - Pop due entries, pin the latest node, call ConsumeAsync.
+///     - Track the in-flight Task per consumer; skip consumers whose prior
+///       task is still running.
+///     - When tasks complete, unpin, read the returned next-run-time, and
+///       re-enqueue into the heap.
 ///
 /// Generic constraints (all struct) eliminate interface dispatch on every call
 /// in the hot frame loop.
 /// </summary>
-internal sealed class ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter>
-    where TNode : ChainNode<TNode>
-    where TConsumer : struct, IConsumer<TNode>
-    where TSaveRunner : struct, ISaveRunner<TNode>
-    where TSaver : struct, ISaver<TNode>
+internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
+    where TConsumer : struct, IConsumer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly object _savePinOwner = new();
-    private readonly ConcurrentQueue<SaveEvent> _saveEvents = new();
-
-    private TNode? _previous;
-    private TNode? _latest;
-
-    private bool _saveInFlight;
-    private SaveEvent? _lastSaveResult;
+    private ChainNode<TPayload>? _previous;
+    private ChainNode<TPayload>? _latest;
 
     private readonly PinnedVersions _pinnedVersions;
-    private readonly SharedState<TNode> _shared;
+    private readonly SharedState<TPayload> _shared;
     private TConsumer _consumer;
     private readonly TClock _clock;
     private readonly TWaiter _waiter;
-    private TSaveRunner _saveRunner;
-    private TSaver _saver;
+
+    // ── Deferred consumer infrastructure ─────────────────────────────────────
+
+    private readonly IDeferredConsumer<TPayload>[] _deferredConsumers;
+    private readonly long[] _initialDelays;
+    private readonly object[] _pinOwners;
+    private readonly Task<long>?[] _inFlightTasks;
+    private readonly int[] _pinnedSequences;
+    private readonly PriorityQueue<int, long> _schedule;
+    private bool _scheduleInitialized;
 
     public ConsumptionLoop(
         PinnedVersions pinnedVersions,
-        SharedState<TNode> shared,
+        SharedState<TPayload> shared,
         TConsumer consumer,
         TClock clock,
         TWaiter waiter,
-        TSaveRunner saveRunner,
-        TSaver saver)
+        DeferredConsumerRegistration<TPayload>[] deferredConsumers)
     {
         _pinnedVersions = pinnedVersions;
         _shared = shared;
         _consumer = consumer;
         _clock = clock;
         _waiter = waiter;
-        _saveRunner = saveRunner;
-        _saver = saver;
+
+        var count = deferredConsumers.Length;
+        _deferredConsumers = new IDeferredConsumer<TPayload>[count];
+        _initialDelays = new long[count];
+        _pinOwners = new object[count];
+        _inFlightTasks = new Task<long>?[count];
+        _pinnedSequences = new int[count];
+        _schedule = new PriorityQueue<int, long>(count);
+
+        for (var i = 0; i < count; i++)
+        {
+            _deferredConsumers[i] = deferredConsumers[i].Consumer;
+            _initialDelays[i] = deferredConsumers[i].InitialDelayNanoseconds;
+            _pinOwners[i] = new object();
+        }
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -115,7 +122,8 @@ internal sealed class ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TCl
     {
         var frameStart = _clock.NowNanoseconds;
 
-        this.DrainSaveEvents();
+        this.EnsureScheduleInitialized(frameStart);
+        this.DrainCompletedDeferredTasks();
 
         var latestNode = _shared.LatestNode;
         if (latestNode is not null)
@@ -126,17 +134,12 @@ internal sealed class ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TCl
                 _latest = latestNode;
             }
 
-            this.MaybeStartSave(_latest!);
+            this.MaybeRunDeferredConsumers(frameStart, cancellationToken);
 
             _consumer.Consume(
                 _previous,
                 _latest!,
                 frameStart,
-                new SaveStatus
-                {
-                    InFlight = _saveInFlight,
-                    LastResult = _lastSaveResult,
-                },
                 cancellationToken);
 
             _shared.ConsumptionEpoch = _previous?.SequenceNumber
@@ -146,84 +149,78 @@ internal sealed class ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TCl
         this.ThrottleToFrameRate(frameStart, cancellationToken);
     }
 
-    private void DrainSaveEvents()
-    {
-        while (_saveEvents.TryDequeue(out var saveEvent))
-        {
-            _saveInFlight = false;
-            _lastSaveResult = saveEvent;
-        }
-    }
+    // ── Deferred consumer scheduling ─────────────────────────────────────────
 
-    /// <summary>
-    /// Starts a background save if the latest sequence has reached (or passed)
-    /// the scheduled save tick and no save is currently in flight.
-    ///
-    /// Pin ordering: the node is pinned BEFORE RunSave is called.  At this
-    /// point ConsumptionEpoch has not yet advanced past the sequence, so the
-    /// production loop already holds the node alive via the epoch.  The pin
-    /// extends that protection beyond the epoch advance that happens later in
-    /// the same frame.  On dispatch failure the pin is immediately released
-    /// and the save tick is restored so the next frame can retry.
-    /// </summary>
-    private void MaybeStartSave(TNode node)
+    private void EnsureScheduleInitialized(long nowNanoseconds)
     {
-        var nextSaveAt = _shared.NextSaveAtTick;
-
-        if (nextSaveAt == 0 || node.SequenceNumber < nextSaveAt)
+        if (_scheduleInitialized)
             return;
+        _scheduleInitialized = true;
 
-        var seqToSave = node.SequenceNumber;
-
-        _shared.NextSaveAtTick = 0;
-
-        _pinnedVersions.Pin(seqToSave, _savePinOwner);
-
-        try
-        {
-            _saveRunner.RunSave(node, seqToSave, this.RunSaveTask);
-            _saveInFlight = true;
-        }
-        catch
-        {
-            _pinnedVersions.Unpin(seqToSave, _savePinOwner);
-            _shared.NextSaveAtTick = seqToSave;
-            throw;
-        }
+        for (var i = 0; i < _deferredConsumers.Length; i++)
+            _schedule.Enqueue(i, nowNanoseconds + _initialDelays[i]);
     }
 
-    /// <summary>
-    /// Executed on the threadpool (via ISaveRunner) to perform the actual save.
-    ///
-    /// Exceptions from the saver are caught and reported via the save event queue
-    /// rather than propagating as unobserved task exceptions.  The consumption
-    /// thread drains the queue each frame and surfaces the result through
-    /// <see cref="SaveStatus"/> in the consumer frame.
-    ///
-    /// The finally block runs regardless of success or failure, guaranteeing:
-    ///   - The pin is always released so production is never permanently stalled
-    ///     waiting for a save that failed or was never completed.
-    ///   - NextSaveAtTick is always rescheduled so saves resume after a failure.
-    /// </summary>
-    private void RunSaveTask(TNode node, int sequenceNumber)
+    private void DrainCompletedDeferredTasks()
     {
-        var startTime = _clock.NowNanoseconds;
-        try
+        for (var i = 0; i < _inFlightTasks.Length; i++)
         {
-            _saver.Save(node, sequenceNumber);
-            _saveEvents.Enqueue(new SaveEvent(sequenceNumber, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: null));
-        }
-        catch (Exception ex)
-        {
-            _saveEvents.Enqueue(new SaveEvent(sequenceNumber, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: ex));
-        }
-        finally
-        {
-            _pinnedVersions.Unpin(sequenceNumber, _savePinOwner);
+            var task = _inFlightTasks[i];
+            if (task is null || !task.IsCompleted)
+                continue;
 
-            _shared.NextSaveAtTick = sequenceNumber + SimulationConstants.SaveIntervalTicks;
+            _pinnedVersions.Unpin(_pinnedSequences[i], _pinOwners[i]);
+            _inFlightTasks[i] = null;
+
+            long nextRunTime;
+            if (task.IsCompletedSuccessfully)
+            {
+                nextRunTime = task.Result;
+            }
+            else
+            {
+                // On failure, reschedule immediately (retry next frame).
+                nextRunTime = 0;
+            }
+
+            _schedule.Enqueue(i, nextRunTime);
         }
     }
+
+    private void MaybeRunDeferredConsumers(long frameStartNanoseconds, CancellationToken cancellationToken)
+    {
+        while (_schedule.TryPeek(out var consumerIndex, out var nextRun))
+        {
+            if (nextRun > frameStartNanoseconds)
+                break;
+
+            _schedule.Dequeue();
+
+            if (_inFlightTasks[consumerIndex] is not null)
+            {
+                _schedule.Enqueue(consumerIndex, nextRun);
+                break;
+            }
+
+            var seq = _latest!.SequenceNumber;
+            _pinnedVersions.Pin(seq, _pinOwners[consumerIndex]);
+            _pinnedSequences[consumerIndex] = seq;
+
+            try
+            {
+                _inFlightTasks[consumerIndex] = _deferredConsumers[consumerIndex]
+                    .ConsumeAsync(_latest.Payload, seq, cancellationToken);
+            }
+            catch
+            {
+                _pinnedVersions.Unpin(seq, _pinOwners[consumerIndex]);
+                _schedule.Enqueue(consumerIndex, 0);
+                throw;
+            }
+        }
+    }
+
+    // ── Frame throttle ───────────────────────────────────────────────────────
 
     private void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken)
     {
@@ -237,15 +234,11 @@ internal sealed class ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TCl
 
     internal readonly struct TestAccessor
     {
-        private readonly ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> _loop;
+        private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _loop;
 
-        public TestAccessor(ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> loop) => _loop = loop;
+        public TestAccessor(ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> loop) => _loop = loop;
 
         public void RunOneIteration(CancellationToken cancellationToken) => _loop.RunOneIteration(cancellationToken);
-
-        public void MaybeStartSave(TNode node) => _loop.MaybeStartSave(node);
-
-        public void RunSaveTask(TNode node, int sequenceNumber) => _loop.RunSaveTask(node, sequenceNumber);
 
         public void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken) =>
             _loop.ThrottleToFrameRate(frameStart, cancellationToken);

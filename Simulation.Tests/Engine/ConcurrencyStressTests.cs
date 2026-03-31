@@ -36,17 +36,6 @@ public sealed class ConcurrencyStressTests
         Assert.True(metrics.FramesRendered > 0, "Expected at least one frame to be rendered.");
         Assert.True(metrics.MaxTickObserved > 0, "Expected simulation to advance past tick 0.");
         Assert.Null(metrics.InvariantViolation);
-
-        // With 50ms render delay (3x the ~16ms frame budget), the simulation should not
-        // run unboundedly far ahead.  The pool has 256 slots at 40 ticks/sec — if
-        // backpressure didn't engage, the simulation could produce thousands of ticks
-        // while consumption crawls.  The tick-epoch gap (max tick observed vs what
-        // consumption has processed) should stay bounded.
-        //
-        // We don't assert a hard tick count here — just that the system survived
-        // without crashing, deadlocking, or violating invariants.  The existence
-        // of rendered frames proves consumption was running, and the absence of
-        // invariant violations proves snapshots were never used after free.
     }
 
     [Fact]
@@ -81,14 +70,14 @@ public sealed class ConcurrencyStressTests
     }
 
     [Fact]
-    public void SavePinning_AcrossThreadBoundaries()
+    public void DeferredConsumerPinning_AcrossThreadBoundaries()
     {
         var metrics = new TestStressMetrics();
         var saveMetrics = new TestSaveMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
-        RunEngineWithSaves(metrics, saveMetrics, simulator, cancellationSource.Token);
+        RunEngineWithDeferredSave(metrics, saveMetrics, simulator, cancellationSource.Token);
 
         Assert.True(metrics.FramesRendered > 0, "Expected at least one frame to be rendered.");
         Assert.True(saveMetrics.SavesCompleted > 0,
@@ -105,54 +94,57 @@ public sealed class ConcurrencyStressTests
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        var snapshotPool = new ObjectPool<WorldSnapshot>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode<WorldImage>>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
-        var shared = new SharedState<WorldSnapshot>();
+        var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new TestStressClock();
 
-        var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestStressClock, ThreadWaiter>(
-            snapshotPool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
-        var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestInvariantCheckingConsumer, TestNoOpSaveRunner, TestNoOpSaver, TestStressClock, ThreadWaiter>(
-            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver());
+        var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter>(
+            nodePool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
+        var consumptionLoop = new ConsumptionLoop<WorldImage, TestInvariantCheckingConsumer, TestStressClock, ThreadWaiter>(
+            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), []);
 
         RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
 
-    private static void RunEngineWithSaves(
+    private static void RunEngineWithDeferredSave(
         TestStressMetrics metrics,
         TestSaveMetrics saveMetrics,
         SimulationCoordinator simulator,
         CancellationToken cancellationToken)
     {
-        var snapshotPool = new ObjectPool<WorldSnapshot>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode<WorldImage>>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
-        var shared = new SharedState<WorldSnapshot> { NextSaveAtTick = 1 };
+        var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new TestStressClock();
-        var saver = new TestSlowSaver(saveMetrics);
 
-        var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestStressClock, ThreadWaiter>(
-            snapshotPool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
-        var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestInvariantCheckingConsumer, TaskSaveRunner, TestSlowSaver, TestStressClock, ThreadWaiter>(
-            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), new TaskSaveRunner(), saver);
+        var saveConsumer = new TestSlowDeferredSaveConsumer(saveMetrics);
+        var deferredConsumers = new DeferredConsumerRegistration<WorldImage>[]
+        {
+            new(saveConsumer, 0L),
+        };
+
+        var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter>(
+            nodePool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
+        var consumptionLoop = new ConsumptionLoop<WorldImage, TestInvariantCheckingConsumer, TestStressClock, ThreadWaiter>(
+            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), deferredConsumers);
 
         RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
 
-    private static void RunBothLoops<TConsumer, TSaveRunner, TSaver>(
-        ProductionLoop<WorldSnapshot, SimulationProducer, TestStressClock, ThreadWaiter> productionLoop,
-        ConsumptionLoop<WorldSnapshot, TConsumer, TSaveRunner, TSaver, TestStressClock, ThreadWaiter> consumptionLoop,
+    private static void RunBothLoops<TConsumer>(
+        ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter> productionLoop,
+        ConsumptionLoop<WorldImage, TConsumer, TestStressClock, ThreadWaiter> consumptionLoop,
         SimulationCoordinator simulator,
         CancellationToken cancellationToken,
         TestStressMetrics metrics)
-        where TConsumer : struct, IConsumer<WorldSnapshot>
-        where TSaveRunner : struct, ISaveRunner<WorldSnapshot>
-        where TSaver : struct, ISaver<WorldSnapshot>
+        where TConsumer : struct, IConsumer<WorldImage>
     {
         Exception? simulationException = null;
         Exception? consumptionException = null;
@@ -223,7 +215,7 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private struct TestInvariantCheckingConsumer : IConsumer<WorldSnapshot>
+    private struct TestInvariantCheckingConsumer : IConsumer<WorldImage>
     {
         private readonly TestStressMetrics _metrics;
         private readonly int _renderDelayMilliseconds;
@@ -234,7 +226,7 @@ public sealed class ConcurrencyStressTests
             _renderDelayMilliseconds = renderDelayMilliseconds;
         }
 
-        public void Consume(WorldSnapshot? previous, WorldSnapshot latest, long frameStartNanoseconds, SaveStatus saveStatus, CancellationToken cancellationToken)
+        public void Consume(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {
             _metrics.RecordFrame(previous, latest);
             if (_renderDelayMilliseconds > 0)
@@ -242,25 +234,32 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private readonly struct TestSlowSaver : ISaver<WorldSnapshot>
+    private sealed class TestSlowDeferredSaveConsumer : IDeferredConsumer<WorldImage>
     {
         private readonly TestSaveMetrics _metrics;
 
-        public TestSlowSaver(TestSaveMetrics metrics) => _metrics = metrics;
+        public TestSlowDeferredSaveConsumer(TestSaveMetrics metrics) => _metrics = metrics;
 
-        public void Save(WorldSnapshot node, int sequenceNumber)
-        {
-            try
+        public Task<long> ConsumeAsync(WorldImage payload, int sequenceNumber, CancellationToken cancellationToken) =>
+            Task.Run<long>(() =>
             {
-                Thread.Sleep(5);
-                Interlocked.Increment(ref _metrics._savesCompleted);
-            }
-            catch
-            {
-                Interlocked.Increment(ref _metrics._savesFailed);
-                throw;
-            }
-        }
+                try
+                {
+                    Thread.Sleep(5);
+                    Interlocked.Increment(ref _metrics._savesCompleted);
+                }
+                catch
+                {
+                    Interlocked.Increment(ref _metrics._savesFailed);
+                    throw;
+                }
+
+                var ticks = Stopwatch.GetTimestamp();
+                var seconds = ticks / Stopwatch.Frequency;
+                var remainder = ticks % Stopwatch.Frequency;
+                var now = seconds * 1_000_000_000L + remainder * 1_000_000_000L / Stopwatch.Frequency;
+                return now + 100_000_000L;
+            }, cancellationToken);
     }
 
     // ── Metrics ──────────────────────────────────────────────────────────────
@@ -276,13 +275,12 @@ public sealed class ConcurrencyStressTests
         public int MaxTickObserved => Volatile.Read(ref _maxTickObserved);
         public string? InvariantViolation => _invariantViolation;
 
-        public void RecordFrame(WorldSnapshot? previous, WorldSnapshot latest)
+        public void RecordFrame(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest)
         {
             Interlocked.Increment(ref _framesRendered);
 
-            var latestTick = latest.TickNumber;
+            var latestTick = latest.SequenceNumber;
 
-            // Latest tick must be monotonically non-decreasing across frames.
             var previousLatestTick = _lastLatestTick;
             if (latestTick < previousLatestTick)
             {
@@ -291,14 +289,12 @@ public sealed class ConcurrencyStressTests
             }
             _lastLatestTick = latestTick;
 
-            // Previous tick (when present) must be <= latest tick.
-            if (previous is not null && previous.TickNumber > latestTick)
+            if (previous is not null && previous.SequenceNumber > latestTick)
             {
-                _invariantViolation ??= $"Previous tick ({previous.TickNumber}) > latest tick ({latestTick})";
+                _invariantViolation ??= $"Previous tick ({previous.SequenceNumber}) > latest tick ({latestTick})";
                 return;
             }
 
-            // Track highest tick observed.
             UpdateMax(ref _maxTickObserved, latestTick);
         }
 

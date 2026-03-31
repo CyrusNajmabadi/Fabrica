@@ -44,7 +44,6 @@ public sealed class LoopStressHarnessTests
         var test = LoopStressHarness.Create();
 
         test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 0;
 
         for (var i = 0; i < 10; i++)
         {
@@ -68,7 +67,6 @@ public sealed class LoopStressHarnessTests
         var test = LoopStressHarness.Create();
 
         test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 0;
 
         for (var i = 0; i < LowWaterMarkTicks + 3; i++)
         {
@@ -107,11 +105,11 @@ public sealed class LoopStressHarnessTests
         private long _simulationAccumulator;
 
         private LoopStressHarness(
-            SharedState<WorldSnapshot> shared,
+            SharedState<WorldImage> shared,
             TestClockState clockState,
             TestWaiterState waiterState,
-            ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter> simulationLoop,
-            ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
+            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter> simulationLoop,
+            ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
         {
             this.Shared = shared;
             this.Clock = new ClockController(clockState);
@@ -120,7 +118,7 @@ public sealed class LoopStressHarnessTests
             this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
         }
 
-        public SharedState<WorldSnapshot> Shared { get; }
+        public SharedState<WorldImage> Shared { get; }
 
         public ClockController Clock { get; }
 
@@ -132,19 +130,19 @@ public sealed class LoopStressHarnessTests
 
         public static LoopStressHarness Create(int poolSize = 64)
         {
-            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
             var imagePool = new ObjectPool<WorldImage>(poolSize);
             var pinnedVersions = new PinnedVersions();
-            var shared = new SharedState<WorldSnapshot>();
+            var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
 
-            var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
-                snapshotPool, pinnedVersions, shared, producer, clock, new TestRecordingWaiter(waiterState));
-            var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>(
-                pinnedVersions, shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), new TestRecordingSaveRunner(), new TestRecordingSaver());
+            var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
+                nodePool, pinnedVersions, shared, producer, clock, new TestRecordingWaiter(waiterState));
+            var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
+                pinnedVersions, shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), []);
 
             return new LoopStressHarness(
                 shared,
@@ -183,11 +181,11 @@ public sealed class LoopStressHarnessTests
         public sealed class SimulationLoopController
         {
             private readonly LoopStressHarness _owner;
-            private readonly ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _accessor;
+            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _accessor;
 
             public SimulationLoopController(
                 LoopStressHarness owner,
-                ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor accessor)
+                ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor accessor)
             {
                 _owner = owner;
                 _accessor = accessor;
@@ -195,9 +193,9 @@ public sealed class LoopStressHarnessTests
 
             public int CurrentSequence => _accessor.CurrentSequence;
 
-            public WorldSnapshot? CurrentNode => _accessor.CurrentNode;
+            public ChainNode<WorldImage>? CurrentNode => _accessor.CurrentNode;
 
-            public WorldSnapshot? OldestNode => _accessor.OldestNode;
+            public ChainNode<WorldImage>? OldestNode => _accessor.OldestNode;
 
             public void Bootstrap()
             {
@@ -214,24 +212,12 @@ public sealed class LoopStressHarnessTests
 
         public sealed class ConsumptionLoopController
         {
-            private readonly ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
+            private readonly ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
 
             public ConsumptionLoopController(
-                ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor) => _accessor = accessor;
+                ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor) => _accessor = accessor;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
-    }
-
-    private readonly struct TestRecordingSaveRunner : ISaveRunner<WorldSnapshot>
-    {
-        public void RunSave(WorldSnapshot node, int sequenceNumber, Action<WorldSnapshot, int> saveAction) =>
-            throw new InvalidOperationException("Save dispatch is not part of this stress harness.");
-    }
-
-    private readonly struct TestRecordingSaver : ISaver<WorldSnapshot>
-    {
-        public void Save(WorldSnapshot node, int sequenceNumber) =>
-            throw new InvalidOperationException("Save execution is not part of this stress harness.");
     }
 }

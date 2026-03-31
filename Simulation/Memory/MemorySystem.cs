@@ -6,16 +6,16 @@ namespace Simulation.Memory;
 /// Owns all object pools and the cross-thread pinned-versions set.
 ///
 /// SINGLE-THREAD POOL OWNERSHIP
-///   Both ObjectPool instances (snapshots and images) are accessed exclusively
+///   Both ObjectPool instances (nodes and images) are accessed exclusively
 ///   from the simulation thread.  This is intentional: the simulation is the sole
 ///   memory manager, which eliminates all locking, atomic operations, and ABA
 ///   hazards from the allocation fast path.
 ///
-///   Other threads (consumption, save task) interact with memory only indirectly:
-///   the consumption thread reads the WorldSnapshot reference published by the
-///   simulation; the save task reads the WorldImage inside that snapshot.  Neither
-///   ever calls Rent or Return — the objects are always reclaimed by the simulation
-///   after both threads have finished with them.
+///   Other threads (consumption, deferred consumers) interact with memory only
+///   indirectly: the consumption thread reads the ChainNode reference published
+///   by the simulation; deferred consumer tasks read the payload inside the node.
+///   Neither ever calls Rent or Return — the objects are always reclaimed by the
+///   simulation after both threads have finished with them.
 ///
 /// EXCEPTION — PinnedVersions
 ///   PinnedVersions is thread-safe and may be called from any thread.  It is the
@@ -25,7 +25,7 @@ namespace Simulation.Memory;
 /// </summary>
 internal sealed class MemorySystem
 {
-    private readonly ObjectPool<WorldSnapshot> _snapshotPool;
+    private readonly ObjectPool<ChainNode<WorldImage>> _nodePool;
     private readonly ObjectPool<WorldImage> _imagePool;
 
     public PinnedVersions PinnedVersions { get; } = new();
@@ -35,14 +35,14 @@ internal sealed class MemorySystem
         if (initialPoolSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
-        _snapshotPool = new ObjectPool<WorldSnapshot>(initialPoolSize);
+        _nodePool = new ObjectPool<ChainNode<WorldImage>>(initialPoolSize);
         _imagePool = new ObjectPool<WorldImage>(initialPoolSize);
     }
 
-    // ── Snapshot pool (simulation thread only) ───────────────────────────────
+    // ── Node pool (simulation thread only) ───────────────────────────────────
 
-    public WorldSnapshot RentSnapshot() => _snapshotPool.Rent();
-    public void ReturnSnapshot(WorldSnapshot snapshot) => _snapshotPool.Return(snapshot);
+    public ChainNode<WorldImage> RentNode() => _nodePool.Rent();
+    public void ReturnNode(ChainNode<WorldImage> node) => _nodePool.Return(node);
 
     // ── Image pool (simulation thread only) ──────────────────────────────────
 

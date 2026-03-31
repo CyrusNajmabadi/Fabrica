@@ -20,22 +20,22 @@ public sealed class MemorySystemTests
     {
         var memory = new MemorySystem(initialPoolSize: 10);
 
-        var snapshot = memory.RentSnapshot();
+        var node = memory.RentNode();
         var image = memory.RentImage();
 
-        Assert.NotNull(snapshot);
+        Assert.NotNull(node);
         Assert.NotNull(image);
     }
 
     // ── Rent (pool exhaustion) ───────────────────────────────────────────────
 
     [Fact]
-    public void RentSnapshot_AlwaysReturnsNonNull()
+    public void RentNode_AlwaysReturnsNonNull()
     {
         var memory = new MemorySystem(initialPoolSize: 1);
 
-        var first = memory.RentSnapshot();
-        var second = memory.RentSnapshot();
+        var first = memory.RentNode();
+        var second = memory.RentNode();
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -55,31 +55,31 @@ public sealed class MemorySystemTests
         Assert.NotSame(first, second);
     }
 
-    // ── ReturnSnapshot ───────────────────────────────────────────────────────
+    // ── ReturnNode ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void ReturnSnapshot_MakesInstanceAvailableForReuse()
+    public void ReturnNode_MakesInstanceAvailableForReuse()
     {
         var memory = new MemorySystem(initialPoolSize: 1);
 
-        var original = memory.RentSnapshot();
-        memory.ReturnSnapshot(original);
+        var original = memory.RentNode();
+        memory.ReturnNode(original);
 
-        var reused = memory.RentSnapshot();
+        var reused = memory.RentNode();
         Assert.Same(original, reused);
     }
 
     [Fact]
-    public void ReturnSnapshot_MultipleRoundTrips_AlwaysRecyclesSameInstance()
+    public void ReturnNode_MultipleRoundTrips_AlwaysRecyclesSameInstance()
     {
         var memory = new MemorySystem(initialPoolSize: 1);
 
-        var snapshot = memory.RentSnapshot();
+        var node = memory.RentNode();
         for (var i = 0; i < 10; i++)
         {
-            memory.ReturnSnapshot(snapshot);
-            var rented = memory.RentSnapshot();
-            Assert.Same(snapshot, rented);
+            memory.ReturnNode(node);
+            var rented = memory.RentNode();
+            Assert.Same(node, rented);
         }
     }
 
@@ -130,21 +130,21 @@ public sealed class MemorySystemTests
     // ── Pool growth ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void ReturningExtraSnapshots_GrowsPoolBeyondInitialCapacity()
+    public void ReturningExtraNodes_GrowsPoolBeyondInitialCapacity()
     {
         var memory = new MemorySystem(initialPoolSize: 1);
 
-        var a = memory.RentSnapshot();
-        var b = memory.RentSnapshot();
-        var c = memory.RentSnapshot();
+        var a = memory.RentNode();
+        var b = memory.RentNode();
+        var c = memory.RentNode();
 
-        memory.ReturnSnapshot(a);
-        memory.ReturnSnapshot(b);
-        memory.ReturnSnapshot(c);
+        memory.ReturnNode(a);
+        memory.ReturnNode(b);
+        memory.ReturnNode(c);
 
-        var r1 = memory.RentSnapshot();
-        var r2 = memory.RentSnapshot();
-        var r3 = memory.RentSnapshot();
+        var r1 = memory.RentNode();
+        var r2 = memory.RentNode();
+        var r3 = memory.RentNode();
 
         var rented = new[] { r1, r2, r3 };
         Assert.Contains(a, rented);
@@ -189,24 +189,22 @@ public sealed class MemorySystemTests
     // ── Pool independence ────────────────────────────────────────────────────
 
     [Fact]
-    public void SnapshotAndImagePools_AreIndependent()
+    public void NodeAndImagePools_AreIndependent()
     {
         var memory = new MemorySystem(initialPoolSize: 2);
 
-        var s1 = memory.RentSnapshot();
-        var s2 = memory.RentSnapshot();
+        var s1 = memory.RentNode();
+        var s2 = memory.RentNode();
 
         var i1 = memory.RentImage();
         var i2 = memory.RentImage();
 
-        // Exhausting one pool shouldn't affect the other; both still allocate.
-        var s3 = memory.RentSnapshot();
+        var s3 = memory.RentNode();
         var i3 = memory.RentImage();
 
         Assert.NotNull(s3);
         Assert.NotNull(i3);
 
-        // All instances are distinct within their pool.
         Assert.NotSame(s1, s2);
         Assert.NotSame(s2, s3);
         Assert.NotSame(i1, i2);

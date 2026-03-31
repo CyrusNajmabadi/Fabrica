@@ -4,71 +4,65 @@ using Xunit;
 namespace Simulation.Tests.World;
 
 /// <summary>
-/// Tests for <see cref="WorldSnapshot"/>-specific behavior (domain payload).
-/// Chain mechanics are covered by <see cref="ChainNodeTests"/>.
+/// Tests for <see cref="ChainNode{WorldImage}"/> payload lifecycle — setting,
+/// clearing, and ref-count interaction with payload visibility.
 /// </summary>
 public sealed class WorldSnapshotTests
 {
     [Fact]
-    public void Initialize_SetsImageAndTickNumber()
+    public void InitializeBase_AndPayload_SetsCorrectly()
     {
         var image = new WorldImage();
-        var snapshot = new WorldSnapshot();
+        var node = new ChainNode<WorldImage>();
 
-        snapshot.Initialize(image, tickNumber: 5);
+        node.InitializeBase(5);
+        node.Payload = image;
 
-        Assert.Same(image, snapshot.Image);
-        Assert.Equal(5, snapshot.TickNumber);
-        Assert.Equal(5, snapshot.SequenceNumber);
+        Assert.Same(image, node.Payload);
+        Assert.Equal(5, node.SequenceNumber);
     }
 
     [Fact]
-    public void TickNumber_IsDomainAliasForSequenceNumber()
-    {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), tickNumber: 42);
-
-        Assert.Equal(snapshot.SequenceNumber, snapshot.TickNumber);
-    }
-
-    [Fact]
-    public void Release_ToZero_NullsImage()
+    public void Release_ToZero_AllowsPayloadClearing()
     {
         var image = new WorldImage();
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(image, tickNumber: 10);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(10);
+        node.Payload = image;
 
-        snapshot.Release();
+        node.ClearPayload();
+        node.Release();
 
-        Assert.True(snapshot.IsUnreferenced);
-        Assert.Null(snapshot.Image);
+        Assert.True(node.IsUnreferenced);
+        Assert.Null(node.Payload);
     }
 
     [Fact]
-    public void AddRef_PreventsRelease_FromNullingImage()
+    public void AddRef_PreventsRelease_PayloadStillAccessible()
     {
         var image = new WorldImage();
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(image, tickNumber: 5);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(5);
+        node.Payload = image;
 
-        snapshot.AddRef();
-        snapshot.Release();
+        node.AddRef();
+        node.Release();
 
-        Assert.False(snapshot.IsUnreferenced);
-        Assert.Same(image, snapshot.Image);
+        Assert.False(node.IsUnreferenced);
+        Assert.Same(image, node.Payload);
     }
 
     [Fact]
-    public void AddRef_ThenFullRelease_NullsImage()
+    public void AddRef_ThenFullRelease_ReachesZero()
     {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), tickNumber: 5);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(5);
+        node.Payload = new WorldImage();
 
-        snapshot.AddRef();
-        snapshot.Release();
-        snapshot.Release();
+        node.AddRef();
+        node.Release();
+        node.Release();
 
-        Assert.True(snapshot.IsUnreferenced);
-        Assert.Null(snapshot.Image);
+        Assert.True(node.IsUnreferenced);
     }
 }

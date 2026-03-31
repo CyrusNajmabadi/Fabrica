@@ -9,24 +9,21 @@ namespace Simulation.Tests.Engine;
 public sealed class LoopHarnessExampleTests
 {
     [Fact]
-    public void SavePinnedSnapshot_SurvivesSimulationCleanup_UntilSaveCompletes()
+    public void DeferredConsumerPinnedNode_SurvivesSimulationCleanup_UntilTaskCompletes()
     {
         var test = LoopHarness.Create();
 
         test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
+        var tick1Node = Assert.IsType<ChainNode<WorldImage>>(test.SimulationLoop.CurrentNode);
 
-        test.ConsumptionLoop.RunIteration(); // save dispatched for T1
+        test.ConsumptionLoop.RunIteration(); // deferred consumer dispatched for T1
         Assert.True(test.Pins.IsPinned(1));
-        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
+        Assert.Equal(1, test.DeferredConsumer.InFlightCount);
         Assert.Equal(1, test.Shared.ConsumptionEpoch);
 
-        // Advance several ticks while save is in flight.  The epoch eventually
-        // passes T1, but the pin keeps it alive in the simulation's pinned queue.
         for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
@@ -35,35 +32,36 @@ public sealed class LoopHarnessExampleTests
         }
 
         Assert.True(test.Pins.IsPinned(1));
-        Assert.False(tick1Snapshot.IsUnreferenced);
+        Assert.False(tick1Node.IsUnreferenced);
 
-        test.Save.CompletePendingSave();
+        test.DeferredConsumer.CompletePendingTask(long.MaxValue);
+        Assert.Equal(0, test.DeferredConsumer.InFlightCount);
+
+        test.ConsumptionLoop.RunIteration();
         Assert.False(test.Pins.IsPinned(1));
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration();
 
-        Assert.True(tick1Snapshot.IsUnreferenced);
+        Assert.True(tick1Node.IsUnreferenced);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
     }
 
     [Fact]
-    public void SavePinAndExternalPin_BothMustClearBeforeSimulationCanReclaim()
+    public void DeferredConsumerPinAndExternalPin_BothMustClearBeforeSimulationCanReclaim()
     {
         var test = LoopHarness.Create();
         object externalOwner = new();
 
         test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
+        var tick1Node = Assert.IsType<ChainNode<WorldImage>>(test.SimulationLoop.CurrentNode);
 
-        test.ConsumptionLoop.RunIteration(); // save dispatched for T1
+        test.ConsumptionLoop.RunIteration(); // deferred dispatched for T1
         test.Pins.Pin(1, externalOwner);
 
-        // Advance several ticks so the epoch passes T1 and it enters the pinned queue.
         for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
@@ -72,22 +70,21 @@ public sealed class LoopHarnessExampleTests
         }
 
         Assert.True(test.Pins.IsPinned(1));
-        Assert.False(tick1Snapshot.IsUnreferenced);
+        Assert.False(tick1Node.IsUnreferenced);
 
-        // Save pin cleared — external pin still holds.
-        test.Save.CompletePendingSave();
+        test.DeferredConsumer.CompletePendingTask(long.MaxValue);
+        test.ConsumptionLoop.RunIteration();
 
         Assert.True(test.Pins.IsPinned(1));
-        Assert.False(tick1Snapshot.IsUnreferenced);
+        Assert.False(tick1Node.IsUnreferenced);
 
-        // External pin cleared — both pins gone.
         test.Pins.Unpin(1, externalOwner);
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration();
 
         Assert.False(test.Pins.IsPinned(1));
-        Assert.True(tick1Snapshot.IsUnreferenced);
+        Assert.True(tick1Node.IsUnreferenced);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
     }
 
@@ -120,19 +117,16 @@ public sealed class LoopHarnessExampleTests
     [Fact]
     public void UnpinnedSnapshot_IsReclaimedAfterConsumptionAdvancesPastIt()
     {
-        var test = LoopHarness.Create();
+        var test = LoopHarness.CreateWithNoDeferredConsumers();
 
         test.SimulationLoop.Bootstrap();
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
+        var tick1Node = Assert.IsType<ChainNode<WorldImage>>(test.SimulationLoop.CurrentNode);
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1
 
-        // Advance enough ticks that the epoch passes T1 and cleanup frees it.
-        // With the one-tick-behind epoch model, an extra consumption iteration
-        // is needed compared to the old model.
         for (var i = 0; i < 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
@@ -140,14 +134,14 @@ public sealed class LoopHarnessExampleTests
             test.ConsumptionLoop.RunIteration();
         }
 
-        Assert.True(tick1Snapshot.IsUnreferenced);
+        Assert.True(tick1Node.IsUnreferenced);
         Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
     }
 
     [Fact]
     public void SimulationIterationBeforeConsumptionIteration_PublishesNewestSnapshotForConsumption()
     {
-        var test = LoopHarness.Create();
+        var test = LoopHarness.CreateWithNoDeferredConsumers();
 
         test.SimulationLoop.Bootstrap();
 
@@ -163,227 +157,66 @@ public sealed class LoopHarnessExampleTests
     }
 
     [Fact]
-    public void SaveInFlight_PreventsAdditionalSaveDispatchAcrossMultipleConsumptionIterations()
+    public void DeferredConsumerDispatchFailure_AllowsLaterRetryOnTheSamePublishedSnapshot()
     {
         var test = LoopHarness.Create();
 
         test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // tick 1
 
-        test.ConsumptionLoop.RunIteration(); // starts save
-        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
-        Assert.True(test.Pins.IsPinned(1));
-
-        test.ConsumptionLoop.RunIteration(); // same snapshot again
-        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 2
-        test.ConsumptionLoop.RunIteration(); // newer snapshot, save still in flight
-
-        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
-        Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
-        Assert.Equal(1, test.Shared.ConsumptionEpoch);
-        Assert.Equal(0, test.Shared.NextSaveAtTick);
-
-        test.Save.CompletePendingSave();
-        Assert.False(test.Pins.IsPinned(1));
-        Assert.Equal(1 + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-    }
-
-    [Fact]
-    public void SaveCompletion_AllowsLaterSaveOnceScheduleIsReachedAgain()
-    {
-        var test = LoopHarness.Create();
-
-        test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
-        test.ConsumptionLoop.RunIteration(); // start/save tick 1
-        test.Save.CompletePendingSave();
-
-        test.Shared.NextSaveAtTick = 3;
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 2
-        test.ConsumptionLoop.RunIteration(); // below threshold
-        Assert.Equal(0, test.ConsumptionLoop.PendingSaveCount);
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 3
-        test.ConsumptionLoop.RunIteration(); // reaches threshold again
-
-        Assert.Equal(1, test.ConsumptionLoop.PendingSaveCount);
-        Assert.True(test.Pins.IsPinned(3));
-        Assert.Equal(2, test.Shared.ConsumptionEpoch);
-    }
-
-    [Fact]
-    public void RenderFailureAfterSaveDispatch_AllowsLaterRecoveryOnTheSameSnapshot()
-    {
-        var test = LoopHarness.Create();
-
-        test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
-
-        test.Renderer.FailWith(new InvalidOperationException("render failed"));
-
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => test.ConsumptionLoop.RunIteration());
-
-        Assert.Equal("render failed", exception.Message);
-        Assert.Equal(1, test.Save.PendingSaveCount);
-        Assert.True(test.Pins.IsPinned(1));
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
-        Assert.Equal(0, test.Shared.NextSaveAtTick);
-        Assert.Empty(test.Renderer.RenderedTicks);
-
-        test.Save.CompletePendingSave();
-
-        Assert.False(test.Pins.IsPinned(1));
-        Assert.Equal(1 + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-
-        test.Renderer.ClearFailure();
-        test.ConsumptionLoop.RunIteration();
-
-        Assert.Equal([1], test.Renderer.RenderedTicks);
-        Assert.Equal(1, test.Shared.ConsumptionEpoch);
-        Assert.Equal(0, test.Save.PendingSaveCount);
-    }
-
-    [Fact]
-    public void SaveRunnerDispatchFailure_AllowsLaterRetryOnTheSamePublishedSnapshot()
-    {
-        var test = LoopHarness.Create();
-
-        test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
-
-        test.Save.FailDispatchWith(new InvalidOperationException("dispatch failed"));
+        test.DeferredConsumer.FailDispatchWith(new InvalidOperationException("dispatch failed"));
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => test.ConsumptionLoop.RunIteration());
 
         Assert.Equal("dispatch failed", exception.Message);
-        Assert.Equal(0, test.Save.PendingSaveCount);
         Assert.False(test.Pins.IsPinned(1));
-        Assert.Equal(1, test.Shared.NextSaveAtTick);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
         Assert.Empty(test.Renderer.RenderedTicks);
 
-        test.Save.ClearDispatchFailure();
+        test.DeferredConsumer.ClearDispatchFailure();
         test.ConsumptionLoop.RunIteration();
 
         Assert.Equal([1], test.Renderer.RenderedTicks);
         Assert.Equal(1, test.Shared.ConsumptionEpoch);
-        Assert.Equal(1, test.Save.PendingSaveCount);
         Assert.True(test.Pins.IsPinned(1));
-    }
-
-    [Fact]
-    public void ConsumptionCatchesUpLate_AndSavesOnlyTheNewestPublishedSnapshot()
-    {
-        var test = LoopHarness.Create();
-
-        test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 1;
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 2
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 3
-
-        test.ConsumptionLoop.RunIteration();
-
-        Assert.Equal([3], test.Renderer.RenderedTicks);
-        Assert.Equal(3, test.Shared.ConsumptionEpoch);
-        Assert.Equal(1, test.Save.PendingSaveCount);
-        Assert.True(test.Pins.IsPinned(3));
-        Assert.False(test.Pins.IsPinned(1));
-        Assert.False(test.Pins.IsPinned(2));
-        Assert.Equal(0, test.Shared.NextSaveAtTick);
-
-        test.Save.CompletePendingSave();
-
-        Assert.False(test.Pins.IsPinned(3));
-        Assert.Equal(3 + SimulationConstants.SaveIntervalTicks, test.Shared.NextSaveAtTick);
-    }
-
-    [Fact]
-    public void NoSaveConfigured_AllowsSimulationCleanupToProceedNormally()
-    {
-        var test = LoopHarness.Create();
-
-        test.SimulationLoop.Bootstrap();
-        test.Shared.NextSaveAtTick = 0;
-
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T1
-        var tick1Snapshot = Assert.IsType<WorldSnapshot>(test.SimulationLoop.CurrentNode);
-
-        test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1, no save
-
-        // Advance enough ticks that the epoch passes T1 and cleanup frees it.
-        for (var i = 0; i < 3; i++)
-        {
-            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-            test.SimulationLoop.RunIteration();
-            test.ConsumptionLoop.RunIteration();
-        }
-
-        Assert.True(tick1Snapshot.IsUnreferenced);
-        Assert.Equal(0, test.ConsumptionLoop.PendingSaveCount);
     }
 
     private sealed class LoopHarness
     {
-        private readonly ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _simulationAccessor;
-        private readonly ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor _consumptionAccessor;
+        private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _simulationAccessor;
         private long _simulationLastTime;
         private long _simulationAccumulator;
 
         private LoopHarness(
             PinnedVersions pinnedVersions,
-            SharedState<WorldSnapshot> shared,
+            SharedState<WorldImage> shared,
             TestClockState clockState,
-            TestSaveRunnerState saveRunnerState,
-            TestSaverState saverState,
+            TestDeferredConsumerState deferredConsumerState,
             TestRendererState rendererState,
-            ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter> productionLoop,
-            ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
+            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter> productionLoop,
+            ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
         {
             this.Shared = shared;
             this.Clock = new ClockController(clockState);
             this.Pins = new PinController(pinnedVersions);
-            this.Save = new SaveController(saveRunnerState, saverState);
-            this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor(), saveRunnerState);
+            this.DeferredConsumer = new DeferredConsumerController(deferredConsumerState);
+            this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
             this.SimulationLoop = new SimulationLoopController(this, productionLoop.GetTestAccessor());
             this.Renderer = new RendererController(rendererState);
 
             _simulationAccessor = productionLoop.GetTestAccessor();
-            _consumptionAccessor = consumptionLoop.GetTestAccessor();
         }
 
-        public SharedState<WorldSnapshot> Shared { get; }
+        public SharedState<WorldImage> Shared { get; }
 
         public ClockController Clock { get; }
 
         public PinController Pins { get; }
 
-        public SaveController Save { get; }
+        public DeferredConsumerController DeferredConsumer { get; }
 
         public RendererController Renderer { get; }
 
@@ -393,32 +226,40 @@ public sealed class LoopHarnessExampleTests
 
         public static LoopHarness Create(int poolSize = 8)
         {
-            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var deferredState = new TestDeferredConsumerState();
+            return CreateInternal(poolSize, [new DeferredConsumerRegistration<WorldImage>(
+                new TestDeferredConsumer(deferredState), 0L)], deferredState);
+        }
+
+        public static LoopHarness CreateWithNoDeferredConsumers(int poolSize = 8) =>
+            CreateInternal(poolSize, [], new TestDeferredConsumerState());
+
+        private static LoopHarness CreateInternal(
+            int poolSize,
+            DeferredConsumerRegistration<WorldImage>[] deferredConsumers,
+            TestDeferredConsumerState deferredState)
+        {
+            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
             var imagePool = new ObjectPool<WorldImage>(poolSize);
             var pinnedVersions = new PinnedVersions();
-            var shared = new SharedState<WorldSnapshot>();
+            var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();
-            var saveRunnerState = new TestSaveRunnerState();
-            var saverState = new TestSaverState();
             var rendererState = new TestRendererState();
             var clock = new TestRecordingClock(clockState);
             var waiter = new TestNoOpWaiter();
-            var saveRunner = new TestRecordingSaveRunner(saveRunnerState);
-            var saver = new TestRecordingSaver(saverState);
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
             var consumer = new TestRecordingConsumer(rendererState);
 
-            var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>(
-                snapshotPool, pinnedVersions, shared, producer, clock, waiter);
-            var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>(
-                pinnedVersions, shared, consumer, clock, waiter, saveRunner, saver);
+            var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>(
+                nodePool, pinnedVersions, shared, producer, clock, waiter);
+            var consumptionLoop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>(
+                pinnedVersions, shared, consumer, clock, waiter, deferredConsumers);
 
             return new LoopHarness(
                 pinnedVersions,
                 shared,
                 clockState,
-                saveRunnerState,
-                saverState,
+                deferredState,
                 rendererState,
                 productionLoop,
                 consumptionLoop);
@@ -427,17 +268,17 @@ public sealed class LoopHarnessExampleTests
         public sealed class SimulationLoopController
         {
             private readonly LoopHarness _owner;
-            private readonly ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
+            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
 
             public SimulationLoopController(
                 LoopHarness owner,
-                ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
+                ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
             {
                 _owner = owner;
                 _accessor = accessor;
             }
 
-            public WorldSnapshot? CurrentNode => _accessor.CurrentNode;
+            public ChainNode<WorldImage>? CurrentNode => _accessor.CurrentNode;
 
             public int PinnedQueueCount => _accessor.PinnedQueueCount;
 
@@ -457,18 +298,11 @@ public sealed class LoopHarnessExampleTests
 
         public sealed class ConsumptionLoopController
         {
-            private readonly ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
-            private readonly TestSaveRunnerState _saveRunnerState;
+            private readonly ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
 
             public ConsumptionLoopController(
-                ConsumptionLoop<WorldSnapshot, TestRecordingConsumer, TestRecordingSaveRunner, TestRecordingSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor,
-                TestSaveRunnerState saveRunnerState)
-            {
+                ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor) =>
                 _accessor = accessor;
-                _saveRunnerState = saveRunnerState;
-            }
-
-            public int PendingSaveCount => _saveRunnerState.PendingInvocations.Count;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
@@ -497,30 +331,23 @@ public sealed class LoopHarnessExampleTests
             public bool IsPinned(int tick) => _pins.IsPinned(tick);
         }
 
-        public sealed class SaveController
+        public sealed class DeferredConsumerController
         {
-            private readonly TestSaveRunnerState _state;
-            private readonly TestSaverState _saverState;
+            private readonly TestDeferredConsumerState _state;
 
-            public SaveController(TestSaveRunnerState state, TestSaverState saverState)
-            {
-                _state = state;
-                _saverState = saverState;
-            }
+            public DeferredConsumerController(TestDeferredConsumerState state) => _state = state;
 
-            public int PendingSaveCount => _state.PendingInvocations.Count;
-
-            public IReadOnlyList<int> SaveCalls => _saverState.SaveCalls;
+            public int InFlightCount => _state.InFlightTasks.Count;
 
             public void FailDispatchWith(Exception exception) => _state.ExceptionToThrow = exception;
 
             public void ClearDispatchFailure() => _state.ExceptionToThrow = null;
 
-            public void CompletePendingSave()
+            public void CompletePendingTask(long nextRunTime)
             {
-                var invocation = Assert.Single(_state.PendingInvocations);
-                _state.PendingInvocations.Clear();
-                _state.Complete(invocation);
+                var tcs = Assert.Single(_state.InFlightTasks);
+                _state.InFlightTasks.Clear();
+                tcs.SetResult(nextRunTime);
             }
         }
 
@@ -538,45 +365,27 @@ public sealed class LoopHarnessExampleTests
         }
     }
 
-    private sealed class TestSaveRunnerState
+    private sealed class TestDeferredConsumerState
     {
-        public readonly List<TestSaveInvocation> DispatchHistory = [];
-        public readonly List<TestSaveInvocation> PendingInvocations = [];
-
+        public readonly List<TaskCompletionSource<long>> InFlightTasks = [];
         public Exception? ExceptionToThrow { get; set; }
-
-        public void Complete(TestSaveInvocation invocation) => invocation.SaveAction(invocation.Node, invocation.SequenceNumber);
     }
 
-    private readonly struct TestRecordingSaveRunner : ISaveRunner<WorldSnapshot>
+    private sealed class TestDeferredConsumer : IDeferredConsumer<WorldImage>
     {
-        private readonly TestSaveRunnerState _state;
+        private readonly TestDeferredConsumerState _state;
 
-        public TestRecordingSaveRunner(TestSaveRunnerState state) => _state = state;
+        public TestDeferredConsumer(TestDeferredConsumerState state) => _state = state;
 
-        public void RunSave(WorldSnapshot node, int sequenceNumber, Action<WorldSnapshot, int> saveAction)
+        public Task<long> ConsumeAsync(WorldImage payload, int sequenceNumber, CancellationToken cancellationToken)
         {
-            if (_state.ExceptionToThrow is Exception exception)
-                throw exception;
+            if (_state.ExceptionToThrow is { } ex)
+                throw ex;
 
-            var invocation = new TestSaveInvocation(node, sequenceNumber, saveAction);
-            _state.DispatchHistory.Add(invocation);
-            _state.PendingInvocations.Add(invocation);
+            var tcs = new TaskCompletionSource<long>();
+            _state.InFlightTasks.Add(tcs);
+            return tcs.Task;
         }
-    }
-
-    private sealed class TestSaverState
-    {
-        public readonly List<int> SaveCalls = [];
-    }
-
-    private readonly struct TestRecordingSaver : ISaver<WorldSnapshot>
-    {
-        private readonly TestSaverState _state;
-
-        public TestRecordingSaver(TestSaverState state) => _state = state;
-
-        public void Save(WorldSnapshot node, int sequenceNumber) => _state.SaveCalls.Add(sequenceNumber);
     }
 
     private sealed class TestRendererState
@@ -586,17 +395,17 @@ public sealed class LoopHarnessExampleTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingConsumer : IConsumer<WorldSnapshot>
+    private readonly struct TestRecordingConsumer : IConsumer<WorldImage>
     {
         private readonly TestRendererState _state;
 
         public TestRecordingConsumer(TestRendererState state) => _state = state;
 
-        public void Consume(WorldSnapshot? previous, WorldSnapshot latest, long frameStartNanoseconds, SaveStatus saveStatus, CancellationToken cancellationToken)
+        public void Consume(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(latest.TickNumber);
+            _state.RenderedTicks.Add(latest.SequenceNumber);
         }
     }
 }

@@ -25,26 +25,24 @@ namespace Simulation.Engine;
 ///   ConsumptionEpoch: if the production loop reads a slightly stale (lower)
 ///   epoch it retains a node one extra cleanup pass — never frees prematurely.
 ///
-///   NextSaveAtTick: see field comment below.
-///
 /// #if DEBUG ASSERTIONS
 ///   Each single-writer field uses AssertSingleWriter to catch accidental
 ///   writes from the wrong thread in debug builds.  This fires on the first
 ///   write from a new thread ID, so tests that use both fields from the test
 ///   thread will correctly bind the "owner" to the test thread.
 /// </summary>
-internal sealed class SharedState<TNode> where TNode : ChainNode<TNode>
+internal sealed class SharedState<TPayload>
 {
     // ── LatestNode ───────────────────────────────────────────────────────────
     // Written by production thread only.  Read by consumption thread.
 
-    private volatile TNode? _latestNode;
+    private volatile ChainNode<TPayload>? _latestNode;
 
 #if DEBUG
     private int _latestNodeWriterThreadId = -1;
 #endif
 
-    public TNode? LatestNode
+    public ChainNode<TPayload>? LatestNode
     {
         get => _latestNode;
         set
@@ -77,29 +75,6 @@ internal sealed class SharedState<TNode> where TNode : ChainNode<TNode>
 #endif
             _consumptionEpoch = value;
         }
-    }
-
-    // ── NextSaveAtTick ────────────────────────────────────────────────────────
-    // Written by consumption thread (sets to 0 before dispatch) AND by the save
-    // task (sets to tick + SaveIntervalTicks on completion).
-    // Read by the consumption thread.
-    //
-    // Two-writer safety: the writes do not conflict in practice.  The consumption
-    // thread writes 0 only when the field is non-zero (a save is due); the save task
-    // writes a positive value only after the consumption thread has written 0 and
-    // the save has completed.  The worst-case race is the save task writing the next
-    // interval at the same moment the consumption thread is checking the value — that
-    // is benign because the consumption thread will see the 0 it just wrote, and the
-    // save task's write of the next tick will stand as the new schedule.
-    //
-    // Initial value = SaveIntervalTicks so the first save fires at tick 12000 (5 min).
-
-    private volatile int _nextSaveAtTick = SimulationConstants.SaveIntervalTicks;
-
-    public int NextSaveAtTick
-    {
-        get => _nextSaveAtTick;
-        set => _nextSaveAtTick = value;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

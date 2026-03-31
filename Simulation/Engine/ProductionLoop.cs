@@ -6,17 +6,17 @@ namespace Simulation.Engine;
 
 /// <summary>
 /// The production ("producer") thread.  Advances the chain one node at a time,
-/// delegates domain-specific work to a <typeparamref name="TProducer"/>, and
-/// reclaims nodes the consumption thread has finished with.
+/// delegates domain-specific payload creation to a <typeparamref name="TProducer"/>,
+/// and reclaims nodes the consumption thread has finished with.
 ///
 /// CHAIN MODEL
-///   Every tick appends a new <typeparamref name="TNode"/> to a singly-linked
+///   Every tick appends a new <see cref="ChainNode{TPayload}"/> to a singly-linked
 ///   forward chain:
 ///
 ///     _oldestNode → [seq 1] → [seq 2] → … → [seq N] ← _currentNode
 ///                                                       (= LatestNode)
 ///
-///   The production loop is the sole writer to the chain.  Domain payload
+///   The production loop is the sole writer to the chain.  Payload data
 ///   is written before the volatile-write to LatestNode (a release fence),
 ///   so the consumption thread always sees fully-initialised data (acquire
 ///   fence on the matching read).
@@ -32,7 +32,7 @@ namespace Simulation.Engine;
 ///   extra cleanup pass — never frees prematurely.
 ///
 /// PINNED NODES AND THE PINNED QUEUE
-///   A node being saved must not be reclaimed while the save task reads it.
+///   A node being processed by a deferred consumer must not be reclaimed.
 ///   When <see cref="CleanupStaleNodes"/> encounters a pinned node it cannot
 ///   free, it calls ClearNext() to sever the node from the live chain and
 ///   parks it in _pinnedQueue.  This lets _oldestNode advance past the pinned
@@ -55,29 +55,28 @@ namespace Simulation.Engine;
 /// Generic on all type parameters (all constrained to struct) so the JIT/AOT
 /// devirtualises all calls — zero interface-dispatch overhead in the hot path.
 /// </summary>
-internal sealed class ProductionLoop<TNode, TProducer, TClock, TWaiter>
-    where TNode : ChainNode<TNode>, new()
-    where TProducer : struct, IProducer<TNode>
+internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
+    where TProducer : struct, IProducer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly ObjectPool<TNode> _nodePool;
+    private readonly ObjectPool<ChainNode<TPayload>> _nodePool;
     private readonly PinnedVersions _pinnedVersions;
-    private readonly SharedState<TNode> _shared;
+    private readonly SharedState<TPayload> _shared;
     private TProducer _producer;
     private readonly TClock _clock;
     private readonly TWaiter _waiter;
 
     private int _currentSequence;
-    private TNode? _currentNode;
-    private TNode? _oldestNode;
+    private ChainNode<TPayload>? _currentNode;
+    private ChainNode<TPayload>? _oldestNode;
 
-    private readonly HashSet<TNode> _pinnedQueue = new();
+    private readonly HashSet<ChainNode<TPayload>> _pinnedQueue = new();
 
     public ProductionLoop(
-        ObjectPool<TNode> nodePool,
+        ObjectPool<ChainNode<TPayload>> nodePool,
         PinnedVersions pinnedVersions,
-        SharedState<TNode> shared,
+        SharedState<TPayload> shared,
         TProducer producer,
         TClock clock,
         TWaiter waiter)
@@ -142,7 +141,7 @@ internal sealed class ProductionLoop<TNode, TProducer, TClock, TWaiter>
 
         _currentSequence = 0;
         node.InitializeBase(0);
-        _producer.Bootstrap(node, CancellationToken.None);
+        node.Payload = _producer.Bootstrap(CancellationToken.None);
 
         _currentNode = node;
         _oldestNode = node;
@@ -168,7 +167,7 @@ internal sealed class ProductionLoop<TNode, TProducer, TClock, TWaiter>
 
         _currentSequence++;
         node.InitializeBase(_currentSequence);
-        _producer.Produce(_currentNode!, node, cancellationToken);
+        node.Payload = _producer.Produce(_currentNode!.Payload, cancellationToken);
 
         _currentNode!.SetNext(node);
         _currentNode = node;
@@ -229,9 +228,10 @@ internal sealed class ProductionLoop<TNode, TProducer, TClock, TWaiter>
         });
     }
 
-    private void FreeNode(TNode node)
+    private void FreeNode(ChainNode<TPayload> node)
     {
-        _producer.ReleaseResources(node);
+        _producer.ReleaseResources(node.Payload);
+        node.ClearPayload();
         node.Release();
         Debug.Assert(node.IsUnreferenced, "Node still referenced after cleanup — refcount mismatch.");
         _nodePool.Return(node);
@@ -280,9 +280,9 @@ internal sealed class ProductionLoop<TNode, TProducer, TClock, TWaiter>
 
     internal readonly struct TestAccessor
     {
-        private readonly ProductionLoop<TNode, TProducer, TClock, TWaiter> _loop;
+        private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _loop;
 
-        public TestAccessor(ProductionLoop<TNode, TProducer, TClock, TWaiter> loop) => _loop = loop;
+        public TestAccessor(ProductionLoop<TPayload, TProducer, TClock, TWaiter> loop) => _loop = loop;
 
         public void Bootstrap() => _loop.Bootstrap();
 
@@ -298,12 +298,12 @@ internal sealed class ProductionLoop<TNode, TProducer, TClock, TWaiter>
 
         public int CurrentSequence => _loop._currentSequence;
 
-        public TNode? CurrentNode => _loop._currentNode;
+        public ChainNode<TPayload>? CurrentNode => _loop._currentNode;
 
-        public TNode? OldestNode => _loop._oldestNode;
+        public ChainNode<TPayload>? OldestNode => _loop._oldestNode;
 
         public int PinnedQueueCount => _loop._pinnedQueue.Count;
 
-        public void SetOldestNodeForTesting(TNode node) => _loop._oldestNode = node;
+        public void SetOldestNodeForTesting(ChainNode<TPayload> node) => _loop._oldestNode = node;
     }
 }

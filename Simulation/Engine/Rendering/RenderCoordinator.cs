@@ -5,7 +5,7 @@ namespace Simulation.Engine;
 ///
 /// FRAME DISPATCH CYCLE
 ///   <see cref="DispatchFrame"/> runs once per consumption-loop frame, called
-///   by <see cref="SimulationConsumer{TRenderer}"/>:
+///   by <see cref="RenderConsumer{TRenderer}"/>:
 ///
 ///     1. PREPARE — each worker's <see cref="RenderExecutor.Prepare"/>
 ///        clears per-frame state via <see cref="RenderWorkerResources"/>.
