@@ -15,10 +15,10 @@ namespace Engine.Simulation;
 /// </summary>
 internal struct SimulationProducer : IProducer<WorldImage>
 {
-    private readonly ObjectPool<WorldImage, WorldImageAllocator> _imagePool;
+    private readonly ObjectPool<WorldImage, WorldImage.Allocator> _imagePool;
     private readonly SimulationCoordinator _coordinator;
 
-    public SimulationProducer(ObjectPool<WorldImage, WorldImageAllocator> imagePool, SimulationCoordinator coordinator)
+    public SimulationProducer(ObjectPool<WorldImage, WorldImage.Allocator> imagePool, SimulationCoordinator coordinator)
     {
         _imagePool = imagePool;
         _coordinator = coordinator;

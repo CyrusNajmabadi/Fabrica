@@ -31,7 +31,7 @@ internal interface IConsumer<TPayload>
     /// The consumption loop advances the epoch immediately after, so the production
     /// loop may free earlier nodes.</para>
     /// </summary>
-    void Consume(
+    public void Consume(
         BaseProductionLoop<TPayload>.ChainNode previous,
         BaseProductionLoop<TPayload>.ChainNode latest,
         long frameStartNanoseconds,

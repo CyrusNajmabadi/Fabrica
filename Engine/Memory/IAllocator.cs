@@ -8,7 +8,7 @@ namespace Engine.Memory;
 internal interface IAllocator<T> where T : class
 {
     /// <summary>Creates a fresh instance for the pool.</summary>
-    T Allocate();
+    public T Allocate();
 
     /// <summary>
     /// Resets an instance before it is returned to the pool.  Called by
@@ -16,5 +16,5 @@ internal interface IAllocator<T> where T : class
     /// cleanup is guaranteed regardless of which code path returns the object.
     /// Implementations may be a no-op when no cleanup is needed.
     /// </summary>
-    void Reset(T item);
+    public void Reset(T item);
 }

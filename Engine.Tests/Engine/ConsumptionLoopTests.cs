@@ -9,7 +9,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 
 public sealed class ConsumptionLoopTests
 {
@@ -473,10 +473,36 @@ public sealed class ConsumptionLoopTests
             DeferredConsumerRegistration<WorldImage>[]? deferredConsumers = null,
             int poolSize = 8)
             where TClock : struct, IClock
-            where TWaiter : struct, IWaiter
+            where TWaiter : struct, IWaiter =>
+            ConsumptionLoopTestContext<TClock, TWaiter>.Create(
+                clock,
+                waiter,
+                consumerState,
+                clockState,
+                waiterState,
+                deferredConsumers,
+                poolSize);
+    }
+
+    private sealed class ConsumptionLoopTestContext<TClock, TWaiter>
+        where TClock : struct, IClock
+        where TWaiter : struct, IWaiter
+    {
+        private readonly TestChainHarness _harness;
+        private readonly ObjectPool<WorldImage, WorldImage.Allocator> _imagePool;
+        private readonly BaseProductionLoop<WorldImage>.ChainTestAccessor _chainAccessor;
+
+        public static ConsumptionLoopTestContext<TClock, TWaiter> Create(
+            TClock clock,
+            TWaiter waiter,
+            TestConsumerState consumerState,
+            TestClockState clockState,
+            TestWaiterState waiterState,
+            DeferredConsumerRegistration<WorldImage>[]? deferredConsumers = null,
+            int poolSize = 8)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
             var shared = new SharedState<WorldImage>();
             var consumer = new TestRecordingConsumer(consumerState);
             var loop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter>(
@@ -495,19 +521,10 @@ public sealed class ConsumptionLoopTests
                 clockState,
                 waiterState);
         }
-    }
 
-    private sealed class ConsumptionLoopTestContext<TClock, TWaiter>
-        where TClock : struct, IClock
-        where TWaiter : struct, IWaiter
-    {
-        private readonly TestChainHarness _harness;
-        private readonly ObjectPool<WorldImage, WorldImageAllocator> _imagePool;
-        private readonly BaseProductionLoop<WorldImage>.ChainTestAccessor _chainAccessor;
-
-        internal ConsumptionLoopTestContext(
+        private ConsumptionLoopTestContext(
             TestChainHarness harness,
-            ObjectPool<WorldImage, WorldImageAllocator> imagePool,
+            ObjectPool<WorldImage, WorldImage.Allocator> imagePool,
             SharedState<WorldImage> shared,
             ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> loop,
             TestConsumerState consumerState,

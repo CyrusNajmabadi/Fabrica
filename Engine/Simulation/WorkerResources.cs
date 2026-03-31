@@ -30,7 +30,7 @@ internal sealed class WorkerResources
     /// Resets per-tick state in preparation for a new tick dispatch.
     /// Called by the <see cref="SimulationCoordinator"/> before signaling workers.
     /// </summary>
-    internal void PrepareForTick()
+    public void PrepareForTick()
     {
         // Future: CreatedNodes.Clear(), etc.
     }

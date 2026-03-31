@@ -230,9 +230,9 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
         }
     }
 
-    internal TestAccessor GetTestAccessor() => new(this);
+    public TestAccessor GetTestAccessor() => new(this);
 
-    internal readonly struct TestAccessor
+    public readonly struct TestAccessor
     {
         private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _loop;
 

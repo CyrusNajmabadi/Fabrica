@@ -22,18 +22,18 @@ internal interface IProducer<TPayload>
     /// Create the initial (sequence-0) payload.  Called once at startup on the
     /// production thread before the first tick.
     /// </summary>
-    TPayload CreateInitialPayload(CancellationToken cancellationToken);
+    public TPayload CreateInitialPayload(CancellationToken cancellationToken);
 
     /// <summary>
     /// Create the next payload using data from <paramref name="current"/>.
     /// Called once per tick on the production thread.
     /// </summary>
-    TPayload Produce(TPayload current, CancellationToken cancellationToken);
+    public TPayload Produce(TPayload current, CancellationToken cancellationToken);
 
     /// <summary>
     /// Release domain-specific resources from a payload that is being freed
     /// (e.g. return a WorldImage to its pool).  Called on the production thread
     /// before the node is returned to the node pool.
     /// </summary>
-    void ReleaseResources(TPayload payload);
+    public void ReleaseResources(TPayload payload);
 }

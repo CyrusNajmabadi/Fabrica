@@ -8,5 +8,5 @@ namespace Engine.Threading;
 /// </summary>
 internal interface IWaiter
 {
-    void Wait(TimeSpan duration, CancellationToken cancellationToken);
+    public void Wait(TimeSpan duration, CancellationToken cancellationToken);
 }

@@ -10,7 +10,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 
 public sealed class LoopStressHarnessTests
 {
@@ -146,7 +146,7 @@ public sealed class LoopStressHarnessTests
         public static LoopStressHarness Create(int poolSize = 64)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
             var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();

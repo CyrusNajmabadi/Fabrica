@@ -11,5 +11,5 @@ namespace Engine.Threading;
 /// </summary>
 internal interface IClock
 {
-    long NowNanoseconds { get; }
+    public long NowNanoseconds { get; }
 }

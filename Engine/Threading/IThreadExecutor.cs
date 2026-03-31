@@ -18,7 +18,7 @@ internal interface IThreadExecutor<TState>
     /// Called by the coordinator on its own thread before each dispatch to clear
     /// per-dispatch accumulation state (e.g. created-nodes list, per-frame buffers).
     /// </summary>
-    void Prepare();
+    public void Prepare();
 
     /// <summary>
     /// Performs the actual work on the worker thread after it wakes from its
@@ -26,5 +26,5 @@ internal interface IThreadExecutor<TState>
     /// coordinator; <paramref name="cancellationToken"/> allows early exit
     /// during engine shutdown.
     /// </summary>
-    void Execute(in TState state, CancellationToken cancellationToken);
+    public void Execute(in TState state, CancellationToken cancellationToken);
 }

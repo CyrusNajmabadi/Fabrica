@@ -7,7 +7,7 @@ using Engine.World;
 namespace Engine.Tests.Helpers;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 
 /// <summary>
 /// Mutable clock state shared between a test and its <see cref="TestRecordingClock"/>.

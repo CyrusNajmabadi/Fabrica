@@ -11,14 +11,14 @@ public sealed class MemorySystemTests
     [Fact]
     public void Constructor_RejectsNonPositivePoolSize()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: -1));
     }
 
     [Fact]
     public void Constructor_AcceptsAnyPositivePoolSize()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 10);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 10);
 
         var node = memory.RentNode();
         var payload = memory.RentPayload();
@@ -32,7 +32,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void RentNode_AlwaysReturnsNonNull()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var first = memory.RentNode();
         var second = memory.RentNode();
@@ -45,7 +45,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void RentPayload_AlwaysReturnsNonNull()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var first = memory.RentPayload();
         var second = memory.RentPayload();
@@ -60,7 +60,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnNode_MakesInstanceAvailableForReuse()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var original = memory.RentNode();
         memory.ReturnNode(original);
@@ -72,7 +72,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnNode_MultipleRoundTrips_AlwaysRecyclesSameInstance()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var node = memory.RentNode();
         for (var i = 0; i < 10; i++)
@@ -88,7 +88,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnPayload_MakesInstanceAvailableForReuse()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var original = memory.RentPayload();
         memory.ReturnPayload(original);
@@ -100,7 +100,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnPayload_CallsResetForPool_BeforeReturningToPool()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var payload = memory.RentPayload();
         memory.ReturnPayload(payload);
@@ -116,7 +116,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnPayload_MultipleRoundTrips_AlwaysRecyclesSameInstance()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var payload = memory.RentPayload();
         for (var i = 0; i < 10; i++)
@@ -132,7 +132,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturningExtraNodes_GrowsPoolBeyondInitialCapacity()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var a = memory.RentNode();
         var b = memory.RentNode();
@@ -155,7 +155,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturningExtraPayloads_GrowsPoolBeyondInitialCapacity()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 1);
 
         var a = memory.RentPayload();
         var b = memory.RentPayload();
@@ -180,7 +180,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void NodeAndPayloadPools_AreIndependent()
     {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 2);
+        var memory = new MemorySystem<WorldImage, WorldImage.Allocator>(initialPoolSize: 2);
 
         var s1 = memory.RentNode();
         var s2 = memory.RentNode();

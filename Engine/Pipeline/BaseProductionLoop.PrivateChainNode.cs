@@ -7,7 +7,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
 #if DEBUG
     private sealed class PrivateChainNode : ChainNode
 #else
-    partial class ChainNode
+    public partial class ChainNode
 #endif
     {
         private ChainNode? _next;

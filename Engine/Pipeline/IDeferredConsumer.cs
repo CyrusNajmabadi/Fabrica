@@ -29,7 +29,7 @@ namespace Engine.Pipeline;
 /// </summary>
 internal interface IDeferredConsumer<in TPayload> : IPinOwner
 {
-    Task<long> ConsumeAsync(TPayload payload, int sequenceNumber, CancellationToken cancellationToken);
+    public Task<long> ConsumeAsync(TPayload payload, int sequenceNumber, CancellationToken cancellationToken);
 }
 
 /// <summary>

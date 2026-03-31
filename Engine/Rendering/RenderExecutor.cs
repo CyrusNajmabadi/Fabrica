@@ -12,7 +12,7 @@ namespace Engine.Rendering;
 /// </summary>
 internal struct RenderExecutor : IThreadExecutor<RenderDispatchState>
 {
-    internal readonly RenderWorkerResources Resources;
+    public readonly RenderWorkerResources Resources;
 
     public RenderExecutor(RenderWorkerResources resources) =>
         Resources = resources;
