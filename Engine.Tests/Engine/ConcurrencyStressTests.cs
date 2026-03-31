@@ -11,7 +11,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
 
 [Trait("Category", "Stress")]
 public sealed class ConcurrencyStressTests
@@ -100,7 +100,7 @@ public sealed class ConcurrencyStressTests
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        var nodePool = new ObjectPool<ChainNode, NodeAllocator>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
@@ -122,7 +122,7 @@ public sealed class ConcurrencyStressTests
         SimulationCoordinator simulator,
         CancellationToken cancellationToken)
     {
-        var nodePool = new ObjectPool<ChainNode, NodeAllocator>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();

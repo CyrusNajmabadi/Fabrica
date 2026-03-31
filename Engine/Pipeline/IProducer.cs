@@ -22,7 +22,7 @@ internal interface IProducer<TPayload>
     /// Create the initial (sequence-0) payload.  Called once at startup on the
     /// production thread before the first tick.
     /// </summary>
-    TPayload Bootstrap(CancellationToken cancellationToken);
+    TPayload CreateInitialPayload(CancellationToken cancellationToken);
 
     /// <summary>
     /// Create the next payload using data from <paramref name="current"/>.

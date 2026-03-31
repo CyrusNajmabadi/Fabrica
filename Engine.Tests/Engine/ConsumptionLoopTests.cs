@@ -9,7 +9,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
 
 public sealed class ConsumptionLoopTests
 {
@@ -434,7 +434,7 @@ public sealed class ConsumptionLoopTests
             where TWaiter : struct, IWaiter
         {
             var pinnedVersions = new PinnedVersions();
-            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var shared = new SharedState<WorldImage>();
             var consumer = new TestRecordingConsumer(consumerState);

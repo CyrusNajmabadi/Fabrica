@@ -16,31 +16,22 @@ namespace Engine.Pipeline;
 /// Generic on all type parameters (all constrained to struct) so the JIT/AOT
 /// devirtualises all calls — zero interface-dispatch overhead in the hot path.
 /// </summary>
-internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
-    : BaseProductionLoop<TPayload>
+internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
+    ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNodeAllocator> nodePool,
+    PinnedVersions pinnedVersions,
+    SharedState<TPayload> shared,
+    TProducer producer,
+    TClock clock,
+    TWaiter waiter)
+    : BaseProductionLoop<TPayload>(nodePool, pinnedVersions)
     where TProducer : struct, IProducer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly SharedState<TPayload> _shared;
-    private TProducer _producer;
-    private readonly TClock _clock;
-    private readonly TWaiter _waiter;
-
-    public ProductionLoop(
-        ObjectPool<ChainNode, NodeAllocator> nodePool,
-        PinnedVersions pinnedVersions,
-        SharedState<TPayload> shared,
-        TProducer producer,
-        TClock clock,
-        TWaiter waiter)
-        : base(nodePool, pinnedVersions)
-    {
-        _shared = shared;
-        _producer = producer;
-        _clock = clock;
-        _waiter = waiter;
-    }
+    private readonly SharedState<TPayload> _shared = shared;
+    private readonly TClock _clock = clock;
+    private readonly TWaiter _waiter = waiter;
+    private TProducer _producer = producer;
 
     protected override void ReleasePayloadResources(TPayload payload) =>
         _producer.ReleaseResources(payload);
@@ -49,7 +40,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        this.Bootstrap();
+        this.Bootstrap(cancellationToken);
 
         var lastTime = _clock.NowNanoseconds;
         long accumulator = 0;
@@ -86,9 +77,9 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
 
     // ── Initialisation ───────────────────────────────────────────────────────
 
-    private void Bootstrap()
+    private void Bootstrap(CancellationToken cancellationToken)
     {
-        var payload = _producer.Bootstrap(CancellationToken.None);
+        var payload = _producer.CreateInitialPayload(cancellationToken);
         var node = this.BootstrapChain(payload, _clock.NowNanoseconds);
         _shared.LatestNode = node;
     }
@@ -106,7 +97,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
 
     private void ApplyPressureDelay(CancellationToken cancellationToken)
     {
-        var gapNanoseconds = (long)(this.CurrentSequence - _shared.ConsumptionEpoch)
+        var gapNanoseconds = (this.CurrentSequence - _shared.ConsumptionEpoch)
                             * SimulationConstants.TickDurationNanoseconds;
 
         while (gapNanoseconds >= SimulationConstants.PressureHardCeilingNanoseconds)
@@ -114,7 +105,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
             _waiter.Wait(
                 new TimeSpan(SimulationConstants.PressureMaxDelayNanoseconds / 100),
                 cancellationToken);
-            gapNanoseconds = (long)(this.CurrentSequence - _shared.ConsumptionEpoch)
+            gapNanoseconds = (this.CurrentSequence - _shared.ConsumptionEpoch)
                            * SimulationConstants.TickDurationNanoseconds;
         }
 
@@ -143,7 +134,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
             _chain = loop.GetChainTestAccessor();
         }
 
-        public void Bootstrap() => _loop.Bootstrap();
+        public void Bootstrap() => _loop.Bootstrap(CancellationToken.None);
 
         public void Tick() => _loop.Tick(CancellationToken.None);
 

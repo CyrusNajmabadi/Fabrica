@@ -24,7 +24,7 @@ internal struct SimulationProducer : IProducer<WorldImage>
         _coordinator = coordinator;
     }
 
-    public WorldImage Bootstrap(CancellationToken cancellationToken) =>
+    public WorldImage CreateInitialPayload(CancellationToken cancellationToken) =>
         _imagePool.Rent();
 
     public WorldImage Produce(WorldImage current, CancellationToken cancellationToken)
