@@ -40,31 +40,18 @@ internal abstract partial class BaseProductionLoop<TPayload>
         public static ChainSegment Chain(ChainNode? start, ChainNode end) =>
             new(start ?? end, end);
 
-        public readonly struct ChainSegment
+        public readonly struct ChainSegment(ChainNode start, ChainNode end)
         {
-            private readonly ChainNode _start;
-            private readonly ChainNode _end;
-
-            public ChainSegment(ChainNode start, ChainNode end)
-            {
-                _start = start;
-                _end = end;
-            }
+            private readonly ChainNode _start = start;
+            private readonly ChainNode _end = end;
 
             public Enumerator GetEnumerator() => new(_start, _end);
 
-            public struct Enumerator
+            public struct Enumerator(ChainNode start, ChainNode end)
             {
-                private readonly ChainNode _end;
-                private ChainNode? _current;
+                private readonly ChainNode _end = end;
+                private ChainNode? _current = start;
                 private bool _started;
-
-                public Enumerator(ChainNode start, ChainNode end)
-                {
-                    _current = start;
-                    _end = end;
-                    _started = false;
-                }
 
                 public readonly ChainNode Current => _current!;
 

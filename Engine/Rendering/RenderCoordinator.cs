@@ -25,16 +25,13 @@ namespace Engine.Rendering;
 ///   Render workers are pinned starting at <c>coreIndexOffset</c> so they
 ///   do not overlap with simulation workers (which pin to cores 0..N-1).
 /// </summary>
-internal sealed partial class RenderCoordinator
+internal sealed partial class RenderCoordinator(int workerCount, int coreIndexOffset = 0)
 {
-    private readonly WorkerGroup<RenderDispatchState, RenderExecutor> _group;
-
-    public RenderCoordinator(int workerCount, int coreIndexOffset = 0) =>
-        _group = new WorkerGroup<RenderDispatchState, RenderExecutor>(
-            workerCount,
-            static i => new RenderExecutor(new RenderWorkerResources()),
-            "RenderWorker",
-            coreIndexOffset);
+    private readonly WorkerGroup<RenderDispatchState, RenderCoordinator.RenderExecutor> _group = new(
+        workerCount,
+        static i => new RenderExecutor(new RenderWorkerResources()),
+        "RenderWorker",
+        coreIndexOffset);
 
     public int WorkerCount => _group.WorkerCount;
 

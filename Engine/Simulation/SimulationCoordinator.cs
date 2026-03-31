@@ -37,15 +37,12 @@ namespace Engine.Simulation;
 ///   containerised environments, or macOS (not supported).  The simulation
 ///   is correct regardless — pinning is purely a cache-affinity optimisation.
 /// </summary>
-internal sealed partial class SimulationCoordinator
+internal sealed partial class SimulationCoordinator(int workerCount)
 {
-    private readonly WorkerGroup<SimulationTickState, SimulationExecutor> _group;
-
-    public SimulationCoordinator(int workerCount) =>
-        _group = new WorkerGroup<SimulationTickState, SimulationExecutor>(
-            workerCount,
-            static i => new SimulationExecutor(new WorkerResources()),
-            "SimWorker");
+    private readonly WorkerGroup<SimulationTickState, SimulationCoordinator.SimulationExecutor> _group = new(
+        workerCount,
+        static i => new SimulationExecutor(new WorkerResources()),
+        "SimWorker");
 
     public int WorkerCount => _group.WorkerCount;
 

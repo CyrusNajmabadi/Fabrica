@@ -136,22 +136,16 @@ namespace Engine.Hosting;
 /// Use the explicit constructor to inject custom loops (e.g. in tests).
 /// For the default simulation configuration, see <see cref="SimulationEngine"/>.
 /// </summary>
-internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>
+internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
+    ProductionLoop<TPayload, TProducer, TClock, TWaiter> productionLoop,
+    ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> consumptionLoop)
     where TProducer : struct, IProducer<TPayload>
     where TConsumer : struct, IConsumer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _productionLoop;
-    private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _consumptionLoop;
-
-    public Host(
-        ProductionLoop<TPayload, TProducer, TClock, TWaiter> productionLoop,
-        ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> consumptionLoop)
-    {
-        _productionLoop = productionLoop;
-        _consumptionLoop = consumptionLoop;
-    }
+    private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _productionLoop = productionLoop;
+    private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _consumptionLoop = consumptionLoop;
 
     /// <summary>
     /// Starts both loops on dedicated threads and blocks until both exit.
