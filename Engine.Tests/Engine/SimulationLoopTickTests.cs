@@ -62,8 +62,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var secondNode = test.Accessor.CurrentNode!;
-        var firstNode = test.Accessor.OldestNode!;
+        var secondNode = test.Accessor.CurrentNode;
+        var firstNode = test.Accessor.OldestNode;
 
         test.Shared.ConsumptionEpoch = 2;
 
@@ -98,7 +98,7 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var currentNode = test.Accessor.CurrentNode!;
+        var currentNode = test.Accessor.CurrentNode;
 
         test.Shared.ConsumptionEpoch = 100;
 

@@ -208,8 +208,8 @@ public sealed class ConsumptionLoopTests
 
         Assert.NotNull(capturedLatest);
         Assert.NotNull(capturedPrevious);
-        Assert.Equal(1, capturedPrevious!.SequenceNumber);
-        Assert.Equal(6, capturedLatest!.SequenceNumber);
+        Assert.Equal(1, capturedPrevious.SequenceNumber);
+        Assert.Equal(6, capturedLatest.SequenceNumber);
 
         var ticks = new List<int>();
         foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest))
@@ -244,7 +244,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.NotNull(capturedLatest);
         var ticks = new List<int>();
-        foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest!))
+        foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest))
             ticks.Add(node.SequenceNumber);
 
         Assert.Equal([0, 1, 2, 3], ticks);
@@ -272,8 +272,8 @@ public sealed class ConsumptionLoopTests
         Assert.NotNull(capturedLatest);
         Assert.NotNull(capturedPrevious);
         Assert.NotSame(capturedPrevious, capturedLatest);
-        Assert.Equal(1, capturedPrevious!.SequenceNumber);
-        Assert.Equal(2, capturedLatest!.SequenceNumber);
+        Assert.Equal(1, capturedPrevious.SequenceNumber);
+        Assert.Equal(2, capturedLatest.SequenceNumber);
     }
 
     [Fact]
