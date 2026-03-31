@@ -11,20 +11,20 @@ public sealed class MemorySystemTests
     [Fact]
     public void Constructor_RejectsNonPositivePoolSize()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem(initialPoolSize: 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem(initialPoolSize: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: -1));
     }
 
     [Fact]
     public void Constructor_AcceptsAnyPositivePoolSize()
     {
-        var memory = new MemorySystem(initialPoolSize: 10);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 10);
 
         var node = memory.RentNode();
-        var image = memory.RentImage();
+        var payload = memory.RentPayload();
 
         Assert.NotNull(node);
-        Assert.NotNull(image);
+        Assert.NotNull(payload);
     }
 
     // ── Rent (pool exhaustion) ───────────────────────────────────────────────
@@ -32,7 +32,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void RentNode_AlwaysReturnsNonNull()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
         var first = memory.RentNode();
         var second = memory.RentNode();
@@ -43,12 +43,12 @@ public sealed class MemorySystemTests
     }
 
     [Fact]
-    public void RentImage_AlwaysReturnsNonNull()
+    public void RentPayload_AlwaysReturnsNonNull()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
-        var first = memory.RentImage();
-        var second = memory.RentImage();
+        var first = memory.RentPayload();
+        var second = memory.RentPayload();
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -60,7 +60,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnNode_MakesInstanceAvailableForReuse()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
         var original = memory.RentNode();
         memory.ReturnNode(original);
@@ -72,7 +72,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturnNode_MultipleRoundTrips_AlwaysRecyclesSameInstance()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
         var node = memory.RentNode();
         for (var i = 0; i < 10; i++)
@@ -83,47 +83,47 @@ public sealed class MemorySystemTests
         }
     }
 
-    // ── ReturnImage ──────────────────────────────────────────────────────────
+    // ── ReturnPayload ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void ReturnImage_MakesInstanceAvailableForReuse()
+    public void ReturnPayload_MakesInstanceAvailableForReuse()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
-        var original = memory.RentImage();
-        memory.ReturnImage(original);
+        var original = memory.RentPayload();
+        memory.ReturnPayload(original);
 
-        var reused = memory.RentImage();
+        var reused = memory.RentPayload();
         Assert.Same(original, reused);
     }
 
     [Fact]
-    public void ReturnImage_CallsResetForPool_BeforeReturningToPool()
+    public void ReturnPayload_CallsResetForPool_BeforeReturningToPool()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
-        var image = memory.RentImage();
-        memory.ReturnImage(image);
+        var payload = memory.RentPayload();
+        memory.ReturnPayload(payload);
 
-        // ResetForPool is currently a no-op, but the fact that ReturnImage
-        // completes without error and the image can be re-rented verifies the
+        // ResetForPool is currently a no-op, but the fact that ReturnPayload
+        // completes without error and the payload can be re-rented verifies the
         // contract.  When WorldImage gains real state, this test should be
         // extended to assert that state is cleared.
-        var reused = memory.RentImage();
-        Assert.Same(image, reused);
+        var reused = memory.RentPayload();
+        Assert.Same(payload, reused);
     }
 
     [Fact]
-    public void ReturnImage_MultipleRoundTrips_AlwaysRecyclesSameInstance()
+    public void ReturnPayload_MultipleRoundTrips_AlwaysRecyclesSameInstance()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
-        var image = memory.RentImage();
+        var payload = memory.RentPayload();
         for (var i = 0; i < 10; i++)
         {
-            memory.ReturnImage(image);
-            var rented = memory.RentImage();
-            Assert.Same(image, rented);
+            memory.ReturnPayload(payload);
+            var rented = memory.RentPayload();
+            Assert.Same(payload, rented);
         }
     }
 
@@ -132,7 +132,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void ReturningExtraNodes_GrowsPoolBeyondInitialCapacity()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
         var a = memory.RentNode();
         var b = memory.RentNode();
@@ -153,21 +153,21 @@ public sealed class MemorySystemTests
     }
 
     [Fact]
-    public void ReturningExtraImages_GrowsPoolBeyondInitialCapacity()
+    public void ReturningExtraPayloads_GrowsPoolBeyondInitialCapacity()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
-        var a = memory.RentImage();
-        var b = memory.RentImage();
-        var c = memory.RentImage();
+        var a = memory.RentPayload();
+        var b = memory.RentPayload();
+        var c = memory.RentPayload();
 
-        memory.ReturnImage(a);
-        memory.ReturnImage(b);
-        memory.ReturnImage(c);
+        memory.ReturnPayload(a);
+        memory.ReturnPayload(b);
+        memory.ReturnPayload(c);
 
-        var r1 = memory.RentImage();
-        var r2 = memory.RentImage();
-        var r3 = memory.RentImage();
+        var r1 = memory.RentPayload();
+        var r2 = memory.RentPayload();
+        var r3 = memory.RentPayload();
 
         var rented = new[] { r1, r2, r3 };
         Assert.Contains(a, rented);
@@ -180,7 +180,7 @@ public sealed class MemorySystemTests
     [Fact]
     public void PinnedVersions_IsAccessibleAndInitiallyEmpty()
     {
-        var memory = new MemorySystem(initialPoolSize: 1);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
 
         Assert.NotNull(memory.PinnedVersions);
         Assert.False(memory.PinnedVersions.IsPinned(0));
@@ -189,18 +189,18 @@ public sealed class MemorySystemTests
     // ── Pool independence ────────────────────────────────────────────────────
 
     [Fact]
-    public void NodeAndImagePools_AreIndependent()
+    public void NodeAndPayloadPools_AreIndependent()
     {
-        var memory = new MemorySystem(initialPoolSize: 2);
+        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 2);
 
         var s1 = memory.RentNode();
         var s2 = memory.RentNode();
 
-        var i1 = memory.RentImage();
-        var i2 = memory.RentImage();
+        var i1 = memory.RentPayload();
+        var i2 = memory.RentPayload();
 
         var s3 = memory.RentNode();
-        var i3 = memory.RentImage();
+        var i3 = memory.RentPayload();
 
         Assert.NotNull(s3);
         Assert.NotNull(i3);

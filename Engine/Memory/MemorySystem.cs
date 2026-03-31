@@ -1,6 +1,4 @@
-using Engine;
 using Engine.Pipeline;
-using Engine.World;
 
 namespace Engine.Memory;
 
@@ -8,7 +6,7 @@ namespace Engine.Memory;
 /// Owns all object pools and the cross-thread pinned-versions set.
 ///
 /// SINGLE-THREAD POOL OWNERSHIP
-///   Both ObjectPool instances (nodes and images) are accessed exclusively
+///   Both ObjectPool instances (nodes and payloads) are accessed exclusively
 ///   from the simulation thread.  This is intentional: the simulation is the sole
 ///   memory manager, which eliminates all locking, atomic operations, and ABA
 ///   hazards from the allocation fast path.
@@ -24,30 +22,37 @@ namespace Engine.Memory;
 ///   only part of the memory system that crosses thread boundaries with mutable
 ///   state.  See PinnedVersions for the full explanation of why concurrent access
 ///   is required there and why the overhead is still negligible.
+///
+/// ALLOCATOR STRATEGY
+///   Both pools use struct-generic allocators (<typeparamref name="TPayloadAllocator"/>
+///   and <see cref="ChainNodeAllocator{TPayload}"/>) so the JIT specialises all
+///   allocation and reset paths, eliminating interface dispatch entirely.
 /// </summary>
-internal sealed class MemorySystem
+internal sealed class MemorySystem<TPayload, TPayloadAllocator>
+    where TPayload : class
+    where TPayloadAllocator : struct, IAllocator<TPayload>
 {
-    private readonly ObjectPool<ChainNode<WorldImage>> _nodePool;
-    private readonly ObjectPool<WorldImage> _imagePool;
+    private readonly ObjectPool<ChainNode<TPayload>, ChainNodeAllocator<TPayload>> _nodePool;
+    private readonly ObjectPool<TPayload, TPayloadAllocator> _payloadPool;
 
     public PinnedVersions PinnedVersions { get; } = new();
 
-    public MemorySystem(int initialPoolSize = SimulationConstants.SnapshotPoolSize)
+    public MemorySystem(int initialPoolSize, TPayloadAllocator payloadAllocator = default)
     {
         if (initialPoolSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
-        _nodePool = new ObjectPool<ChainNode<WorldImage>>(initialPoolSize);
-        _imagePool = new ObjectPool<WorldImage>(initialPoolSize);
+        _nodePool = new ObjectPool<ChainNode<TPayload>, ChainNodeAllocator<TPayload>>(initialPoolSize);
+        _payloadPool = new ObjectPool<TPayload, TPayloadAllocator>(initialPoolSize, payloadAllocator);
     }
 
     // ── Node pool (simulation thread only) ───────────────────────────────────
 
-    public ChainNode<WorldImage> RentNode() => _nodePool.Rent();
-    public void ReturnNode(ChainNode<WorldImage> node) => _nodePool.Return(node);
+    public ChainNode<TPayload> RentNode() => _nodePool.Rent();
+    public void ReturnNode(ChainNode<TPayload> node) => _nodePool.Return(node);
 
-    // ── Image pool (simulation thread only) ──────────────────────────────────
+    // ── Payload pool (simulation thread only) ────────────────────────────────
 
-    public WorldImage RentImage() => _imagePool.Rent();
-    public void ReturnImage(WorldImage image) { image.ResetForPool(); _imagePool.Return(image); }
+    public TPayload RentPayload() => _payloadPool.Rent();
+    public void ReturnPayload(TPayload payload) => _payloadPool.Return(payload);
 }

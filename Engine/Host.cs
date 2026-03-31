@@ -202,8 +202,8 @@ internal static class SimulationEngine
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        var nodePool = new ObjectPool<ChainNode<WorldImage>>(SimulationConstants.SnapshotPoolSize);
-        var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
         var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);

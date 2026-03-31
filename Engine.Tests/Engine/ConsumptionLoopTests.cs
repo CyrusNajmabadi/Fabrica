@@ -431,8 +431,8 @@ public sealed class ConsumptionLoopTests
             where TWaiter : struct, IWaiter
         {
             var pinnedVersions = new PinnedVersions();
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
-            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var shared = new SharedState<WorldImage>();
             var consumer = new TestRecordingConsumer(consumerState);
             var loop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter>(
@@ -458,13 +458,13 @@ public sealed class ConsumptionLoopTests
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        private readonly ObjectPool<ChainNode<WorldImage>> _nodePool;
-        private readonly ObjectPool<WorldImage> _imagePool;
+        private readonly ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>> _nodePool;
+        private readonly ObjectPool<WorldImage, WorldImageAllocator> _imagePool;
 
         internal ConsumptionLoopTestContext(
             PinnedVersions pinnedVersions,
-            ObjectPool<ChainNode<WorldImage>> nodePool,
-            ObjectPool<WorldImage> imagePool,
+            ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>> nodePool,
+            ObjectPool<WorldImage, WorldImageAllocator> imagePool,
             SharedState<WorldImage> shared,
             ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> loop,
             TestConsumerState consumerState,

@@ -148,8 +148,8 @@ public sealed class SimulationLoopRunTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
-            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));

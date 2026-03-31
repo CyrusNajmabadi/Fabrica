@@ -242,8 +242,8 @@ public sealed class BackpressureAdaptationTests
 
         public static BackpressureHarness Create()
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(512);
-            var imagePool = new ObjectPool<WorldImage>(512);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(512);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(512);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();

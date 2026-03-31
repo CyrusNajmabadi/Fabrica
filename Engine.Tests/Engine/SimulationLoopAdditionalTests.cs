@@ -18,8 +18,8 @@ public sealed class SimulationLoopAdditionalTests
     public void Cleanup_QueuesMultiplePinnedStaleSnapshots_AndDrainsThemAfterUnpin()
     {
         var test = SimulationLoopTestContext.Create();
-        object tick0Owner = new();
-        object tick1Owner = new();
+        var tick0Owner = new TestPinOwner();
+        var tick1Owner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick();
@@ -56,8 +56,8 @@ public sealed class SimulationLoopAdditionalTests
     public void Cleanup_KeepsStillPinnedQueuedSnapshots_AndDrainsOnlyReleasedOnes()
     {
         var test = SimulationLoopTestContext.Create();
-        object tick0Owner = new();
-        object tick1Owner = new();
+        var tick0Owner = new TestPinOwner();
+        var tick1Owner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick();
@@ -95,7 +95,7 @@ public sealed class SimulationLoopAdditionalTests
     public void Cleanup_ThrowsWhenTheSamePinnedSnapshotWouldBeQueuedTwice()
     {
         var test = SimulationLoopTestContext.Create();
-        object pinOwner = new();
+        var pinOwner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick();
@@ -276,8 +276,8 @@ public sealed class SimulationLoopAdditionalTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
-            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
@@ -311,4 +311,6 @@ public sealed class SimulationLoopAdditionalTests
 
         public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
+
+    private sealed class TestPinOwner : IPinOwner;
 }

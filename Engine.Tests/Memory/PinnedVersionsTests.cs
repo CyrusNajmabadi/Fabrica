@@ -9,7 +9,7 @@ public sealed class PinnedVersionsTests
     public void Pin_ThenUnpin_TracksMembership()
     {
         var pinned = new PinnedVersions();
-        object owner = new();
+        var owner = new TestPinOwner();
 
         Assert.False(pinned.IsPinned(42));
 
@@ -24,8 +24,8 @@ public sealed class PinnedVersionsTests
     public void DifferentOwners_MustAllUnpinBeforeTickIsReleased()
     {
         var pinned = new PinnedVersions();
-        object firstOwner = new();
-        object secondOwner = new();
+        var firstOwner = new TestPinOwner();
+        var secondOwner = new TestPinOwner();
 
         pinned.Pin(7, firstOwner);
         pinned.Pin(7, secondOwner);
@@ -42,7 +42,7 @@ public sealed class PinnedVersionsTests
     public void Pin_SameOwnerTwice_Throws()
     {
         var pinned = new PinnedVersions();
-        object owner = new();
+        var owner = new TestPinOwner();
 
         pinned.Pin(7, owner);
 
@@ -53,7 +53,7 @@ public sealed class PinnedVersionsTests
     public void Unpin_WithoutMatchingPin_Throws()
     {
         var pinned = new PinnedVersions();
-        object owner = new();
+        var owner = new TestPinOwner();
 
         Assert.Throws<InvalidOperationException>(() => pinned.Unpin(7, owner));
     }
@@ -62,12 +62,14 @@ public sealed class PinnedVersionsTests
     public void Unpin_WithDifferentOwnerThanWasPinned_Throws()
     {
         var pinned = new PinnedVersions();
-        object pinnedOwner = new();
-        object differentOwner = new();
+        var pinnedOwner = new TestPinOwner();
+        var differentOwner = new TestPinOwner();
 
         pinned.Pin(7, pinnedOwner);
 
         Assert.Throws<InvalidOperationException>(() => pinned.Unpin(7, differentOwner));
         Assert.True(pinned.IsPinned(7));
     }
+
+    private sealed class TestPinOwner : IPinOwner;
 }

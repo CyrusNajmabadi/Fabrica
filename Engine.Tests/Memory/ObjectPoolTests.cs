@@ -10,7 +10,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Constructor_PreAllocatesRequestedNumberOfInstances()
     {
-        var pool = new ObjectPool<Dummy>(5);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(5);
 
         Assert.Equal(5, pool.Available);
     }
@@ -18,7 +18,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Constructor_WithCapacityOne_CreatesUsablePool()
     {
-        var pool = new ObjectPool<Dummy>(1);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(1);
 
         Assert.Equal(1, pool.Available);
         Assert.NotNull(pool.Rent());
@@ -30,7 +30,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Rent_ReturnsCachedInstance_WhenPoolHasItems()
     {
-        var pool = new ObjectPool<Dummy>(1);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(1);
 
         var item = pool.Rent();
         Assert.Equal(0, pool.Available);
@@ -44,7 +44,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Rent_AllocatesNewInstance_WhenPoolIsExhausted()
     {
-        var pool = new ObjectPool<Dummy>(2);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(2);
 
         var first = pool.Rent();
         var second = pool.Rent();
@@ -63,7 +63,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Rent_ReturnsLastReturnedFirst_LIFOOrder()
     {
-        var pool = new ObjectPool<Dummy>(0);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(0);
 
         var a = new Dummy();
         var b = new Dummy();
@@ -83,7 +83,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Return_GrowsPoolBeyondInitialCapacity()
     {
-        var pool = new ObjectPool<Dummy>(1);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(1);
 
         var a = pool.Rent();
         Dummy b = new();
@@ -108,7 +108,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Return_SameItemTwice_PoolsItTwice()
     {
-        var pool = new ObjectPool<Dummy>(0);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(0);
 
         var item = new Dummy();
         pool.Return(item);
@@ -127,7 +127,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void RentReturn_SustainedCycle_NeverExhaustsAndReusesInstances()
     {
-        var pool = new ObjectPool<Dummy>(4);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(4);
         var seen = new HashSet<Dummy>(ReferenceEqualityComparer.Instance);
 
         for (var i = 0; i < 100; i++)
@@ -146,7 +146,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Rent_UnderBurstLoad_AllocatesAndRecoversThroughReturns()
     {
-        var pool = new ObjectPool<Dummy>(2);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(2);
         var rented = new List<Dummy>();
 
         for (var i = 0; i < 20; i++)
@@ -172,7 +172,7 @@ public sealed class ObjectPoolTests
     [Fact]
     public void Available_AccuratelyTracksPoolDepth()
     {
-        var pool = new ObjectPool<Dummy>(3);
+        var pool = new ObjectPool<Dummy, DummyAllocator>(3);
         Assert.Equal(3, pool.Available);
 
         pool.Rent();
@@ -189,6 +189,13 @@ public sealed class ObjectPoolTests
 
         pool.Return(new Dummy());
         Assert.Equal(1, pool.Available);
+    }
+
+    private readonly struct DummyAllocator : IAllocator<Dummy>
+    {
+        public Dummy Allocate() => new();
+
+        public void Reset(Dummy item) { }
     }
 
     private sealed class Dummy;

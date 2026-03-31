@@ -62,7 +62,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly ObjectPool<ChainNode<TPayload>> _nodePool;
+    private readonly ObjectPool<ChainNode<TPayload>, ChainNodeAllocator<TPayload>> _nodePool;
     private readonly PinnedVersions _pinnedVersions;
     private readonly SharedState<TPayload> _shared;
     private TProducer _producer;
@@ -76,7 +76,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
     private readonly HashSet<ChainNode<TPayload>> _pinnedQueue = new();
 
     public ProductionLoop(
-        ObjectPool<ChainNode<TPayload>> nodePool,
+        ObjectPool<ChainNode<TPayload>, ChainNodeAllocator<TPayload>> nodePool,
         PinnedVersions pinnedVersions,
         SharedState<TPayload> shared,
         TProducer producer,

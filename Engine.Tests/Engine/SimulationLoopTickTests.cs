@@ -129,7 +129,7 @@ public sealed class SimulationLoopTickTests
     public void Cleanup_DetachesPinnedSnapshotsUntilTheyAreUnpinned()
     {
         var test = SimulationLoopTestContext.Create();
-        object pinOwner = new();
+        var pinOwner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick();
@@ -158,7 +158,7 @@ public sealed class SimulationLoopTickTests
     public void Cleanup_PinnedMiddleSnapshot_DoesNotBlockLaterSnapshotsFromBeingFreed()
     {
         var test = SimulationLoopTestContext.Create();
-        object pinOwner = new();
+        var pinOwner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
         test.Accessor.Tick(); // tick 1
@@ -424,8 +424,8 @@ public sealed class SimulationLoopTickTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
-            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
@@ -462,4 +462,6 @@ public sealed class SimulationLoopTickTests
 
         public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
+
+    private sealed class TestPinOwner : IPinOwner;
 }

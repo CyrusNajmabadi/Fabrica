@@ -75,7 +75,6 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
 
     private readonly IDeferredConsumer<TPayload>[] _deferredConsumers;
     private readonly long[] _initialDelays;
-    private readonly object[] _pinOwners;
     private readonly Task<long>?[] _inFlightTasks;
     private readonly int[] _pinnedSequences;
     private readonly PriorityQueue<int, long> _schedule;
@@ -98,7 +97,6 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
         var count = deferredConsumers.Length;
         _deferredConsumers = new IDeferredConsumer<TPayload>[count];
         _initialDelays = new long[count];
-        _pinOwners = new object[count];
         _inFlightTasks = new Task<long>?[count];
         _pinnedSequences = new int[count];
         _schedule = new PriorityQueue<int, long>(count);
@@ -107,7 +105,6 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
         {
             _deferredConsumers[i] = deferredConsumers[i].Consumer;
             _initialDelays[i] = deferredConsumers[i].InitialDelayNanoseconds;
-            _pinOwners[i] = new object();
         }
     }
 
@@ -170,7 +167,7 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
             if (task is null || !task.IsCompleted)
                 continue;
 
-            _pinnedVersions.Unpin(_pinnedSequences[i], _pinOwners[i]);
+            _pinnedVersions.Unpin(_pinnedSequences[i], _deferredConsumers[i]);
             _inFlightTasks[i] = null;
 
             long nextRunTime;
@@ -204,7 +201,7 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
             }
 
             var seq = _latest!.SequenceNumber;
-            _pinnedVersions.Pin(seq, _pinOwners[consumerIndex]);
+            _pinnedVersions.Pin(seq, _deferredConsumers[consumerIndex]);
             _pinnedSequences[consumerIndex] = seq;
 
             try
@@ -214,7 +211,7 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
             }
             catch
             {
-                _pinnedVersions.Unpin(seq, _pinOwners[consumerIndex]);
+                _pinnedVersions.Unpin(seq, _deferredConsumers[consumerIndex]);
                 _schedule.Enqueue(consumerIndex, 0);
                 throw;
             }
