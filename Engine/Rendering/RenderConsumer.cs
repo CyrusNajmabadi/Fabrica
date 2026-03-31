@@ -11,19 +11,13 @@ namespace Engine.Rendering;
 /// work.  Builds a <see cref="RenderFrame"/> from the generic previous/latest
 /// pair and calls the domain renderer.
 /// </summary>
-internal struct RenderConsumer<TRenderer> : IConsumer<WorldImage>
+internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) : IConsumer<WorldImage>
     where TRenderer : struct, IRenderer
 {
-    private readonly RenderCoordinator _renderCoordinator;
+    private readonly RenderCoordinator _renderCoordinator = new(workerCount);
 #pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
-    private TRenderer _renderer;
+    private TRenderer _renderer = renderer;
 #pragma warning restore IDE0044
-
-    public RenderConsumer(int workerCount, TRenderer renderer)
-    {
-        _renderCoordinator = new RenderCoordinator(workerCount);
-        _renderer = renderer;
-    }
 
     public void Consume(
         BaseProductionLoop<WorldImage>.ChainNode previous,

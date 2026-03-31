@@ -20,11 +20,9 @@ internal sealed class TestClockState
 /// <summary>
 /// Clock backed by a mutable <see cref="TestClockState"/> so tests can control time.
 /// </summary>
-internal readonly struct TestRecordingClock : IClock
+internal readonly struct TestRecordingClock(TestClockState state) : IClock
 {
-    private readonly TestClockState _state;
-
-    public TestRecordingClock(TestClockState state) => _state = state;
+    private readonly TestClockState _state = state;
 
     public long NowNanoseconds => _state.NowNanoseconds;
 }
@@ -57,11 +55,9 @@ internal sealed class TestWaiterState
 /// Waiter that records every call and invokes optional hooks from
 /// <see cref="TestWaiterState"/> before checking cancellation.
 /// </summary>
-internal readonly struct TestRecordingWaiter : IWaiter
+internal readonly struct TestRecordingWaiter(TestWaiterState state) : IWaiter
 {
-    private readonly TestWaiterState _state;
-
-    public TestRecordingWaiter(TestWaiterState state) => _state = state;
+    private readonly TestWaiterState _state = state;
 
     public void Wait(TimeSpan duration, CancellationToken cancellationToken)
     {

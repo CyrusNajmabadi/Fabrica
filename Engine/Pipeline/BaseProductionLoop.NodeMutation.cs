@@ -6,14 +6,12 @@ internal abstract partial class BaseProductionLoop<TPayload>
     /// Private facade that concentrates all <c>#if DEBUG</c> casts in one place.
     /// The rest of the base class calls <c>Mutate(node).Method()</c> — ifdef-free.
     /// </summary>
-    private readonly struct NodeMutation
+    private readonly struct NodeMutation(ChainNode node)
     {
 #if DEBUG
-        private readonly PrivateChainNode _node;
-        public NodeMutation(ChainNode node) => _node = (PrivateChainNode)node;
+        private readonly PrivateChainNode _node = (PrivateChainNode)node;
 #else
-        private readonly ChainNode _node;
-        public NodeMutation(ChainNode node) => _node = node;
+        private readonly ChainNode _node = node;
 #endif
 
         public void InitializeBase(int seq) => _node.InitializeBase(seq);

@@ -272,18 +272,12 @@ public sealed class LoopHarnessExampleTests
                 consumptionLoop);
         }
 
-        public sealed class SimulationLoopController
+        public sealed class SimulationLoopController(
+            LoopHarness owner,
+            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
         {
-            private readonly LoopHarness _owner;
-            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
-
-            public SimulationLoopController(
-                LoopHarness owner,
-                ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
-            {
-                _owner = owner;
-                _accessor = accessor;
-            }
+            private readonly LoopHarness _owner = owner;
+            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
             public ChainNode? CurrentNode => _accessor.CurrentNode;
 
@@ -303,33 +297,26 @@ public sealed class LoopHarnessExampleTests
 
         }
 
-        public sealed class ConsumptionLoopController
+        public sealed class ConsumptionLoopController(
+            ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
         {
-            private readonly ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
-
-            public ConsumptionLoopController(
-                ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor) =>
-                _accessor = accessor;
+            private readonly ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
 
-        public sealed class ClockController
+        public sealed class ClockController(TestClockState state)
         {
-            private readonly TestClockState _state;
-
-            public ClockController(TestClockState state) => _state = state;
+            private readonly TestClockState _state = state;
 
             public long NowNanoseconds => _state.NowNanoseconds;
 
             public void AdvanceBy(long nanoseconds) => _state.NowNanoseconds += nanoseconds;
         }
 
-        public sealed class PinController
+        public sealed class PinController(PinnedVersions pins)
         {
-            private readonly PinnedVersions _pins;
-
-            public PinController(PinnedVersions pins) => _pins = pins;
+            private readonly PinnedVersions _pins = pins;
 
             public void Pin(int tick, IPinOwner owner) => _pins.Pin(tick, owner);
 
@@ -338,11 +325,9 @@ public sealed class LoopHarnessExampleTests
             public bool IsPinned(int tick) => _pins.IsPinned(tick);
         }
 
-        public sealed class DeferredConsumerController
+        public sealed class DeferredConsumerController(TestDeferredConsumerState state)
         {
-            private readonly TestDeferredConsumerState _state;
-
-            public DeferredConsumerController(TestDeferredConsumerState state) => _state = state;
+            private readonly TestDeferredConsumerState _state = state;
 
             public int InFlightCount => _state.InFlightTasks.Count;
 
@@ -358,11 +343,9 @@ public sealed class LoopHarnessExampleTests
             }
         }
 
-        public sealed class RendererController
+        public sealed class RendererController(TestRendererState state)
         {
-            private readonly TestRendererState _state;
-
-            public RendererController(TestRendererState state) => _state = state;
+            private readonly TestRendererState _state = state;
 
             public IReadOnlyList<int> RenderedTicks => _state.RenderedTicks;
 
@@ -378,11 +361,9 @@ public sealed class LoopHarnessExampleTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private sealed class TestDeferredConsumer : IDeferredConsumer<WorldImage>
+    private sealed class TestDeferredConsumer(TestDeferredConsumerState state) : IDeferredConsumer<WorldImage>
     {
-        private readonly TestDeferredConsumerState _state;
-
-        public TestDeferredConsumer(TestDeferredConsumerState state) => _state = state;
+        private readonly TestDeferredConsumerState _state = state;
 
         public long InitialDelayNanoseconds => 0L;
 
@@ -406,11 +387,9 @@ public sealed class LoopHarnessExampleTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingConsumer : IConsumer<WorldImage>
+    private readonly struct TestRecordingConsumer(TestRendererState state) : IConsumer<WorldImage>
     {
-        private readonly TestRendererState _state;
-
-        public TestRecordingConsumer(TestRendererState state) => _state = state;
+        private readonly TestRendererState _state = state;
 
         public void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {

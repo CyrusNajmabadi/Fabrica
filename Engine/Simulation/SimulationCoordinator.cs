@@ -37,15 +37,12 @@ namespace Engine.Simulation;
 ///   containerised environments, or macOS (not supported).  The simulation
 ///   is correct regardless — pinning is purely a cache-affinity optimisation.
 /// </summary>
-internal sealed partial class SimulationCoordinator
+internal sealed partial class SimulationCoordinator(int workerCount)
 {
-    private readonly WorkerGroup<SimulationTickState, SimulationExecutor> _group;
-
-    public SimulationCoordinator(int workerCount) =>
-        _group = new WorkerGroup<SimulationTickState, SimulationExecutor>(
-            workerCount,
-            static i => new SimulationExecutor(new WorkerResources()),
-            "SimWorker");
+    private readonly WorkerGroup<SimulationTickState, SimulationCoordinator.SimulationExecutor> _group = new(
+        workerCount,
+        static i => new SimulationExecutor(new WorkerResources()),
+        "SimWorker");
 
     public int WorkerCount => _group.WorkerCount;
 
@@ -68,7 +65,9 @@ internal sealed partial class SimulationCoordinator
             this.CollectCreatedNodes(ref worker.Executor);
     }
 
+#pragma warning disable IDE0060 // Parameter will be used when ref-counting is implemented
     private void CollectCreatedNodes(ref SimulationExecutor executor)
+#pragma warning restore IDE0060
     {
         // Future: for each node in executor.Resources.CreatedNodes,
         // call node.AddRef() to increment shared subtree reference counts.

@@ -6,11 +6,9 @@ internal abstract partial class BaseProductionLoop<TPayload>
     /// Provides test access to chain internals.  Nested here so it can
     /// reach <c>PrivateChainNode</c> in DEBUG builds.
     /// </summary>
-    public readonly struct ChainTestAccessor
+    public readonly struct ChainTestAccessor(BaseProductionLoop<TPayload> loop)
     {
-        private readonly BaseProductionLoop<TPayload> _loop;
-
-        public ChainTestAccessor(BaseProductionLoop<TPayload> loop) => _loop = loop;
+        private readonly BaseProductionLoop<TPayload> _loop = loop;
 
         public int CurrentSequence => _loop._currentSequence;
         public ChainNode? CurrentNode => _loop._currentNode;

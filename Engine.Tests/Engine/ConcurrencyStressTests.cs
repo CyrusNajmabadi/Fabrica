@@ -201,16 +201,10 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private readonly struct TestInvariantCheckingConsumer : IConsumer<WorldImage>
+    private readonly struct TestInvariantCheckingConsumer(TestStressMetrics metrics, int renderDelayMilliseconds) : IConsumer<WorldImage>
     {
-        private readonly TestStressMetrics _metrics;
-        private readonly int _renderDelayMilliseconds;
-
-        public TestInvariantCheckingConsumer(TestStressMetrics metrics, int renderDelayMilliseconds)
-        {
-            _metrics = metrics;
-            _renderDelayMilliseconds = renderDelayMilliseconds;
-        }
+        private readonly TestStressMetrics _metrics = metrics;
+        private readonly int _renderDelayMilliseconds = renderDelayMilliseconds;
 
         public void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {
@@ -220,11 +214,9 @@ public sealed class ConcurrencyStressTests
         }
     }
 
-    private sealed class TestSlowDeferredSaveConsumer : IDeferredConsumer<WorldImage>
+    private sealed class TestSlowDeferredSaveConsumer(TestSaveMetrics metrics) : IDeferredConsumer<WorldImage>
     {
-        private readonly TestSaveMetrics _metrics;
-
-        public TestSlowDeferredSaveConsumer(TestSaveMetrics metrics) => _metrics = metrics;
+        private readonly TestSaveMetrics _metrics = metrics;
 
         public long InitialDelayNanoseconds => 0L;
 
