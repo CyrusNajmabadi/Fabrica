@@ -5,13 +5,13 @@ namespace Simulation.Engine;
 
 /// <summary>
 /// Adapts the simulation-specific tick logic to the generic
-/// <see cref="IProducer{TNode}"/> interface.
+/// <see cref="IProducer{TPayload}"/> interface.
 ///
 /// Owns the <see cref="ObjectPool{WorldImage}"/> (image allocation is a
 /// producer concern) and delegates parallel tick work to the
 /// <see cref="SimulationCoordinator"/>.
 /// </summary>
-internal struct SimulationProducer : IProducer<WorldSnapshot>
+internal struct SimulationProducer : IProducer<WorldImage>
 {
     private readonly ObjectPool<WorldImage> _imagePool;
     private readonly SimulationCoordinator _coordinator;
@@ -22,20 +22,19 @@ internal struct SimulationProducer : IProducer<WorldSnapshot>
         _coordinator = coordinator;
     }
 
-    public void Bootstrap(WorldSnapshot node, CancellationToken cancellationToken) =>
-        node.Image = _imagePool.Rent();
+    public WorldImage Bootstrap(CancellationToken cancellationToken) =>
+        _imagePool.Rent();
 
-    public void Produce(WorldSnapshot current, WorldSnapshot next, CancellationToken cancellationToken)
+    public WorldImage Produce(WorldImage current, CancellationToken cancellationToken)
     {
         var image = _imagePool.Rent();
-        _coordinator.AdvanceTick(current.Image, image, cancellationToken);
-        next.Image = image;
+        _coordinator.AdvanceTick(current, image, cancellationToken);
+        return image;
     }
 
-    public void ReleaseResources(WorldSnapshot node)
+    public void ReleaseResources(WorldImage payload)
     {
-        var image = node.Image;
-        image.ResetForPool();
-        _imagePool.Return(image);
+        payload.ResetForPool();
+        _imagePool.Return(payload);
     }
 }

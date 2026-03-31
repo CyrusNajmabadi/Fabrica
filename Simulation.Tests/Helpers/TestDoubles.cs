@@ -25,7 +25,7 @@ internal readonly struct TestRecordingClock : IClock
 
 /// <summary>
 /// Clock that always reads zero. Useful for tests that drive time via the
-/// accumulator or <see cref="ProductionLoop{TNode,TProducer,TClock,TWaiter}.TestAccessor.Tick"/>
+/// accumulator or <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}.TestAccessor.Tick"/>
 /// rather than wall-clock deltas.
 /// </summary>
 internal readonly struct TestFakeClock : IClock
@@ -75,24 +75,12 @@ internal readonly struct TestNoOpWaiter : IWaiter
         cancellationToken.ThrowIfCancellationRequested();
 }
 
-internal readonly struct TestNoOpSaveRunner : ISaveRunner<WorldSnapshot>
-{
-    public void RunSave(WorldSnapshot node, int sequenceNumber, Action<WorldSnapshot, int> saveAction) { }
-}
-
-internal readonly struct TestNoOpSaver : ISaver<WorldSnapshot>
-{
-    public void Save(WorldSnapshot node, int sequenceNumber) { }
-}
-
 internal readonly struct TestNoOpRenderer : IRenderer
 {
     public void Render(in RenderFrame frame) { }
 }
 
-internal readonly struct TestNoOpConsumer : IConsumer<WorldSnapshot>
+internal readonly struct TestNoOpConsumer : IConsumer<WorldImage>
 {
-    public void Consume(WorldSnapshot? previous, WorldSnapshot latest, long frameStartNanoseconds, SaveStatus saveStatus, CancellationToken cancellationToken) { }
+    public void Consume(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
 }
-
-internal readonly record struct TestSaveInvocation(WorldSnapshot Node, int SequenceNumber, Action<WorldSnapshot, int> SaveAction);

@@ -103,11 +103,11 @@ public sealed class SimulationLoopRunTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        var snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var node = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
         Assert.Equal(0, test.Accessor.CurrentSequence);
-        Assert.Same(snapshot, test.Accessor.OldestNode);
-        Assert.Same(snapshot, test.Shared.LatestNode);
-        Assert.Equal(0, snapshot.TickNumber);
+        Assert.Same(node, test.Accessor.OldestNode);
+        Assert.Same(node, test.Shared.LatestNode);
+        Assert.Equal(0, node.SequenceNumber);
         Assert.Equal(
             [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
@@ -145,13 +145,13 @@ public sealed class SimulationLoopRunTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
             var imagePool = new ObjectPool<WorldImage>(poolSize);
             var pinnedVersions = new PinnedVersions();
-            var shared = new SharedState<WorldSnapshot>();
+            var shared = new SharedState<WorldImage>();
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
-            var loop = new ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>(
-                snapshotPool, pinnedVersions, shared, producer, clock, waiter);
+            var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
+                nodePool, pinnedVersions, shared, producer, clock, waiter);
             return new ProductionLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
         }
     }
@@ -161,9 +161,9 @@ public sealed class SimulationLoopRunTests
         where TWaiter : struct, IWaiter
     {
         internal ProductionLoopTestContext(
-            SharedState<WorldSnapshot> shared,
+            SharedState<WorldImage> shared,
             TestWaiterState waiterState,
-            ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> loop)
+            ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> loop)
         {
             this.Shared = shared;
             this.WaiterState = waiterState;
@@ -171,12 +171,12 @@ public sealed class SimulationLoopRunTests
             this.Accessor = loop.GetTestAccessor();
         }
 
-        public SharedState<WorldSnapshot> Shared { get; }
+        public SharedState<WorldImage> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 
-        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> Loop { get; }
+        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> Loop { get; }
 
-        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
 }

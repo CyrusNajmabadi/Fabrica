@@ -3,10 +3,14 @@ using System.Diagnostics;
 namespace Simulation.World;
 
 /// <summary>
-/// CRTP base class for nodes in a forward-linked chain managed by a producer/consumer
-/// pipeline.  Encapsulates the chain mechanics shared by all node types: forward
+/// A node in a forward-linked chain managed by a producer/consumer pipeline.
+/// Holds a <typeparamref name="TPayload"/> alongside chain mechanics: forward
 /// pointer, sequence number, publish timestamp, ref-counting, and a bounded
 /// struct iterator.
+///
+/// The producer creates payloads; the loop wraps them in chain nodes.  Only the
+/// production loop creates, links, and frees nodes — the payload is the only
+/// domain-specific concept.
 ///
 /// CHAIN STRUCTURE
 ///   The producer thread builds a singly-linked forward chain, oldest → newest:
@@ -30,9 +34,9 @@ namespace Simulation.World;
 ///   Currently every node has refcount 1 throughout its lifetime.
 ///   All ref-count operations happen on the producer thread — no atomics needed.
 ///
-///   When refcount reaches zero, <see cref="OnReleased"/> is called so derived
-///   types can null out payload references (preventing pooled instances from
-///   keeping domain objects alive).
+///   When refcount reaches zero, the loop is responsible for clearing the
+///   <see cref="Payload"/> (via <see cref="ClearPayload"/>) and releasing
+///   domain resources before returning the node to the pool.
 ///
 /// PINNED EXTRACTION AND ClearNext
 ///   When the producer encounters a pinned node during cleanup, it calls
@@ -40,7 +44,7 @@ namespace Simulation.World;
 ///   it in a pinned queue.  This lets the oldest pointer advance past the pinned
 ///   node so that subsequent nodes can still be freed.
 /// </summary>
-internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
+internal sealed class ChainNode<TPayload>
 {
     /// <summary>
     /// Monotonically increasing sequence number assigned by the producer.
@@ -62,7 +66,14 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     /// </summary>
     public long PublishTimeNanoseconds { get; private set; }
 
-    private TSelf? _next;
+    /// <summary>
+    /// The domain-specific data for this node.  Set by the production loop
+    /// after renting the node from the pool; cleared by the loop before
+    /// returning the node.
+    /// </summary>
+    public TPayload Payload { get; internal set; } = default!;
+
+    private ChainNode<TPayload>? _next;
     private int _refCount;
 
     /// <summary>
@@ -70,7 +81,7 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     /// pinned-queue extraction).  Not for use by consumers — use
     /// <see cref="Chain"/> instead.
     /// </summary>
-    internal TSelf? NextInChain => _next;
+    internal ChainNode<TPayload>? NextInChain => _next;
 
     /// <summary>
     /// Prepares this node for use after being rented from the pool.
@@ -94,7 +105,7 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     internal void MarkPublished(long timeNanoseconds) => this.PublishTimeNanoseconds = timeNanoseconds;
 
     /// <summary>Links the next node in the chain. Called once per node by the producer thread.</summary>
-    internal void SetNext(TSelf next)
+    internal void SetNext(ChainNode<TPayload> next)
     {
         Debug.Assert(_next is null, "SetNext called more than once on the same node");
         _next = next;
@@ -106,6 +117,12 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     /// </summary>
     internal void ClearNext() => _next = null;
 
+    /// <summary>
+    /// Clears the payload reference so pooled nodes do not keep domain objects alive.
+    /// Called by the production loop before returning the node to the pool.
+    /// </summary>
+    internal void ClearPayload() => this.Payload = default!;
+
     internal void AddRef()
     {
         Debug.Assert(_refCount > 0, "AddRef on a zero-refcount (freed) node");
@@ -113,25 +130,16 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     }
 
     /// <summary>
-    /// Decrements the ref count.  When it reaches zero, calls <see cref="OnReleased"/>
-    /// so derived types can null out payload references, then the caller should
-    /// return this node to the pool.
+    /// Decrements the ref count.  When it reaches zero, clears the forward
+    /// pointer.  The caller is responsible for clearing the payload (via
+    /// <see cref="ClearPayload"/>) and returning the node to the pool.
     /// </summary>
     internal void Release()
     {
         Debug.Assert(_refCount > 0, "Release called more times than AddRef");
         if (--_refCount == 0)
-        {
             _next = null;
-            this.OnReleased();
-        }
     }
-
-    /// <summary>
-    /// Called when the ref count reaches zero.  Derived types override this to
-    /// null out payload fields so pooled instances do not keep domain objects alive.
-    /// </summary>
-    protected virtual void OnReleased() { }
 
     internal bool IsUnreferenced => _refCount == 0;
 
@@ -147,7 +155,7 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     /// <paramref name="end"/> — the caller never touches the forward pointer and
     /// cannot accidentally read past the published frontier.
     /// </summary>
-    internal static ChainSegment Chain(TSelf? start, TSelf end) =>
+    internal static ChainSegment Chain(ChainNode<TPayload>? start, ChainNode<TPayload> end) =>
         new(start ?? end, end);
 
     /// <summary>
@@ -156,10 +164,10 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
     /// </summary>
     internal readonly struct ChainSegment
     {
-        private readonly TSelf _start;
-        private readonly TSelf _end;
+        private readonly ChainNode<TPayload> _start;
+        private readonly ChainNode<TPayload> _end;
 
-        internal ChainSegment(TSelf start, TSelf end)
+        internal ChainSegment(ChainNode<TPayload> start, ChainNode<TPayload> end)
         {
             _start = start;
             _end = end;
@@ -169,23 +177,23 @@ internal abstract class ChainNode<TSelf> where TSelf : ChainNode<TSelf>
 
         /// <summary>
         /// Struct enumerator that walks the chain from start to end (inclusive).
-        /// Accesses the private <c>_next</c> field of <see cref="ChainNode{TSelf}"/>
+        /// Accesses the private <c>_next</c> field of <see cref="ChainNode{TPayload}"/>
         /// — safe because this is a nested type of the enclosing generic class.
         /// </summary>
         public struct Enumerator
         {
-            private readonly TSelf _end;
-            private TSelf? _current;
+            private readonly ChainNode<TPayload> _end;
+            private ChainNode<TPayload>? _current;
             private bool _started;
 
-            internal Enumerator(TSelf start, TSelf end)
+            internal Enumerator(ChainNode<TPayload> start, ChainNode<TPayload> end)
             {
                 _current = start;
                 _end = end;
                 _started = false;
             }
 
-            public readonly TSelf Current => _current!;
+            public readonly ChainNode<TPayload> Current => _current!;
 
             public bool MoveNext()
             {

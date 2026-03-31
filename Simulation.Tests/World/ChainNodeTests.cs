@@ -4,31 +4,34 @@ using Xunit;
 namespace Simulation.Tests.World;
 
 /// <summary>
-/// Tests for <see cref="ChainNode{TSelf}"/> base class mechanics, exercised
-/// through <see cref="WorldSnapshot"/> (the only concrete implementation).
+/// Tests for <see cref="ChainNode{TPayload}"/> mechanics, exercised
+/// through <see cref="ChainNode{WorldImage}"/>.
 /// </summary>
 public sealed class ChainNodeTests
 {
     [Fact]
     public void InitializeBase_SetsSequenceNumberAndClearsChainState()
     {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), tickNumber: 7);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(7);
+        node.Payload = new WorldImage();
 
-        Assert.Equal(7, snapshot.SequenceNumber);
-        Assert.Equal(0, snapshot.PublishTimeNanoseconds);
-        Assert.Null(snapshot.NextInChain);
-        Assert.False(snapshot.IsUnreferenced);
+        Assert.Equal(7, node.SequenceNumber);
+        Assert.Equal(0, node.PublishTimeNanoseconds);
+        Assert.Null(node.NextInChain);
+        Assert.False(node.IsUnreferenced);
     }
 
     [Fact]
     public void SetNext_LinksNodes()
     {
-        var first = new WorldSnapshot();
-        var second = new WorldSnapshot();
+        var first = new ChainNode<WorldImage>();
+        var second = new ChainNode<WorldImage>();
 
-        first.Initialize(new WorldImage(), 0);
-        second.Initialize(new WorldImage(), 1);
+        first.InitializeBase(0);
+        first.Payload = new WorldImage();
+        second.InitializeBase(1);
+        second.Payload = new WorldImage();
 
         first.SetNext(second);
 
@@ -38,11 +41,13 @@ public sealed class ChainNodeTests
     [Fact]
     public void ClearNext_RemovesLink()
     {
-        var first = new WorldSnapshot();
-        var second = new WorldSnapshot();
+        var first = new ChainNode<WorldImage>();
+        var second = new ChainNode<WorldImage>();
 
-        first.Initialize(new WorldImage(), 0);
-        second.Initialize(new WorldImage(), 1);
+        first.InitializeBase(0);
+        first.Payload = new WorldImage();
+        second.InitializeBase(1);
+        second.Payload = new WorldImage();
         first.SetNext(second);
 
         first.ClearNext();
@@ -53,78 +58,98 @@ public sealed class ChainNodeTests
     [Fact]
     public void MarkPublished_SetsPublishTime()
     {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), 0);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(0);
+        node.Payload = new WorldImage();
 
-        snapshot.MarkPublished(42_000_000);
+        node.MarkPublished(42_000_000);
 
-        Assert.Equal(42_000_000, snapshot.PublishTimeNanoseconds);
+        Assert.Equal(42_000_000, node.PublishTimeNanoseconds);
     }
 
     [Fact]
     public void Initialize_ClearsPublishTime()
     {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), 0);
-        snapshot.MarkPublished(999);
-        snapshot.Release();
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(0);
+        node.Payload = new WorldImage();
+        node.MarkPublished(999);
+        node.ClearPayload();
+        node.Release();
 
-        snapshot.Initialize(new WorldImage(), 1);
+        node.InitializeBase(1);
 
-        Assert.Equal(0, snapshot.PublishTimeNanoseconds);
+        Assert.Equal(0, node.PublishTimeNanoseconds);
     }
 
     [Fact]
     public void AddRef_PreventsReleaseFromReachingZero()
     {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), 5);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(5);
+        node.Payload = new WorldImage();
 
-        snapshot.AddRef();
-        snapshot.Release();
+        node.AddRef();
+        node.Release();
 
-        Assert.False(snapshot.IsUnreferenced);
+        Assert.False(node.IsUnreferenced);
     }
 
     [Fact]
     public void AddRef_ThenFullRelease_ReachesZero()
     {
-        var snapshot = new WorldSnapshot();
-        snapshot.Initialize(new WorldImage(), 5);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(5);
+        node.Payload = new WorldImage();
 
-        snapshot.AddRef();
-        snapshot.Release();
-        snapshot.Release();
+        node.AddRef();
+        node.Release();
+        node.Release();
 
-        Assert.True(snapshot.IsUnreferenced);
+        Assert.True(node.IsUnreferenced);
     }
 
     [Fact]
     public void Release_ToZero_ClearsNextPointer()
     {
-        var snapshot = new WorldSnapshot();
-        var next = new WorldSnapshot();
+        var node = new ChainNode<WorldImage>();
+        var next = new ChainNode<WorldImage>();
 
-        snapshot.Initialize(new WorldImage(), 10);
-        next.Initialize(new WorldImage(), 11);
-        snapshot.SetNext(next);
+        node.InitializeBase(10);
+        node.Payload = new WorldImage();
+        next.InitializeBase(11);
+        next.Payload = new WorldImage();
+        node.SetNext(next);
 
-        snapshot.Release();
+        node.Release();
 
-        Assert.True(snapshot.IsUnreferenced);
-        Assert.Null(snapshot.NextInChain);
+        Assert.True(node.IsUnreferenced);
+        Assert.Null(node.NextInChain);
     }
 
-    // ── Chain iterator ──────────────────────────────────────────────────
+    [Fact]
+    public void ClearPayload_NullsPayload()
+    {
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(5);
+        node.Payload = new WorldImage();
+
+        node.ClearPayload();
+
+        Assert.Null(node.Payload);
+    }
+
+    // ── Chain iterator ──────────────────────────────────────────────
 
     [Fact]
     public void Chain_SingleNode_YieldsOneElement()
     {
-        var node = new WorldSnapshot();
-        node.Initialize(new WorldImage(), 0);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(0);
+        node.Payload = new WorldImage();
 
         var ticks = new List<int>();
-        foreach (var n in ChainNode<WorldSnapshot>.Chain(null, node))
+        foreach (var n in ChainNode<WorldImage>.Chain(null, node))
             ticks.Add(n.SequenceNumber);
 
         Assert.Equal([0], ticks);
@@ -133,18 +158,21 @@ public sealed class ChainNodeTests
     [Fact]
     public void Chain_MultipleNodes_YieldsAllInOrder()
     {
-        var a = new WorldSnapshot();
-        var b = new WorldSnapshot();
-        var c = new WorldSnapshot();
+        var a = new ChainNode<WorldImage>();
+        var b = new ChainNode<WorldImage>();
+        var c = new ChainNode<WorldImage>();
 
-        a.Initialize(new WorldImage(), 1);
-        b.Initialize(new WorldImage(), 2);
-        c.Initialize(new WorldImage(), 3);
+        a.InitializeBase(1);
+        a.Payload = new WorldImage();
+        b.InitializeBase(2);
+        b.Payload = new WorldImage();
+        c.InitializeBase(3);
+        c.Payload = new WorldImage();
         a.SetNext(b);
         b.SetNext(c);
 
         var ticks = new List<int>();
-        foreach (var n in ChainNode<WorldSnapshot>.Chain(a, c))
+        foreach (var n in ChainNode<WorldImage>.Chain(a, c))
             ticks.Add(n.SequenceNumber);
 
         Assert.Equal([1, 2, 3], ticks);
@@ -153,18 +181,21 @@ public sealed class ChainNodeTests
     [Fact]
     public void Chain_StopsAtEnd_DoesNotReadBeyond()
     {
-        var a = new WorldSnapshot();
-        var b = new WorldSnapshot();
-        var c = new WorldSnapshot();
+        var a = new ChainNode<WorldImage>();
+        var b = new ChainNode<WorldImage>();
+        var c = new ChainNode<WorldImage>();
 
-        a.Initialize(new WorldImage(), 1);
-        b.Initialize(new WorldImage(), 2);
-        c.Initialize(new WorldImage(), 3);
+        a.InitializeBase(1);
+        a.Payload = new WorldImage();
+        b.InitializeBase(2);
+        b.Payload = new WorldImage();
+        c.InitializeBase(3);
+        c.Payload = new WorldImage();
         a.SetNext(b);
         b.SetNext(c);
 
         var ticks = new List<int>();
-        foreach (var n in ChainNode<WorldSnapshot>.Chain(a, b))
+        foreach (var n in ChainNode<WorldImage>.Chain(a, b))
             ticks.Add(n.SequenceNumber);
 
         Assert.Equal([1, 2], ticks);
@@ -173,11 +204,12 @@ public sealed class ChainNodeTests
     [Fact]
     public void Chain_NullStart_YieldsOnlyEnd()
     {
-        var node = new WorldSnapshot();
-        node.Initialize(new WorldImage(), 5);
+        var node = new ChainNode<WorldImage>();
+        node.InitializeBase(5);
+        node.Payload = new WorldImage();
 
         var ticks = new List<int>();
-        foreach (var n in ChainNode<WorldSnapshot>.Chain(null, node))
+        foreach (var n in ChainNode<WorldImage>.Chain(null, node))
             ticks.Add(n.SequenceNumber);
 
         Assert.Equal([5], ticks);

@@ -46,8 +46,8 @@ namespace Simulation.Engine;
 /// </summary>
 internal readonly struct RenderFrame
 {
-    public required WorldSnapshot? Previous { get; init; }
-    public required WorldSnapshot Latest { get; init; }
+    public required ChainNode<WorldImage>? Previous { get; init; }
+    public required ChainNode<WorldImage> Latest { get; init; }
     public required InterpolationClock Interpolation { get; init; }
     public required EngineStatus EngineStatus { get; init; }
 
@@ -57,7 +57,7 @@ internal readonly struct RenderFrame
     /// through <see cref="Latest"/> inclusive.  Safely bounded — never reads
     /// past the published frontier.
     /// </summary>
-    public ChainNode<WorldSnapshot>.ChainSegment Chain => ChainNode<WorldSnapshot>.Chain(this.Previous, this.Latest);
+    public ChainNode<WorldImage>.ChainSegment Chain => ChainNode<WorldImage>.Chain(this.Previous, this.Latest);
 }
 
 /// <summary>

@@ -21,13 +21,13 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Bootstrap();
 
-        var snapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var node = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
 
         Assert.Equal(0, test.Accessor.CurrentSequence);
-        Assert.Same(snapshot, test.Accessor.OldestNode);
-        Assert.Same(snapshot, test.Shared.LatestNode);
-        Assert.Equal(0, snapshot.TickNumber);
-        Assert.Null(snapshot.NextInChain);
+        Assert.Same(node, test.Accessor.OldestNode);
+        Assert.Same(node, test.Shared.LatestNode);
+        Assert.Equal(0, node.SequenceNumber);
+        Assert.Null(node.NextInChain);
     }
 
     [Fact]
@@ -36,14 +36,14 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var initial = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var initial = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
 
         test.Accessor.Tick();
 
         Assert.Equal(1, test.Accessor.CurrentSequence);
         Assert.NotSame(initial, test.Accessor.CurrentNode);
         Assert.Same(test.Accessor.CurrentNode, test.Shared.LatestNode);
-        Assert.Equal(1, test.Accessor.CurrentNode!.TickNumber);
+        Assert.Equal(1, test.Accessor.CurrentNode!.SequenceNumber);
         Assert.Same(test.Accessor.CurrentNode, initial.NextInChain);
     }
 
@@ -56,15 +56,15 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var secondSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
-        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
+        var secondNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var firstNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
 
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.CleanupStaleNodes();
 
-        Assert.NotSame(firstSnapshot, test.Accessor.OldestNode);
-        Assert.Same(secondSnapshot, test.Accessor.CurrentNode);
+        Assert.NotSame(firstNode, test.Accessor.OldestNode);
+        Assert.Same(secondNode, test.Accessor.CurrentNode);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -77,13 +77,13 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
+        var firstNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
 
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.CleanupStaleNodes();
 
-        Assert.True(firstSnapshot.IsUnreferenced);
+        Assert.True(firstNode.IsUnreferenced);
     }
 
     [Fact]
@@ -92,15 +92,15 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var currentSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var currentNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
 
         test.Shared.ConsumptionEpoch = 100;
 
         test.Accessor.CleanupStaleNodes();
 
-        Assert.Same(currentSnapshot, test.Accessor.CurrentNode);
-        Assert.Same(currentSnapshot, test.Accessor.OldestNode);
-        Assert.Same(currentSnapshot, test.Shared.LatestNode);
+        Assert.Same(currentNode, test.Accessor.CurrentNode);
+        Assert.Same(currentNode, test.Accessor.OldestNode);
+        Assert.Same(currentNode, test.Shared.LatestNode);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -117,8 +117,8 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.CleanupStaleNodes();
 
-        Assert.Equal(1, Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode).TickNumber);
-        Assert.Equal(2, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode).TickNumber);
+        Assert.Equal(1, Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode).SequenceNumber);
+        Assert.Equal(2, Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode).SequenceNumber);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -132,19 +132,19 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
-        var latestSnapshot = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var firstNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
+        var latestNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
 
-        test.PinnedVersions.Pin(firstSnapshot.TickNumber, pinOwner);
+        test.PinnedVersions.Pin(firstNode.SequenceNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
 
         test.Accessor.CleanupStaleNodes();
 
-        Assert.NotSame(firstSnapshot, test.Accessor.OldestNode);
-        Assert.Same(latestSnapshot, test.Accessor.CurrentNode);
+        Assert.NotSame(firstNode, test.Accessor.OldestNode);
+        Assert.Same(latestNode, test.Accessor.CurrentNode);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
 
-        test.PinnedVersions.Unpin(firstSnapshot.TickNumber, pinOwner);
+        test.PinnedVersions.Unpin(firstNode.SequenceNumber, pinOwner);
 
         test.Accessor.CleanupStaleNodes();
 
@@ -162,12 +162,12 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(); // tick 2
         test.Accessor.Tick(); // tick 3
 
-        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
-        var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
-        var tick2 = Assert.IsType<WorldSnapshot>(tick1.NextInChain);
-        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
+        var tick0 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
+        var tick1 = Assert.IsType<ChainNode<WorldImage>>(tick0.NextInChain);
+        var tick2 = Assert.IsType<ChainNode<WorldImage>>(tick1.NextInChain);
+        var tick3 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
 
-        test.PinnedVersions.Pin(tick1.TickNumber, pinOwner);
+        test.PinnedVersions.Pin(tick1.SequenceNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 3;
 
         test.Accessor.CleanupStaleNodes();
@@ -176,10 +176,10 @@ public sealed class SimulationLoopTickTests
         Assert.Same(tick3, test.Accessor.OldestNode);
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
         Assert.Null(tick1.NextInChain);
-        Assert.Equal(1, tick1.TickNumber);
-        Assert.Equal(3, tick3.TickNumber);
+        Assert.Equal(1, tick1.SequenceNumber);
+        Assert.Equal(3, tick3.SequenceNumber);
 
-        test.PinnedVersions.Unpin(tick1.TickNumber, pinOwner);
+        test.PinnedVersions.Unpin(tick1.SequenceNumber, pinOwner);
         test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
@@ -421,13 +421,13 @@ public sealed class SimulationLoopTickTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var nodePool = new ObjectPool<ChainNode<WorldImage>>(poolSize);
             var imagePool = new ObjectPool<WorldImage>(poolSize);
             var pinnedVersions = new PinnedVersions();
-            var shared = new SharedState<WorldSnapshot>();
+            var shared = new SharedState<WorldImage>();
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
-            var loop = new ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>(
-                snapshotPool, pinnedVersions, shared, producer, clock, waiter);
+            var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
+                nodePool, pinnedVersions, shared, producer, clock, waiter);
             return new SimulationLoopTestContext<TClock, TWaiter>(pinnedVersions, shared, waiterState, loop);
         }
     }
@@ -438,9 +438,9 @@ public sealed class SimulationLoopTickTests
     {
         internal SimulationLoopTestContext(
             PinnedVersions pinnedVersions,
-            SharedState<WorldSnapshot> shared,
+            SharedState<WorldImage> shared,
             TestWaiterState waiterState,
-            ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> loop)
+            ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> loop)
         {
             this.PinnedVersions = pinnedVersions;
             this.Shared = shared;
@@ -451,12 +451,12 @@ public sealed class SimulationLoopTickTests
 
         public PinnedVersions PinnedVersions { get; }
 
-        public SharedState<WorldSnapshot> Shared { get; }
+        public SharedState<WorldImage> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 
-        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> Loop { get; }
+        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> Loop { get; }
 
-        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
 }

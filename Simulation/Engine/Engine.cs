@@ -14,7 +14,7 @@ namespace Simulation.Engine;
 ///  Bootstrap() → allocates sequence-0 node and publishes it
 ///  Tick loop:
 ///    • Delegate payload production to TProducer
-///    • Append new TNode onto the forward chain:
+///    • Append new ChainNode onto the forward chain:
 ///        [seq 0] → [seq 1] → [seq 2] → … → [seq N]
 ///         _oldest                            _current / LatestNode
 ///    • Volatile-write LatestNode = [seq N]  (release fence)
@@ -22,27 +22,27 @@ namespace Simulation.Engine;
 ///      node whose sequence &lt; ConsumptionEpoch and is not pinned
 ///    • ApplyPressureDelay(): slow down if running too far ahead
 ///
-///  CONSUMPTION THREAD  (consumer / save coordinator)               ≈60 fps
+///  CONSUMPTION THREAD  (consumer / deferred consumer coordinator)   ≈60 fps
 ///  ──────────────────────────────────────────────────────────────────────────
 ///  Frame loop:
+///    • DrainCompletedDeferredTasks(): unpin nodes from finished async work
 ///    • Volatile-read LatestNode                     (acquire fence)
-///    • MaybeStartSave(): if a save is due, pin the node and hand it
-///      off to the save task before advancing the epoch
+///    • MaybeRunDeferredConsumers(): check min-heap, dispatch due consumers
 ///    • Consume(previous, latest): always called, even if node unchanged
 ///    • Volatile-write ConsumptionEpoch = sequence   (release fence)
 ///    • ThrottleToFrameRate()
 ///
-///  SAVE TASK  (threadpool — spawned by consumption thread)
+///  DEFERRED CONSUMERS  (threadpool — dispatched by consumption thread)
 ///  ──────────────────────────────────────────────────────────────────────────
-///    • Saver.Save(node, sequence)
-///    • PinnedVersions.Unpin(sequence)  ← releases the production hold
-///    • NextSaveAtTick = sequence + SaveIntervalTicks
+///    • Consumer.ConsumeAsync(payload, sequence, ct)
+///    • Returns Task&lt;long&gt; with next-run wall-clock nanoseconds
+///    • Loop auto-pins before dispatch, auto-unpins on completion
 ///
 /// ══════════════════════════════ SHARED STATE ════════════════════════════════
 ///
-///  Exactly three volatile fields cross the thread boundary:
+///  Exactly two volatile fields cross the thread boundary:
 ///
-///  SharedState.LatestNode        (volatile TNode?)
+///  SharedState.LatestNode        (volatile ChainNode&lt;TPayload&gt;?)
 ///    Written by production only; read by consumption.
 ///    The volatile release/acquire pair guarantees that all payload writes
 ///    made before the publish are visible to any thread that reads the node.
@@ -54,12 +54,6 @@ namespace Simulation.Engine;
 ///    reads a stale (lower) epoch it retains a node one extra cleanup pass —
 ///    it never frees something the consumption thread is still touching.
 ///
-///  SharedState.NextSaveAtTick   (volatile int)
-///    Written by consumption (sets to 0) AND the save task (sets next interval).
-///    The two writes do not conflict because consumption only writes 0 while
-///    the field is non-zero, and the save task writes non-zero later from
-///    a different execution context.
-///
 /// ═══════════════════════ WHY NO LOCKS IN THE HOT PATH ══════════════════════
 ///
 ///  Each field above has at most one writer thread in the hot path.
@@ -67,10 +61,10 @@ namespace Simulation.Engine;
 ///  The epoch is conservative, so races can only make the system hold memory
 ///  slightly longer — they can never corrupt state or free a live object.
 ///
-///  The sole exception is PinnedVersions (node pinning for saves), which
-///  uses ConcurrentDictionary because Unpin arrives from a threadpool save
-///  task.  Pinning only happens at save boundaries (≈every 5 minutes of game
-///  time), so it is not on the hot path.  See PinnedVersions for details.
+///  The sole exception is PinnedVersions (node pinning for deferred consumers),
+///  which uses ConcurrentDictionary because Unpin arrives from a threadpool task.
+///  Pinning only happens at deferred-consumer boundaries (infrequent), so it is
+///  not on the hot path.  See PinnedVersions for details.
 ///
 /// ═══════════════════════ PARALLELISM OPPORTUNITIES ═════════════════════════
 ///
@@ -134,22 +128,19 @@ namespace Simulation.Engine;
 /// Use the explicit constructor to inject custom loops (e.g. in tests).
 /// For the default simulation configuration, see <see cref="SimulationEngine"/>.
 /// </summary>
-internal sealed class Engine<TNode, TProducer, TConsumer, TSaveRunner, TSaver, TClock, TWaiter>
-    where TNode : ChainNode<TNode>, new()
-    where TProducer : struct, IProducer<TNode>
-    where TConsumer : struct, IConsumer<TNode>
-    where TSaveRunner : struct, ISaveRunner<TNode>
-    where TSaver : struct, ISaver<TNode>
+internal sealed class Engine<TPayload, TProducer, TConsumer, TClock, TWaiter>
+    where TProducer : struct, IProducer<TPayload>
+    where TConsumer : struct, IConsumer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly ProductionLoop<TNode, TProducer, TClock, TWaiter> _productionLoop;
-    private readonly ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> _consumptionLoop;
+    private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _productionLoop;
+    private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _consumptionLoop;
     private readonly IDisposable[] _disposables;
 
     public Engine(
-        ProductionLoop<TNode, TProducer, TClock, TWaiter> productionLoop,
-        ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> consumptionLoop,
+        ProductionLoop<TPayload, TProducer, TClock, TWaiter> productionLoop,
+        ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> consumptionLoop,
         params IDisposable[] disposables)
     {
         _productionLoop = productionLoop;
@@ -195,34 +186,33 @@ internal sealed class Engine<TNode, TProducer, TConsumer, TSaveRunner, TSaver, T
 /// </summary>
 internal static class SimulationEngine
 {
-    public static Engine<WorldSnapshot, SimulationProducer, SimulationConsumer<TRenderer>, TaskSaveRunner, TSaver, TClock, TWaiter>
-        Create<TRenderer, TSaver, TClock, TWaiter>(
+    public static Engine<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>
+        Create<TRenderer, TClock, TWaiter>(
             TClock clock,
             TWaiter waiter,
-            TSaver saver,
             TRenderer renderer,
             int simulationWorkerCount,
-            int renderWorkerCount)
+            int renderWorkerCount,
+            params DeferredConsumerRegistration<WorldImage>[] deferredConsumers)
         where TRenderer : struct, IRenderer
-        where TSaver : struct, ISaver<WorldSnapshot>
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        var nodePool = new ObjectPool<WorldSnapshot>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode<WorldImage>>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
-        var shared = new SharedState<WorldSnapshot>();
+        var shared = new SharedState<WorldImage>();
         var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
         var renderCoordinator = new RenderCoordinator(renderWorkerCount);
 
         var producer = new SimulationProducer(imagePool, simulationCoordinator);
-        var consumer = new SimulationConsumer<TRenderer>(renderCoordinator, renderer);
+        var consumer = new RenderConsumer<TRenderer>(renderCoordinator, renderer);
 
-        return new Engine<WorldSnapshot, SimulationProducer, SimulationConsumer<TRenderer>, TaskSaveRunner, TSaver, TClock, TWaiter>(
-            new ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>(
+        return new Engine<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>(
+            new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
                 nodePool, pinnedVersions, shared, producer, clock, waiter),
-            new ConsumptionLoop<WorldSnapshot, SimulationConsumer<TRenderer>, TaskSaveRunner, TSaver, TClock, TWaiter>(
-                pinnedVersions, shared, consumer, clock, waiter, new TaskSaveRunner(), saver),
+            new ConsumptionLoop<WorldImage, RenderConsumer<TRenderer>, TClock, TWaiter>(
+                pinnedVersions, shared, consumer, clock, waiter, deferredConsumers),
             simulationCoordinator,
             renderCoordinator);
     }

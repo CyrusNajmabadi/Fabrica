@@ -6,7 +6,7 @@ namespace Simulation.World;
 /// OWNERSHIP AND THREAD VISIBILITY
 ///   WorldImage instances are owned by the simulation thread via the image pool.
 ///   The simulation writes all fields, then volatile-writes the containing
-///   WorldSnapshot to SharedState.LatestSnapshot (a release fence).
+///   ChainNode to SharedState.LatestNode (a release fence).
 ///   The consumption thread volatile-reads LatestSnapshot (an acquire fence) and
 ///   then reads image fields — the release/acquire pair guarantees all simulation
 ///   writes are visible without any further synchronisation.
