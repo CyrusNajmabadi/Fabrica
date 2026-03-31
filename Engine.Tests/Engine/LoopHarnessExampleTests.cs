@@ -255,7 +255,7 @@ public sealed class LoopHarnessExampleTests
             var rendererState = new TestRendererState();
             var clock = new TestRecordingClock(clockState);
             var waiter = new TestNoOpWaiter();
-            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var producer = new SimulationProducer(imagePool, 1);
             var consumer = new TestRecordingConsumer(rendererState);
 
             var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>(

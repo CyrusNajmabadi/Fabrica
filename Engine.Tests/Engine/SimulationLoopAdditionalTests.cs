@@ -294,7 +294,7 @@ public sealed class SimulationLoopAdditionalTests
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
             var shared = new SharedPipelineState<WorldImage>();
-            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var producer = new SimulationProducer(imagePool, 1);
             var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
                 nodePool, shared, producer, clock, waiter);
             return new SimulationLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);

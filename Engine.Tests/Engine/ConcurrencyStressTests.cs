@@ -19,9 +19,8 @@ public sealed class ConcurrencyStressTests
     {
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
-        RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 0);
+        RunEngine(metrics, Math.Max(1, Environment.ProcessorCount - 1), cancellationSource.Token, renderDelayMilliseconds: 0);
 
         Assert.True(metrics.FramesRendered > 0, "Expected at least one frame to be rendered.");
         Assert.True(metrics.MaxTickObserved > 0, "Expected simulation to advance past tick 0.");
@@ -33,9 +32,8 @@ public sealed class ConcurrencyStressTests
     {
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
-        RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 50);
+        RunEngine(metrics, Math.Max(1, Environment.ProcessorCount - 1), cancellationSource.Token, renderDelayMilliseconds: 50);
 
         Assert.True(metrics.FramesRendered > 0, "Expected at least one frame to be rendered.");
         Assert.True(metrics.MaxTickObserved > 0, "Expected simulation to advance past tick 0.");
@@ -47,10 +45,9 @@ public sealed class ConcurrencyStressTests
     {
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
         var stopwatch = Stopwatch.StartNew();
-        RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 0);
+        RunEngine(metrics, Math.Max(1, Environment.ProcessorCount - 1), cancellationSource.Token, renderDelayMilliseconds: 0);
         stopwatch.Stop();
 
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10),
@@ -64,9 +61,8 @@ public sealed class ConcurrencyStressTests
         var workerCount = Math.Max(4, Environment.ProcessorCount);
         var metrics = new TestStressMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var simulator = new SimulationCoordinator(workerCount);
 
-        RunEngine(metrics, simulator, cancellationSource.Token, renderDelayMilliseconds: 0);
+        RunEngine(metrics, workerCount, cancellationSource.Token, renderDelayMilliseconds: 0);
 
         Assert.True(metrics.MaxTickObserved > 100,
             $"Expected many ticks with {workerCount} workers, but only observed {metrics.MaxTickObserved}.");
@@ -79,9 +75,8 @@ public sealed class ConcurrencyStressTests
         var metrics = new TestStressMetrics();
         var saveMetrics = new TestSaveMetrics();
         using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var simulator = new SimulationCoordinator(Math.Max(1, Environment.ProcessorCount - 1));
 
-        RunEngineWithDeferredSave(metrics, saveMetrics, simulator, cancellationSource.Token);
+        RunEngineWithDeferredSave(metrics, saveMetrics, Math.Max(1, Environment.ProcessorCount - 1), cancellationSource.Token);
 
         Assert.True(metrics.FramesRendered > 0, "Expected at least one frame to be rendered.");
         Assert.True(saveMetrics.SavesCompleted > 0,
@@ -94,14 +89,14 @@ public sealed class ConcurrencyStressTests
 
     private static void RunEngine(
         TestStressMetrics metrics,
-        SimulationCoordinator simulator,
+        int workerCount,
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>();
-        var producer = new SimulationProducer(imagePool, simulator);
+        var producer = new SimulationProducer(imagePool, workerCount);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new TestStressClock();
 
@@ -110,19 +105,19 @@ public sealed class ConcurrencyStressTests
         var consumptionLoop = new ConsumptionLoop<WorldImage, TestInvariantCheckingConsumer, TestStressClock, ThreadWaiter>(
             shared, consumer, clock, new ThreadWaiter(), []);
 
-        RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
+        RunBothLoops(productionLoop, consumptionLoop, cancellationToken, metrics);
     }
 
     private static void RunEngineWithDeferredSave(
         TestStressMetrics metrics,
         TestSaveMetrics saveMetrics,
-        SimulationCoordinator simulator,
+        int workerCount,
         CancellationToken cancellationToken)
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>();
-        var producer = new SimulationProducer(imagePool, simulator);
+        var producer = new SimulationProducer(imagePool, workerCount);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new TestStressClock();
 
@@ -134,13 +129,12 @@ public sealed class ConcurrencyStressTests
         var consumptionLoop = new ConsumptionLoop<WorldImage, TestInvariantCheckingConsumer, TestStressClock, ThreadWaiter>(
             shared, consumer, clock, new ThreadWaiter(), deferredConsumers);
 
-        RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
+        RunBothLoops(productionLoop, consumptionLoop, cancellationToken, metrics);
     }
 
     private static void RunBothLoops<TConsumer>(
         ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter> productionLoop,
         ConsumptionLoop<WorldImage, TConsumer, TestStressClock, ThreadWaiter> consumptionLoop,
-        SimulationCoordinator simulator,
         CancellationToken cancellationToken,
         TestStressMetrics metrics)
         where TConsumer : struct, IConsumer<WorldImage>
@@ -175,8 +169,6 @@ public sealed class ConcurrencyStressTests
 
         simulationThread.Join();
         consumptionThread.Join();
-
-        simulator.Shutdown();
 
         var simEx = Volatile.Read(ref simulationException);
         var conEx = Volatile.Read(ref consumptionException);
