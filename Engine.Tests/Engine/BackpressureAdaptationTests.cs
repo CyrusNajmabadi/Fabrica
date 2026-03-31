@@ -247,7 +247,6 @@ public sealed class BackpressureAdaptationTests
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(512);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(512);
-            var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
@@ -255,9 +254,9 @@ public sealed class BackpressureAdaptationTests
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
 
             var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
-                nodePool, pinnedVersions, shared, producer, clock, new TestRecordingWaiter(waiterState));
+                nodePool, shared, producer, clock, new TestRecordingWaiter(waiterState));
             var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
-                pinnedVersions, shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), []);
+                shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), []);
 
             return new BackpressureHarness(
                 shared,

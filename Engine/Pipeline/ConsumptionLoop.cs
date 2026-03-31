@@ -34,15 +34,15 @@ namespace Engine.Pipeline;
 ///   apart — the consumer can iterate every intermediate node via the
 ///   chain, or simply work with the two endpoints.
 ///
-///   INVARIANT: when _previous is non-null, it is always a different object
-///   reference from _latest.  The rotation guard guarantees this.
+///   The loop does not call the consumer until two distinct nodes exist
+///   (_previous and _latest are both non-null and distinct).  This means
+///   the consumer always has a valid interpolation range — no null checks
+///   needed.
 ///
 /// EPOCH ADVANCEMENT
-///   The epoch is set to _previous.SequenceNumber when both nodes exist,
-///   or _latest.SequenceNumber on the first frame (no previous yet).
-///   Cleanup frees strictly below the epoch, so both _previous (sequence N,
-///   not &lt; N) and _latest (sequence &gt; N) remain alive — along with the
-///   entire chain between them.
+///   The epoch is set to _previous.SequenceNumber.  Cleanup frees strictly
+///   below the epoch, so both _previous (sequence N, not &lt; N) and _latest
+///   (sequence &gt; N) remain alive — along with the entire chain between them.
 ///
 /// DEFERRED CONSUMER SCHEDULING
 ///   Deferred consumers are stored in a flat array.  A PriorityQueue maps
@@ -58,7 +58,6 @@ namespace Engine.Pipeline;
 /// in the hot frame loop.
 /// </summary>
 internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
-    PinnedVersions pinnedVersions,
     SharedState<TPayload> shared,
     TConsumer consumer,
     TClock clock,
@@ -71,7 +70,7 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
     private readonly SharedState<TPayload> _shared = shared;
     private readonly TClock _clock = clock;
     private readonly TWaiter _waiter = waiter;
-    private readonly DeferredConsumerScheduler _deferred = new(pinnedVersions, deferredConsumers);
+    private readonly DeferredConsumerScheduler _deferred = new(shared.PinnedVersions, deferredConsumers);
     private TConsumer _consumer = consumer;
 
     private BaseProductionLoop<TPayload>.ChainNode? _previous;
@@ -101,16 +100,18 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
                 _latest = latestNode;
             }
 
-            _deferred.MaybeRunConsumers(_latest!, frameStart, cancellationToken);
+            if (_previous is not null)
+            {
+                _deferred.MaybeRunConsumers(_latest!, frameStart, cancellationToken);
 
-            _consumer.Consume(
-                _previous,
-                _latest!,
-                frameStart,
-                cancellationToken);
+                _consumer.Consume(
+                    _previous,
+                    _latest!,
+                    frameStart,
+                    cancellationToken);
 
-            _shared.ConsumptionEpoch = _previous?.SequenceNumber
-                                       ?? _latest!.SequenceNumber;
+                _shared.ConsumptionEpoch = _previous.SequenceNumber;
+            }
         }
 
         this.ThrottleToFrameRate(frameStart, cancellationToken);

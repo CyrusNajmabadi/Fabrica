@@ -32,7 +32,7 @@ namespace Engine;
 ///    • DrainCompletedDeferredTasks(): unpin nodes from finished async work
 ///    • Volatile-read LatestNode                     (acquire fence)
 ///    • MaybeRunDeferredConsumers(): check min-heap, dispatch due consumers
-///    • Consume(previous, latest): always called, even if node unchanged
+///    • Consume(previous, latest): called once both are non-null and distinct
 ///    • Volatile-write ConsumptionEpoch = sequence   (release fence)
 ///    • ThrottleToFrameRate()
 ///
@@ -44,7 +44,7 @@ namespace Engine;
 ///
 /// ══════════════════════════════ SHARED STATE ════════════════════════════════
 ///
-///  Exactly two volatile fields cross the thread boundary:
+///  All cross-thread communication lives in SharedState&lt;TPayload&gt;:
 ///
 ///  SharedState.LatestNode        (volatile ChainNode&lt;TPayload&gt;?)
 ///    Written by production only; read by consumption.
@@ -58,17 +58,21 @@ namespace Engine;
 ///    reads a stale (lower) epoch it retains a node one extra cleanup pass —
 ///    it never frees something the consumption thread is still touching.
 ///
+///  SharedState.PinnedVersions    (ConcurrentDictionary-backed)
+///    Thread-safe registry of sequences that deferred consumers hold.
+///    Consumption thread pins before dispatching; threadpool tasks unpin on
+///    completion; production thread reads IsPinned during cleanup.
+///
 /// ═══════════════════════ WHY NO LOCKS IN THE HOT PATH ══════════════════════
 ///
-///  Each field above has at most one writer thread in the hot path.
+///  LatestNode and ConsumptionEpoch each have at most one writer thread.
 ///  Volatile fences provide the required visibility across CPUs.
 ///  The epoch is conservative, so races can only make the system hold memory
 ///  slightly longer — they can never corrupt state or free a live object.
 ///
-///  The sole exception is PinnedVersions (node pinning for deferred consumers),
-///  which uses ConcurrentDictionary because Unpin arrives from a threadpool task.
-///  Pinning only happens at deferred-consumer boundaries (infrequent), so it is
-///  not on the hot path.  See PinnedVersions for details.
+///  PinnedVersions uses ConcurrentDictionary because Unpin arrives from a
+///  threadpool task.  Pinning only happens at deferred-consumer boundaries
+///  (infrequent), so it is not on the hot path.  See PinnedVersions for details.
 ///
 /// ═══════════════════════ PARALLELISM OPPORTUNITIES ═════════════════════════
 ///
@@ -204,7 +208,6 @@ internal static class SimulationEngine
     {
         var nodePool = new ObjectPool<BaseProductionLoop<WorldImage>.ChainNode, BaseProductionLoop<WorldImage>.ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
-        var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
         var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
         var renderCoordinator = new RenderCoordinator(renderWorkerCount);
@@ -214,9 +217,9 @@ internal static class SimulationEngine
 
         return new Host<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>(
             new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
-                nodePool, pinnedVersions, shared, producer, clock, waiter),
+                nodePool, shared, producer, clock, waiter),
             new ConsumptionLoop<WorldImage, RenderConsumer<TRenderer>, TClock, TWaiter>(
-                pinnedVersions, shared, consumer, clock, waiter, deferredConsumers),
+                shared, consumer, clock, waiter, deferredConsumers),
             simulationCoordinator,
             renderCoordinator);
     }

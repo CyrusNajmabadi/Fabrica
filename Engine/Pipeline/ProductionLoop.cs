@@ -18,12 +18,11 @@ namespace Engine.Pipeline;
 /// </summary>
 internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
     ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNodeAllocator> nodePool,
-    PinnedVersions pinnedVersions,
     SharedState<TPayload> shared,
     TProducer producer,
     TClock clock,
     TWaiter waiter)
-    : BaseProductionLoop<TPayload>(nodePool, pinnedVersions)
+    : BaseProductionLoop<TPayload>(nodePool, shared.PinnedVersions)
     where TProducer : struct, IProducer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter

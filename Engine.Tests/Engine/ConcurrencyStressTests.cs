@@ -102,16 +102,15 @@ public sealed class ConcurrencyStressTests
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
-        var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new TestStressClock();
 
         var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter>(
-            nodePool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
+            nodePool, shared, producer, clock, new ThreadWaiter());
         var consumptionLoop = new ConsumptionLoop<WorldImage, TestInvariantCheckingConsumer, TestStressClock, ThreadWaiter>(
-            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), []);
+            shared, consumer, clock, new ThreadWaiter(), []);
 
         RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
@@ -124,7 +123,6 @@ public sealed class ConcurrencyStressTests
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
-        var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
@@ -137,9 +135,9 @@ public sealed class ConcurrencyStressTests
         };
 
         var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter>(
-            nodePool, pinnedVersions, shared, producer, clock, new ThreadWaiter());
+            nodePool, shared, producer, clock, new ThreadWaiter());
         var consumptionLoop = new ConsumptionLoop<WorldImage, TestInvariantCheckingConsumer, TestStressClock, ThreadWaiter>(
-            pinnedVersions, shared, consumer, clock, new ThreadWaiter(), deferredConsumers);
+            shared, consumer, clock, new ThreadWaiter(), deferredConsumers);
 
         RunBothLoops(productionLoop, consumptionLoop, simulator, cancellationToken, metrics);
     }
@@ -232,7 +230,7 @@ public sealed class ConcurrencyStressTests
             _renderDelayMilliseconds = renderDelayMilliseconds;
         }
 
-        public void Consume(ChainNode? previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
+        public void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {
             _metrics.RecordFrame(previous, latest);
             if (_renderDelayMilliseconds > 0)

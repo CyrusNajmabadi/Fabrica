@@ -39,16 +39,13 @@ namespace Engine.Rendering;
 ///   renderer can compute a blend factor (typically elapsed / tickDuration,
 ///   clamped to [0, 1]).
 ///
-///   On the very first frame (before two distinct snapshots exist),
-///   <see cref="Previous"/> is null.  The renderer should display Latest as-is.
-///
-///   INVARIANT: when <see cref="Previous"/> is non-null, it is always a
-///   different object reference from <see cref="Latest"/>.  The consumption
-///   loop's rotation guard guarantees this.
+///   INVARIANT: <see cref="Previous"/> is always a different object reference
+///   from <see cref="Latest"/>.  The consumption loop waits until two distinct
+///   nodes exist before reporting to the consumer, so both are always non-null.
 /// </summary>
 internal readonly struct RenderFrame
 {
-    public required BaseProductionLoop<WorldImage>.ChainNode? Previous { get; init; }
+    public required BaseProductionLoop<WorldImage>.ChainNode Previous { get; init; }
     public required BaseProductionLoop<WorldImage>.ChainNode Latest { get; init; }
     public required InterpolationClock Interpolation { get; init; }
     public required EngineStatus EngineStatus { get; init; }

@@ -175,17 +175,6 @@ public sealed class MemorySystemTests
         Assert.Contains(c, rented);
     }
 
-    // ── PinnedVersions ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void PinnedVersions_IsAccessibleAndInitiallyEmpty()
-    {
-        var memory = new MemorySystem<WorldImage, WorldImageAllocator>(initialPoolSize: 1);
-
-        Assert.NotNull(memory.PinnedVersions);
-        Assert.False(memory.PinnedVersions.IsPinned(0));
-    }
-
     // ── Pool independence ────────────────────────────────────────────────────
 
     [Fact]

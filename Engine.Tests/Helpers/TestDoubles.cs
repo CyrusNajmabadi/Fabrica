@@ -88,7 +88,7 @@ internal readonly struct TestNoOpRenderer : IRenderer
 
 internal readonly struct TestNoOpConsumer : IConsumer<WorldImage>
 {
-    public void Consume(ChainNode? previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
+    public void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
 }
 
 /// <summary>

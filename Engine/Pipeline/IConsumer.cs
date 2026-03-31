@@ -14,11 +14,12 @@ internal interface IConsumer<TPayload>
     /// <summary>
     /// Process a frame using the current chain state.
     ///
-    /// <para><paramref name="previous"/> is the node that was <paramref name="latest"/>
-    /// on the preceding frame, or <see langword="null"/> on the very first frame.
-    /// When both are non-null they are guaranteed to be distinct object references;
-    /// the entire forward-linked chain from <paramref name="previous"/> to
-    /// <paramref name="latest"/> is alive for the duration of this call.</para>
+    /// <para><paramref name="previous"/> and <paramref name="latest"/> are always
+    /// distinct, non-null object references.  The consumption loop waits until two
+    /// distinct nodes have been published before calling this method, so the consumer
+    /// always has a valid interpolation range.  The entire forward-linked chain from
+    /// <paramref name="previous"/> to <paramref name="latest"/> is alive for the
+    /// duration of this call.</para>
     ///
     /// <para><paramref name="frameStartNanoseconds"/> is the wall-clock timestamp
     /// (in nanoseconds) sampled at the beginning of the current consumption frame,
@@ -31,7 +32,7 @@ internal interface IConsumer<TPayload>
     /// loop may free earlier nodes.</para>
     /// </summary>
     void Consume(
-        BaseProductionLoop<TPayload>.ChainNode? previous,
+        BaseProductionLoop<TPayload>.ChainNode previous,
         BaseProductionLoop<TPayload>.ChainNode latest,
         long frameStartNanoseconds,
         CancellationToken cancellationToken);
