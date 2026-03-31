@@ -7,7 +7,7 @@ using Engine.World;
 namespace Engine.Tests.Helpers;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
 
 /// <summary>
 /// Mutable clock state shared between a test and its <see cref="TestRecordingClock"/>.
@@ -98,12 +98,12 @@ internal readonly struct TestNoOpConsumer : IConsumer<WorldImage>
 internal sealed class TestChainHarness : BaseProductionLoop<WorldImage>
 {
     public TestChainHarness(int poolSize = 16)
-        : base(new ObjectPool<ChainNode, NodeAllocator>(poolSize), new PinnedVersions())
+        : base(new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize), new PinnedVersions())
     {
     }
 
     public TestChainHarness(
-        ObjectPool<ChainNode, NodeAllocator> nodePool,
+        ObjectPool<ChainNode, ChainNodeAllocator> nodePool,
         PinnedVersions pinnedVersions)
         : base(nodePool, pinnedVersions)
     {

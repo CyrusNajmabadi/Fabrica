@@ -10,7 +10,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
 
 public sealed class SimulationLoopRunTests
 {
@@ -151,7 +151,7 @@ public sealed class SimulationLoopRunTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();

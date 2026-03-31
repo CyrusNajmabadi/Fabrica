@@ -17,55 +17,9 @@ namespace Engine.Pipeline;
 /// </summary>
 internal abstract partial class BaseProductionLoop<TPayload>
 {
-    // ═══════════════════════════ NODE ALLOCATOR ═══════════════════════════════
-
-    /// <summary>
-    /// Allocator for the node pool.  Nested here so it can construct
-    /// <c>PrivateChainNode</c> in DEBUG builds (the type is private to this class).
-    /// </summary>
-    internal struct NodeAllocator : IAllocator<ChainNode>
-    {
-        public ChainNode Allocate() =>
-#if DEBUG
-            new PrivateChainNode();
-#else
-            new ChainNode();
-#endif
-
-        public void Reset(ChainNode item) { }
-    }
-
-    // ═══════════════════════════ NODE MUTATION ════════════════════════════════
-    //
-    // Private facade that concentrates all #if DEBUG casts in one place.
-    // The rest of the base class calls Mutate(node).Method() — ifdef-free.
-
-    private readonly struct NodeMutation
-    {
-#if DEBUG
-        private readonly PrivateChainNode _node;
-        public NodeMutation(ChainNode node) => _node = (PrivateChainNode)node;
-#else
-        private readonly ChainNode _node;
-        public NodeMutation(ChainNode node) => _node = node;
-#endif
-
-        public void InitializeBase(int seq) => _node.InitializeBase(seq);
-        public void SetPayload(TPayload payload) => _node.SetPayload(payload);
-        public void MarkPublished(long time) => _node.MarkPublished(time);
-        public void SetNext(ChainNode next) => _node.SetNext(next);
-        public ChainNode? GetNext() => _node.NextInChain;
-        public void ClearNext() => _node.ClearNext();
-        public void ClearPayload() => _node.ClearPayload();
-        public void AddRef() => _node.AddRef();
-        public void Release() => _node.Release();
-    }
-
-    private static NodeMutation Mutate(ChainNode node) => new(node);
-
     // ════════════════════════════ CHAIN STATE ═════════════════════════════════
 
-    private readonly ObjectPool<ChainNode, NodeAllocator> _nodePool;
+    private readonly ObjectPool<ChainNode, ChainNodeAllocator> _nodePool;
     private readonly PinnedVersions _pinnedVersions;
     private int _currentSequence;
     private ChainNode? _currentNode;
@@ -73,7 +27,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
     private readonly HashSet<ChainNode> _pinnedQueue = new();
 
     protected BaseProductionLoop(
-        ObjectPool<ChainNode, NodeAllocator> nodePool,
+        ObjectPool<ChainNode, ChainNodeAllocator> nodePool,
         PinnedVersions pinnedVersions)
     {
         _nodePool = nodePool;

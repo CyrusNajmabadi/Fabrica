@@ -77,7 +77,7 @@ internal static partial class ThreadPinning
     private static bool TryPinLinux(int coreIndex)
     {
         var mask = 1UL << coreIndex;
-        return SchedSetAffinity(0, (nint)sizeof(ulong), ref mask) == 0;
+        return SchedSetAffinity(0, sizeof(ulong), ref mask) == 0;
     }
 
     [LibraryImport("libc", EntryPoint = "sched_setaffinity")]

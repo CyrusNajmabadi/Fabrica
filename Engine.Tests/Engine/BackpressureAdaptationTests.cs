@@ -10,7 +10,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
 
 /// <summary>
 /// Multi-phase behavioral tests that verify the backpressure feedback loop
@@ -197,7 +197,7 @@ public sealed class BackpressureAdaptationTests
         }
 
         var gapTicks = test.SimulationTick - test.ConsumptionEpoch;
-        var gapNanoseconds = (long)gapTicks * SimulationConstants.TickDurationNanoseconds;
+        var gapNanoseconds = gapTicks * SimulationConstants.TickDurationNanoseconds;
 
         Assert.True(gapNanoseconds < SimulationConstants.PressureHardCeilingNanoseconds,
             $"Gap ({gapTicks} ticks = {gapNanoseconds / 1_000_000}ms) should stay below " +
@@ -245,7 +245,7 @@ public sealed class BackpressureAdaptationTests
 
         public static BackpressureHarness Create()
         {
-            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(512);
+            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(512);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(512);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();

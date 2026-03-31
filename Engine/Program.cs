@@ -14,7 +14,7 @@ Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellat
 // 0..N-1, relying on the OS to time-share when both are active.
 var workerCount = Math.Max(1, Environment.ProcessorCount);
 
-var saveIntervalNanoseconds = (long)SimulationConstants.SaveIntervalTicks
+var saveIntervalNanoseconds = SimulationConstants.SaveIntervalTicks
                               * SimulationConstants.TickDurationNanoseconds;
 
 SimulationEngine.Create(
