@@ -36,5 +36,5 @@ internal interface IRenderer
     ///   1 = Latest).  On the very first frame, Previous is null — the
     ///   renderer should display Latest as-is.
     /// </summary>
-    public void Render(in RenderFrame frame);
+    void Render(in RenderFrame frame);
 }
