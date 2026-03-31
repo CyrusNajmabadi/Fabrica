@@ -23,7 +23,9 @@ internal abstract partial class BaseProductionLoop<TPayload>
     {
         private protected int _sequenceNumber;
         private protected long _publishTimeNanoseconds;
+#pragma warning disable IDE0370 // Suppression is required — removing default! causes CS8601
         private protected TPayload _payload = default!;
+#pragma warning restore IDE0370
         private protected int _refCount;
 
 #if DEBUG
