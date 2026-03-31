@@ -1,5 +1,3 @@
-using Simulation.World;
-
 namespace Simulation.Engine;
 
 /// <summary>
