@@ -1,11 +1,6 @@
-using Engine.Threading;
-
 namespace Engine.Pipeline;
 
 internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
-    where TProducer : struct, IProducer<TPayload>
-    where TClock : struct, IClock
-    where TWaiter : struct, IWaiter
 {
     public TestAccessor GetTestAccessor() => new(this);
 

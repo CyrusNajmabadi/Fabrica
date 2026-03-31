@@ -1,11 +1,6 @@
-using Engine.Threading;
-
 namespace Engine.Pipeline;
 
 internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
-    where TConsumer : struct, IConsumer<TPayload>
-    where TClock : struct, IClock
-    where TWaiter : struct, IWaiter
 {
     public TestAccessor GetTestAccessor() => new(this);
 
