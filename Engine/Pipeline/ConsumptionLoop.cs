@@ -62,8 +62,8 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private ChainNode<TPayload>? _previous;
-    private ChainNode<TPayload>? _latest;
+    private BaseProductionLoop<TPayload>.ChainNode? _previous;
+    private BaseProductionLoop<TPayload>.ChainNode? _latest;
 
     private readonly PinnedVersions _pinnedVersions;
     private readonly SharedState<TPayload> _shared;

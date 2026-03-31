@@ -9,6 +9,9 @@ using Xunit;
 
 namespace Engine.Tests;
 
+using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
+using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+
 public sealed class LoopHarnessExampleTests
 {
     [Fact]
@@ -20,7 +23,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Node = Assert.IsType<ChainNode<WorldImage>>(test.SimulationLoop.CurrentNode);
+        var tick1Node = test.SimulationLoop.CurrentNode!;
 
         test.ConsumptionLoop.RunIteration(); // deferred consumer dispatched for T1
         Assert.True(test.Pins.IsPinned(1));
@@ -60,7 +63,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Node = Assert.IsType<ChainNode<WorldImage>>(test.SimulationLoop.CurrentNode);
+        var tick1Node = test.SimulationLoop.CurrentNode!;
 
         test.ConsumptionLoop.RunIteration(); // deferred dispatched for T1
         test.Pins.Pin(1, externalOwner);
@@ -126,7 +129,7 @@ public sealed class LoopHarnessExampleTests
 
         test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
         test.SimulationLoop.RunIteration(); // T1
-        var tick1Node = Assert.IsType<ChainNode<WorldImage>>(test.SimulationLoop.CurrentNode);
+        var tick1Node = test.SimulationLoop.CurrentNode!;
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=1
 
@@ -242,7 +245,7 @@ public sealed class LoopHarnessExampleTests
             DeferredConsumerRegistration<WorldImage>[] deferredConsumers,
             TestDeferredConsumerState deferredState)
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
@@ -281,7 +284,7 @@ public sealed class LoopHarnessExampleTests
                 _accessor = accessor;
             }
 
-            public ChainNode<WorldImage>? CurrentNode => _accessor.CurrentNode;
+            public ChainNode? CurrentNode => _accessor.CurrentNode;
 
             public int PinnedQueueCount => _accessor.PinnedQueueCount;
 
@@ -404,7 +407,7 @@ public sealed class LoopHarnessExampleTests
 
         public TestRecordingConsumer(TestRendererState state) => _state = state;
 
-        public void Consume(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest, long frameStartNanoseconds, CancellationToken cancellationToken)
+        public void Consume(ChainNode? previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;

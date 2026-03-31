@@ -10,6 +10,9 @@ using Xunit;
 
 namespace Engine.Tests;
 
+using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
+using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+
 [Trait("Category", "Stress")]
 public sealed class ConcurrencyStressTests
 {
@@ -97,7 +100,7 @@ public sealed class ConcurrencyStressTests
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode, NodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
@@ -119,7 +122,7 @@ public sealed class ConcurrencyStressTests
         SimulationCoordinator simulator,
         CancellationToken cancellationToken)
     {
-        var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(SimulationConstants.SnapshotPoolSize);
+        var nodePool = new ObjectPool<ChainNode, NodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
         var pinnedVersions = new PinnedVersions();
         var shared = new SharedState<WorldImage>();
@@ -229,7 +232,7 @@ public sealed class ConcurrencyStressTests
             _renderDelayMilliseconds = renderDelayMilliseconds;
         }
 
-        public void Consume(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest, long frameStartNanoseconds, CancellationToken cancellationToken)
+        public void Consume(ChainNode? previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
         {
             _metrics.RecordFrame(previous, latest);
             if (_renderDelayMilliseconds > 0)
@@ -278,7 +281,7 @@ public sealed class ConcurrencyStressTests
         public int MaxTickObserved => Volatile.Read(ref _maxTickObserved);
         public string? InvariantViolation => _invariantViolation;
 
-        public void RecordFrame(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest)
+        public void RecordFrame(ChainNode? previous, ChainNode latest)
         {
             Interlocked.Increment(ref _framesRendered);
 

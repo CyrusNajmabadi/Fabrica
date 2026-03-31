@@ -9,6 +9,9 @@ using Xunit;
 
 namespace Engine.Tests;
 
+using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
+using NodeAllocator = BaseProductionLoop<WorldImage>.NodeAllocator;
+
 /// <summary>
 /// Multi-phase behavioral tests that verify the backpressure feedback loop
 /// adapts dynamically to changing simulation/consumption speed ratios.
@@ -242,7 +245,7 @@ public sealed class BackpressureAdaptationTests
 
         public static BackpressureHarness Create()
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(512);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(512);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(512);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
