@@ -1,5 +1,6 @@
 using Engine;
-using Engine.Console;
+using Engine.Hosting;
+using Engine.Hosting.ConsoleHost;
 using Engine.Threading;
 
 using var cancellationSource = new CancellationTokenSource();

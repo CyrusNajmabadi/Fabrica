@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Engine.Pipeline;
 using Engine.World;
 
-namespace Engine.Console;
+namespace Engine.Hosting.ConsoleHost;
 
 /// <summary>
 /// Deferred consumer that performs periodic saves on the thread pool.
@@ -20,9 +20,9 @@ internal sealed class ConsoleSaveConsumer(long intervalNanoseconds) : IDeferredC
     public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken) =>
         Task.Run(() =>
         {
-            global::System.Console.WriteLine("[Save]   saving...");
+            Console.WriteLine("[Save]   saving...");
             Thread.Sleep(1000);
-            global::System.Console.WriteLine("[Save]   done.");
+            Console.WriteLine("[Save]   done.");
             return NowNanoseconds() + intervalNanoseconds;
         }, cancellationToken);
 

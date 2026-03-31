@@ -5,7 +5,7 @@ using Engine.Simulation;
 using Engine.Threading;
 using Engine.World;
 
-namespace Engine;
+namespace Engine.Hosting;
 
 /// <summary>
 /// Top-level coordinator: owns the production and consumption loops and manages

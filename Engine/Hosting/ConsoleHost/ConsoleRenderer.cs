@@ -1,6 +1,6 @@
 using Engine.Rendering;
 
-namespace Engine.Console;
+namespace Engine.Hosting.ConsoleHost;
 
 /// <summary>
 /// Temporary production renderer used until real rendering is implemented.
@@ -8,5 +8,5 @@ namespace Engine.Console;
 internal readonly struct ConsoleRenderer : IRenderer
 {
     public void Render(in RenderFrame frame) =>
-        global::System.Console.WriteLine($"[Render] tick={frame.Latest.SequenceNumber} elapsed={frame.Interpolation.ElapsedNanoseconds}ns");
+        Console.WriteLine($"[Render] tick={frame.Latest.SequenceNumber} elapsed={frame.Interpolation.ElapsedNanoseconds}ns");
 }
