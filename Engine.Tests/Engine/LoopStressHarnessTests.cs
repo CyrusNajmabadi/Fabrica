@@ -164,20 +164,16 @@ public sealed class LoopStressHarnessTests
                 consumptionLoop);
         }
 
-        public sealed class ClockController
+        public sealed class ClockController(TestClockState state)
         {
-            private readonly TestClockState _state;
-
-            public ClockController(TestClockState state) => _state = state;
+            private readonly TestClockState _state = state;
 
             public void AdvanceBy(long nanoseconds) => _state.NowNanoseconds += nanoseconds;
         }
 
-        public sealed class WaiterController
+        public sealed class WaiterController(TestWaiterState state)
         {
-            private readonly TestWaiterState _state;
-
-            public WaiterController(TestWaiterState state) => _state = state;
+            private readonly TestWaiterState _state = state;
 
             public IReadOnlyList<TimeSpan> WaitCalls => _state.WaitCalls;
 
@@ -190,18 +186,12 @@ public sealed class LoopStressHarnessTests
             public void ClearCalls() => _state.WaitCalls.Clear();
         }
 
-        public sealed class SimulationLoopController
+        public sealed class SimulationLoopController(
+            LoopStressHarness owner,
+            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor accessor)
         {
-            private readonly LoopStressHarness _owner;
-            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _accessor;
-
-            public SimulationLoopController(
-                LoopStressHarness owner,
-                ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor accessor)
-            {
-                _owner = owner;
-                _accessor = accessor;
-            }
+            private readonly LoopStressHarness _owner = owner;
+            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _accessor = accessor;
 
             public int CurrentSequence => _accessor.CurrentSequence;
 
@@ -222,12 +212,10 @@ public sealed class LoopStressHarnessTests
                     ref _owner._simulationAccumulator);
         }
 
-        public sealed class ConsumptionLoopController
+        public sealed class ConsumptionLoopController(
+            ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
         {
-            private readonly ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor;
-
-            public ConsumptionLoopController(
-                ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor) => _accessor = accessor;
+            private readonly ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }

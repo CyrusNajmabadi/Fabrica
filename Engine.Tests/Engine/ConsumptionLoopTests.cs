@@ -389,23 +389,16 @@ public sealed class ConsumptionLoopTests
         public Exception? _exceptionToThrow;
     }
 
-    private sealed class TestDeferredConsumer : IDeferredConsumer<WorldImage>
+    private sealed class TestDeferredConsumer(
+        TestDeferredConsumerState state,
+        long initialDelayNanoseconds = 0L,
+        long errorRetryDelayNanoseconds = 1_000_000_000L) : IDeferredConsumer<WorldImage>
     {
-        private readonly TestDeferredConsumerState _state;
+        private readonly TestDeferredConsumerState _state = state;
 
-        public TestDeferredConsumer(
-            TestDeferredConsumerState state,
-            long initialDelayNanoseconds = 0L,
-            long errorRetryDelayNanoseconds = 1_000_000_000L)
-        {
-            _state = state;
-            this.InitialDelayNanoseconds = initialDelayNanoseconds;
-            this.ErrorRetryDelayNanoseconds = errorRetryDelayNanoseconds;
-        }
+        public long InitialDelayNanoseconds { get; } = initialDelayNanoseconds;
 
-        public long InitialDelayNanoseconds { get; }
-
-        public long ErrorRetryDelayNanoseconds { get; }
+        public long ErrorRetryDelayNanoseconds { get; } = errorRetryDelayNanoseconds;
 
         public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken)
         {
@@ -430,11 +423,9 @@ public sealed class ConsumptionLoopTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingConsumer : IConsumer<WorldImage>
+    private readonly struct TestRecordingConsumer(TestConsumerState state) : IConsumer<WorldImage>
     {
-        private readonly TestConsumerState _state;
-
-        public TestRecordingConsumer(TestConsumerState state) => _state = state;
+        private readonly TestConsumerState _state = state;
 
         public void Consume(
             ChainNode previous,

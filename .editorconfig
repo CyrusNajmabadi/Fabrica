@@ -247,8 +247,8 @@ csharp_style_prefer_index_operator = true:warning
 # IDE0057: Use range operator
 csharp_style_prefer_range_operator = true:warning
 
-# IDE0060: Remove unused parameter (suggestion for now; elevate once stubs are filled in)
-dotnet_diagnostic.IDE0060.severity = suggestion
+# IDE0060: Remove unused parameter
+dotnet_diagnostic.IDE0060.severity = warning
 
 # IDE0062: Make local function static
 csharp_prefer_static_local_function = true:warning
@@ -305,7 +305,7 @@ csharp_style_prefer_readonly_struct_member = true:warning
 dotnet_diagnostic.IDE0280.severity = warning
 
 # IDE0290: Use primary constructor
-dotnet_diagnostic.IDE0290.severity = suggestion
+dotnet_diagnostic.IDE0290.severity = warning
 
 # IDE0300–IDE0306: Use collection expressions
 dotnet_style_prefer_collection_expression = true:warning

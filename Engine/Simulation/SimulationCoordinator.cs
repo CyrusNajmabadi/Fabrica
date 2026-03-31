@@ -65,7 +65,9 @@ internal sealed partial class SimulationCoordinator(int workerCount)
             this.CollectCreatedNodes(ref worker.Executor);
     }
 
+#pragma warning disable IDE0060 // Parameter will be used when ref-counting is implemented
     private void CollectCreatedNodes(ref SimulationExecutor executor)
+#pragma warning restore IDE0060
     {
         // Future: for each node in executor.Resources.CreatedNodes,
         // call node.AddRef() to increment shared subtree reference counts.

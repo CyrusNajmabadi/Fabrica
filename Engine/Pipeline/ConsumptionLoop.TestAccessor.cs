@@ -4,11 +4,9 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
 {
     public TestAccessor GetTestAccessor() => new(this);
 
-    public readonly struct TestAccessor
+    public readonly struct TestAccessor(ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> loop)
     {
-        private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _loop;
-
-        public TestAccessor(ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> loop) => _loop = loop;
+        private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _loop = loop;
 
         public void RunOneIteration(CancellationToken cancellationToken) => _loop.RunOneIteration(cancellationToken);
 

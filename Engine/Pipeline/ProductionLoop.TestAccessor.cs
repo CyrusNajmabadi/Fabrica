@@ -4,16 +4,10 @@ internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaite
 {
     public TestAccessor GetTestAccessor() => new(this);
 
-    public readonly struct TestAccessor
+    public readonly struct TestAccessor(ProductionLoop<TPayload, TProducer, TClock, TWaiter> loop)
     {
-        private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _loop;
-        private readonly ChainTestAccessor _chain;
-
-        public TestAccessor(ProductionLoop<TPayload, TProducer, TClock, TWaiter> loop)
-        {
-            _loop = loop;
-            _chain = loop.GetChainTestAccessor();
-        }
+        private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _loop = loop;
+        private readonly ChainTestAccessor _chain = loop.GetChainTestAccessor();
 
         public void Bootstrap() => _loop.Bootstrap(CancellationToken.None);
 
