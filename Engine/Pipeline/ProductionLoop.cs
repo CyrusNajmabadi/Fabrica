@@ -16,9 +16,9 @@ namespace Engine.Pipeline;
 /// Generic on all type parameters (all constrained to struct) so the JIT/AOT
 /// devirtualises all calls — zero interface-dispatch overhead in the hot path.
 /// </summary>
-internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
+internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
     ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
-    SharedState<TPayload> shared,
+    SharedPipelineState<TPayload> shared,
     TProducer producer,
     TClock clock,
     TWaiter waiter)
@@ -27,7 +27,7 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly SharedState<TPayload> _shared = shared;
+    private readonly SharedPipelineState<TPayload> _shared = shared;
     private readonly TClock _clock = clock;
     private readonly TWaiter _waiter = waiter;
     private TProducer _producer = producer;
@@ -118,43 +118,5 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
 
         if (delay > 0)
             _waiter.Wait(new TimeSpan(delay / 100), cancellationToken);
-    }
-
-    public TestAccessor GetTestAccessor() => new(this);
-
-    public readonly struct TestAccessor
-    {
-        private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _loop;
-        private readonly ChainTestAccessor _chain;
-
-        public TestAccessor(ProductionLoop<TPayload, TProducer, TClock, TWaiter> loop)
-        {
-            _loop = loop;
-            _chain = loop.GetChainTestAccessor();
-        }
-
-        public void Bootstrap() => _loop.Bootstrap(CancellationToken.None);
-
-        public void Tick() => _loop.Tick(CancellationToken.None);
-
-        public void CleanupStaleNodes() => _loop.CleanupStaleNodes(_loop._shared.ConsumptionEpoch);
-
-        public void RunOneIteration(
-            CancellationToken cancellationToken,
-            ref long lastTime,
-            ref long accumulator) =>
-            _loop.RunOneIteration(cancellationToken, ref lastTime, ref accumulator);
-
-        public int CurrentSequence => _chain.CurrentSequence;
-
-        public ChainNode? CurrentNode => _chain.CurrentNode;
-
-        public ChainNode? OldestNode => _chain.OldestNode;
-
-        public int PinnedQueueCount => _chain.PinnedQueueCount;
-
-        public ChainNode? GetNext(ChainNode node) => _chain.GetNext(node);
-
-        public void SetOldestNodeForTesting(ChainNode node) => _chain.SetOldestNodeForTesting(node);
     }
 }

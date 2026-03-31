@@ -102,7 +102,7 @@ public sealed class ConcurrencyStressTests
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedState<WorldImage>();
+        var shared = new SharedPipelineState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new TestStressClock();
@@ -123,16 +123,13 @@ public sealed class ConcurrencyStressTests
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedState<WorldImage>();
+        var shared = new SharedPipelineState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new TestStressClock();
 
         var saveConsumer = new TestSlowDeferredSaveConsumer(saveMetrics);
-        var deferredConsumers = new DeferredConsumerRegistration<WorldImage>[]
-        {
-            new(saveConsumer, 0L),
-        };
+        var deferredConsumers = new IDeferredConsumer<WorldImage>[] { saveConsumer };
 
         var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestStressClock, ThreadWaiter>(
             nodePool, shared, producer, clock, new ThreadWaiter());
@@ -244,7 +241,11 @@ public sealed class ConcurrencyStressTests
 
         public TestSlowDeferredSaveConsumer(TestSaveMetrics metrics) => _metrics = metrics;
 
-        public Task<long> ConsumeAsync(WorldImage payload, int sequenceNumber, CancellationToken cancellationToken) =>
+        public long InitialDelayNanoseconds => 0L;
+
+        public long ErrorRetryDelayNanoseconds => 1_000_000_000L;
+
+        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken) =>
             Task.Run<long>(() =>
             {
                 try

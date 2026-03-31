@@ -1,8 +1,6 @@
 using Engine;
 using Engine.Console;
-using Engine.Pipeline;
 using Engine.Threading;
-using Engine.World;
 
 using var cancellationSource = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellationSource.Cancel(); };
@@ -23,6 +21,4 @@ SimulationEngine.Create(
     new ConsoleRenderer(),
     workerCount,
     workerCount,
-    new DeferredConsumerRegistration<WorldImage>(
-        new ConsoleSaveConsumer(saveIntervalNanoseconds),
-        saveIntervalNanoseconds)).Run(cancellationSource.Token);
+    new ConsoleSaveConsumer(saveIntervalNanoseconds)).Run(cancellationSource.Token);

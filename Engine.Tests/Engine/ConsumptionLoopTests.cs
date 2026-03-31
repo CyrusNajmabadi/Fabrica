@@ -299,8 +299,7 @@ public sealed class ConsumptionLoopTests
     {
         var deferredState = new TestDeferredConsumerState();
         var test = ConsumptionLoopTestContext.Create(
-            deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
-                new TestDeferredConsumer(deferredState), 1_000_000_000L)]);
+            deferredConsumers: [new TestDeferredConsumer(deferredState, initialDelayNanoseconds: 1_000_000_000L)]);
 
         test.CreatePublishedNode(tick: 0);
         test.Accessor.RunOneIteration(CancellationToken.None);
@@ -318,8 +317,7 @@ public sealed class ConsumptionLoopTests
     {
         var deferredState = new TestDeferredConsumerState { _nextRunTime = long.MaxValue };
         var test = ConsumptionLoopTestContext.Create(
-            deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
-                new TestDeferredConsumer(deferredState), 0L)]);
+            deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
         test.CreatePublishedNode(tick: 4);
         test.Accessor.RunOneIteration(CancellationToken.None);
@@ -330,7 +328,6 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Equal(1, deferredState._callCount);
-        Assert.Equal(5, deferredState._lastSequenceNumber);
         Assert.True(test.PinnedVersions.IsPinned(5));
     }
 
@@ -340,8 +337,7 @@ public sealed class ConsumptionLoopTests
         var tcs = new TaskCompletionSource<long>();
         var deferredState = new TestDeferredConsumerState { _taskToReturn = tcs.Task };
         var test = ConsumptionLoopTestContext.Create(
-            deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
-                new TestDeferredConsumer(deferredState), 0L)]);
+            deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
         test.CreatePublishedNode(tick: 2);
         test.Accessor.RunOneIteration(CancellationToken.None);
@@ -366,8 +362,7 @@ public sealed class ConsumptionLoopTests
             _exceptionToThrow = new InvalidOperationException("dispatch failed"),
         };
         var test = ConsumptionLoopTestContext.Create(
-            deferredConsumers: [new DeferredConsumerRegistration<WorldImage>(
-                new TestDeferredConsumer(deferredState), 0L)]);
+            deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
         test.CreatePublishedNode(tick: 6);
         test.Accessor.RunOneIteration(CancellationToken.None);
@@ -390,7 +385,6 @@ public sealed class ConsumptionLoopTests
     private sealed class TestDeferredConsumerState
     {
         public int _callCount;
-        public int _lastSequenceNumber;
         public long _nextRunTime = long.MaxValue;
         public Task<long>? _taskToReturn;
         public Exception? _exceptionToThrow;
@@ -400,12 +394,23 @@ public sealed class ConsumptionLoopTests
     {
         private readonly TestDeferredConsumerState _state;
 
-        public TestDeferredConsumer(TestDeferredConsumerState state) => _state = state;
+        public TestDeferredConsumer(
+            TestDeferredConsumerState state,
+            long initialDelayNanoseconds = 0L,
+            long errorRetryDelayNanoseconds = 1_000_000_000L)
+        {
+            _state = state;
+            this.InitialDelayNanoseconds = initialDelayNanoseconds;
+            this.ErrorRetryDelayNanoseconds = errorRetryDelayNanoseconds;
+        }
 
-        public Task<long> ConsumeAsync(WorldImage payload, int sequenceNumber, CancellationToken cancellationToken)
+        public long InitialDelayNanoseconds { get; }
+
+        public long ErrorRetryDelayNanoseconds { get; }
+
+        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken)
         {
             _state._callCount++;
-            _state._lastSequenceNumber = sequenceNumber;
 
             if (_state._exceptionToThrow is { } ex)
                 throw ex;
@@ -449,7 +454,7 @@ public sealed class ConsumptionLoopTests
     private static class ConsumptionLoopTestContext
     {
         public static ConsumptionLoopTestContext<TestRecordingClock, TestRecordingWaiter> Create(
-            DeferredConsumerRegistration<WorldImage>[]? deferredConsumers = null)
+            IDeferredConsumer<WorldImage>[]? deferredConsumers = null)
         {
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
@@ -470,7 +475,7 @@ public sealed class ConsumptionLoopTests
             TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState,
-            DeferredConsumerRegistration<WorldImage>[]? deferredConsumers = null,
+            IDeferredConsumer<WorldImage>[]? deferredConsumers = null,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter =>
@@ -498,12 +503,12 @@ public sealed class ConsumptionLoopTests
             TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState,
-            DeferredConsumerRegistration<WorldImage>[]? deferredConsumers = null,
+            IDeferredConsumer<WorldImage>[]? deferredConsumers = null,
             int poolSize = 8)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedState<WorldImage>();
+            var shared = new SharedPipelineState<WorldImage>();
             var consumer = new TestRecordingConsumer(consumerState);
             var loop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter>(
                 shared,
@@ -525,7 +530,7 @@ public sealed class ConsumptionLoopTests
         private ConsumptionLoopTestContext(
             TestChainHarness harness,
             ObjectPool<WorldImage, WorldImage.Allocator> imagePool,
-            SharedState<WorldImage> shared,
+            SharedPipelineState<WorldImage> shared,
             ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> loop,
             TestConsumerState consumerState,
             TestClockState clockState,
@@ -544,7 +549,7 @@ public sealed class ConsumptionLoopTests
 
         public PinnedVersions PinnedVersions => this.Shared.PinnedVersions;
 
-        public SharedState<WorldImage> Shared { get; }
+        public SharedPipelineState<WorldImage> Shared { get; }
 
         public ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> Loop { get; }
 

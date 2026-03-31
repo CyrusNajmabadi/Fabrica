@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
-namespace Engine.Memory;
+namespace Engine.Pipeline;
 
 /// <summary>
 /// Thread-safe multi-owner registry of snapshot sequence numbers that must not

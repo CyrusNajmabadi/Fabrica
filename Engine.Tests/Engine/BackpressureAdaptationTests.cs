@@ -210,7 +210,7 @@ public sealed class BackpressureAdaptationTests
 
     private sealed class BackpressureHarness
     {
-        private readonly SharedState<WorldImage> _shared;
+        private readonly SharedPipelineState<WorldImage> _shared;
         private readonly TestClockState _clockState;
         private readonly TestWaiterState _waiterState;
         private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _simulationAccessor;
@@ -220,7 +220,7 @@ public sealed class BackpressureAdaptationTests
         private int _totalPressureDelays;
 
         private BackpressureHarness(
-            SharedState<WorldImage> shared,
+            SharedPipelineState<WorldImage> shared,
             TestClockState clockState,
             TestWaiterState waiterState,
             ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor simulationAccessor,
@@ -247,7 +247,7 @@ public sealed class BackpressureAdaptationTests
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(512);
             var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(512);
-            var shared = new SharedState<WorldImage>();
+            var shared = new SharedPipelineState<WorldImage>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);

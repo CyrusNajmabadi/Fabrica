@@ -23,9 +23,11 @@ internal interface IConsumer<TPayload>
     ///
     /// <para><paramref name="frameStartNanoseconds"/> is the wall-clock timestamp
     /// (in nanoseconds) sampled at the beginning of the current consumption frame,
-    /// before any per-frame work.  Consumers can use it for interpolation (e.g.
-    /// comparing against <c>latest.PublishTimeNanoseconds</c>) or for timing their
-    /// own work.</para>
+    /// before any per-frame work.  It is always ≥ <c>latest.PublishTimeNanoseconds</c>
+    /// because the consumption thread reads already-published nodes.  The gap
+    /// (<c>frameStartNanoseconds - latest.PublishTimeNanoseconds</c>) tells the
+    /// consumer how far past the latest simulation tick real time has advanced,
+    /// which is useful for interpolation or timing per-frame work.</para>
     ///
     /// <para>LIFETIME: both nodes are only valid for the duration of this call.
     /// The consumption loop advances the epoch immediately after, so the production

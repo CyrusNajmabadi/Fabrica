@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Engine.Memory;
 
 namespace Engine.Pipeline;
 
@@ -37,7 +36,7 @@ namespace Engine.Pipeline;
 ///   write from a new thread ID, so tests that use both fields from the test
 ///   thread will correctly bind the "owner" to the test thread.
 /// </summary>
-internal sealed class SharedState<TPayload>
+internal sealed class SharedPipelineState<TPayload>
 {
     // ── PinnedVersions ───────────────────────────────────────────────────────
     // Thread-safe.  Written by consumption thread and threadpool tasks.

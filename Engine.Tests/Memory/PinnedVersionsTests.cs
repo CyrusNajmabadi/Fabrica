@@ -1,4 +1,4 @@
-using Engine.Memory;
+using Engine.Pipeline;
 using Xunit;
 
 namespace Engine.Tests.Memory;

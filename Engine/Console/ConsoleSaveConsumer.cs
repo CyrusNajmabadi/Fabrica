@@ -11,20 +11,19 @@ namespace Engine.Console;
 /// <see cref="IDeferredConsumer{TPayload}"/> implementation.  The consumption
 /// loop handles pinning/unpinning and scheduling automatically.
 /// </summary>
-internal sealed class ConsoleSaveConsumer : IDeferredConsumer<WorldImage>
+internal sealed class ConsoleSaveConsumer(long intervalNanoseconds) : IDeferredConsumer<WorldImage>
 {
-    private readonly long _intervalNanoseconds;
+    public long InitialDelayNanoseconds => intervalNanoseconds;
 
-    public ConsoleSaveConsumer(long intervalNanoseconds) =>
-        _intervalNanoseconds = intervalNanoseconds;
+    public long ErrorRetryDelayNanoseconds => intervalNanoseconds;
 
-    public Task<long> ConsumeAsync(WorldImage payload, int sequenceNumber, CancellationToken cancellationToken) =>
+    public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken) =>
         Task.Run(() =>
         {
-            global::System.Console.WriteLine($"[Save]   tick={sequenceNumber} — saving...");
+            global::System.Console.WriteLine("[Save]   saving...");
             Thread.Sleep(1000);
-            global::System.Console.WriteLine($"[Save]   tick={sequenceNumber} — done.");
-            return NowNanoseconds() + _intervalNanoseconds;
+            global::System.Console.WriteLine("[Save]   done.");
+            return NowNanoseconds() + intervalNanoseconds;
         }, cancellationToken);
 
     private static long NowNanoseconds()

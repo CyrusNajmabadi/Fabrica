@@ -120,7 +120,7 @@ public sealed class LoopStressHarnessTests
         private long _simulationAccumulator;
 
         private LoopStressHarness(
-            SharedState<WorldImage> shared,
+            SharedPipelineState<WorldImage> shared,
             TestClockState clockState,
             TestWaiterState waiterState,
             ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter> simulationLoop,
@@ -133,7 +133,7 @@ public sealed class LoopStressHarnessTests
             this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
         }
 
-        public SharedState<WorldImage> Shared { get; }
+        public SharedPipelineState<WorldImage> Shared { get; }
 
         public ClockController Clock { get; }
 
@@ -147,7 +147,7 @@ public sealed class LoopStressHarnessTests
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedState<WorldImage>();
+            var shared = new SharedPipelineState<WorldImage>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);

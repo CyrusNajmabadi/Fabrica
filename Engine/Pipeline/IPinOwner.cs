@@ -1,4 +1,4 @@
-namespace Engine.Memory;
+namespace Engine.Pipeline;
 
 /// <summary>
 /// Marker interface for types that are allowed to pin chain-node sequence

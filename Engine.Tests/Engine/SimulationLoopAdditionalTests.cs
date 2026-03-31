@@ -293,7 +293,7 @@ public sealed class SimulationLoopAdditionalTests
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedState<WorldImage>();
+            var shared = new SharedPipelineState<WorldImage>();
             var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
             var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
                 nodePool, shared, producer, clock, waiter);
@@ -301,7 +301,7 @@ public sealed class SimulationLoopAdditionalTests
         }
 
         private SimulationLoopTestContext(
-            SharedState<WorldImage> shared,
+            SharedPipelineState<WorldImage> shared,
             TestWaiterState waiterState,
             ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> loop)
         {
@@ -312,7 +312,7 @@ public sealed class SimulationLoopAdditionalTests
 
         public PinnedVersions PinnedVersions => this.Shared.PinnedVersions;
 
-        public SharedState<WorldImage> Shared { get; }
+        public SharedPipelineState<WorldImage> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 

@@ -15,24 +15,18 @@ namespace Engine.Pipeline;
 /// adds the tick loop, backpressure, and domain-specific producer/consumer
 /// coordination.  It calls the protected chain helpers defined here.
 /// </summary>
-internal abstract partial class BaseProductionLoop<TPayload>
+internal abstract partial class BaseProductionLoop<TPayload>(
+    ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
+    PinnedVersions pinnedVersions)
 {
     // ════════════════════════════ CHAIN STATE ═════════════════════════════════
 
-    private readonly ObjectPool<ChainNode, ChainNode.Allocator> _nodePool;
-    private readonly PinnedVersions _pinnedVersions;
+    private readonly ObjectPool<ChainNode, ChainNode.Allocator> _nodePool = nodePool;
+    private readonly PinnedVersions _pinnedVersions = pinnedVersions;
+    private readonly HashSet<ChainNode> _pinnedQueue = new();
     private int _currentSequence;
     private ChainNode? _currentNode;
     private ChainNode? _oldestNode;
-    private readonly HashSet<ChainNode> _pinnedQueue = new();
-
-    protected BaseProductionLoop(
-        ObjectPool<ChainNode, ChainNode.Allocator> nodePool,
-        PinnedVersions pinnedVersions)
-    {
-        _nodePool = nodePool;
-        _pinnedVersions = pinnedVersions;
-    }
 
     // ══════════════════════════ ABSTRACT HOOK ═════════════════════════════════
 
@@ -132,51 +126,4 @@ internal abstract partial class BaseProductionLoop<TPayload>
         Debug.Assert(node.IsUnreferenced, "Node still referenced after cleanup — refcount mismatch.");
         _nodePool.Return(node);
     }
-
-    // ═══════════════════════════ TEST ACCESSOR ════════════════════════════════
-
-    /// <summary>
-    /// Provides test access to chain internals.  Nested here so it can
-    /// reach <c>PrivateChainNode</c> in DEBUG builds.
-    /// </summary>
-    public readonly struct ChainTestAccessor
-    {
-        private readonly BaseProductionLoop<TPayload> _loop;
-
-        public ChainTestAccessor(BaseProductionLoop<TPayload> loop) => _loop = loop;
-
-        public int CurrentSequence => _loop._currentSequence;
-        public ChainNode? CurrentNode => _loop._currentNode;
-        public ChainNode? OldestNode => _loop._oldestNode;
-        public int PinnedQueueCount => _loop._pinnedQueue.Count;
-        public void SetOldestNodeForTesting(ChainNode node) => _loop._oldestNode = node;
-
-        public ChainNode CreateNode(int sequenceNumber)
-        {
-            var node = _loop._nodePool.Rent();
-            Mutate(node).InitializeBase(sequenceNumber);
-            return node;
-        }
-
-        public void SetPayload(ChainNode node, TPayload payload) =>
-            Mutate(node).SetPayload(payload);
-
-        public void MarkPublished(ChainNode node, long timeNanoseconds) =>
-            Mutate(node).MarkPublished(timeNanoseconds);
-
-        public ChainNode? GetNext(ChainNode node) => Mutate(node).GetNext();
-
-        public void LinkNodes(ChainNode current, ChainNode next) =>
-            Mutate(current).SetNext(next);
-
-        public void ClearNext(ChainNode node) => Mutate(node).ClearNext();
-
-        public void ClearPayload(ChainNode node) => Mutate(node).ClearPayload();
-
-        public void AddRef(ChainNode node) => Mutate(node).AddRef();
-
-        public void Release(ChainNode node) => Mutate(node).Release();
-    }
-
-    public ChainTestAccessor GetChainTestAccessor() => new(this);
 }
