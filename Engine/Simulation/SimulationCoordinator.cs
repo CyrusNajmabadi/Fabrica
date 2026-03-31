@@ -37,7 +37,7 @@ namespace Engine.Simulation;
 ///   containerised environments, or macOS (not supported).  The simulation
 ///   is correct regardless — pinning is purely a cache-affinity optimisation.
 /// </summary>
-internal sealed partial class SimulationCoordinator : IDisposable
+internal sealed partial class SimulationCoordinator
 {
     private readonly WorkerGroup<SimulationTickState, SimulationExecutor> _group;
 
@@ -74,6 +74,6 @@ internal sealed partial class SimulationCoordinator : IDisposable
         // call node.AddRef() to increment shared subtree reference counts.
     }
 
-    public void Dispose() =>
-        _group.Dispose();
+    public void Shutdown() =>
+        _group.Shutdown();
 }

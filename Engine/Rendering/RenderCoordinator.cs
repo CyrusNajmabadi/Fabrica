@@ -25,7 +25,7 @@ namespace Engine.Rendering;
 ///   Render workers are pinned starting at <c>coreIndexOffset</c> so they
 ///   do not overlap with simulation workers (which pin to cores 0..N-1).
 /// </summary>
-internal sealed partial class RenderCoordinator : IDisposable
+internal sealed partial class RenderCoordinator
 {
     private readonly WorkerGroup<RenderDispatchState, RenderExecutor> _group;
 
@@ -48,6 +48,6 @@ internal sealed partial class RenderCoordinator : IDisposable
         _group.Dispatch(state, cancellationToken);
     }
 
-    public void Dispose() =>
-        _group.Dispose();
+    public void Shutdown() =>
+        _group.Shutdown();
 }

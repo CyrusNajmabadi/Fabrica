@@ -31,6 +31,13 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
     ///   via <see cref="ThreadPinningNative"/>.  This is best-effort — pinning may fail
     ///   silently on restricted environments or unsupported platforms.
     ///
+    /// HANDLE LIFETIME
+    ///   The go/done <see cref="AutoResetEvent"/> handles are not explicitly
+    ///   disposed.  Their underlying <see cref="System.Runtime.InteropServices.SafeHandle"/>
+    ///   instances have finalizers that release the OS handles when collected.
+    ///   For a fixed-size pool of long-lived workers this is safe and avoids
+    ///   propagating IDisposable up the ownership chain.
+    ///
     /// GENERIC SPECIALIZATION
     ///   Both <typeparamref name="TState"/> and <typeparamref name="TExecutor"/>
     ///   are constrained to struct, so the JIT specializes each instantiation.
@@ -118,15 +125,5 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
         /// </summary>
         public void Join() =>
             _thread.Join();
-
-        /// <summary>
-        /// Disposes OS handles for the go and done signals.
-        /// Call after the thread has been joined and no further waits will occur.
-        /// </summary>
-        public void Cleanup()
-        {
-            _goSignal.Dispose();
-            _doneSignal.Dispose();
-        }
     }
 }
