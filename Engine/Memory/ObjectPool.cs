@@ -33,9 +33,6 @@ internal sealed class ObjectPool<T, TAllocator>
     where TAllocator : struct, IAllocator<T>
 {
     private readonly Stack<T> _items;
-#pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
-    private TAllocator _allocator = default;
-#pragma warning restore IDE0044
 
 #if DEBUG
     private int _ownerThreadId = -1;
@@ -57,7 +54,7 @@ internal sealed class ObjectPool<T, TAllocator>
     {
         _items = new Stack<T>(initialCapacity);
         for (var i = 0; i < initialCapacity; i++)
-            _items.Push(_allocator.Allocate());
+            _items.Push(default(TAllocator).Allocate());
     }
 
     /// <summary>
@@ -69,7 +66,7 @@ internal sealed class ObjectPool<T, TAllocator>
 #if DEBUG
         this.AssertOwnerThread();
 #endif
-        return _items.Count > 0 ? _items.Pop() : _allocator.Allocate();
+        return _items.Count > 0 ? _items.Pop() : default(TAllocator).Allocate();
     }
 
     /// <summary>
@@ -81,7 +78,7 @@ internal sealed class ObjectPool<T, TAllocator>
 #if DEBUG
         this.AssertOwnerThread();
 #endif
-        _allocator.Reset(item);
+        default(TAllocator).Reset(item);
         _items.Push(item);
     }
 

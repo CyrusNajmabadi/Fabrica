@@ -4,6 +4,10 @@ namespace Engine.Memory;
 /// Manages the lifecycle of pooled objects: allocation and pre-return cleanup.
 /// Constrained to struct for zero interface-dispatch overhead via generic
 /// specialisation — the JIT erases the indirection entirely.
+///
+/// Implementations must be safe to use in their <c>default</c> state — the
+/// pool creates instances via <c>default(TAllocator)</c> and never requires
+/// explicit construction.
 /// </summary>
 internal interface IAllocator<T> where T : class
 {
