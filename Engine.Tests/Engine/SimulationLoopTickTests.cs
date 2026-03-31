@@ -10,7 +10,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 
 public sealed class SimulationLoopTickTests
 {
@@ -62,8 +62,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var secondNode = test.Accessor.CurrentNode!;
-        var firstNode = test.Accessor.OldestNode!;
+        var secondNode = test.Accessor.CurrentNode;
+        var firstNode = test.Accessor.OldestNode;
 
         test.Shared.ConsumptionEpoch = 2;
 
@@ -98,7 +98,7 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var currentNode = test.Accessor.CurrentNode!;
+        var currentNode = test.Accessor.CurrentNode;
 
         test.Shared.ConsumptionEpoch = 100;
 
@@ -425,23 +425,30 @@ public sealed class SimulationLoopTickTests
             TestWaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
-            where TWaiter : struct, IWaiter
-        {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
-            var shared = new SharedState<WorldImage>();
-            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
-            var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
-                nodePool, shared, producer, clock, waiter);
-            return new SimulationLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
-        }
+            where TWaiter : struct, IWaiter =>
+            SimulationLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
     }
 
     private sealed class SimulationLoopTestContext<TClock, TWaiter>
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        internal SimulationLoopTestContext(
+        public static SimulationLoopTestContext<TClock, TWaiter> Create(
+            TClock clock,
+            TWaiter waiter,
+            TestWaiterState waiterState,
+            int poolSize = 8)
+        {
+            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
+            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
+            var shared = new SharedState<WorldImage>();
+            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
+                nodePool, shared, producer, clock, waiter);
+            return new SimulationLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
+        }
+
+        private SimulationLoopTestContext(
             SharedState<WorldImage> shared,
             TestWaiterState waiterState,
             ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> loop)

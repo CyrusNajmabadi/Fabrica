@@ -19,14 +19,14 @@ namespace Engine.Memory;
 ///
 /// ALLOCATOR STRATEGY
 ///   Both pools use struct-generic allocators (<typeparamref name="TPayloadAllocator"/>
-///   and <see cref="BaseProductionLoop{TPayload}.ChainNodeAllocator"/>) so the JIT
+///   and <see cref="BaseProductionLoop{TPayload}.ChainNode.Allocator"/>) so the JIT
 ///   specialises all allocation and reset paths, eliminating interface dispatch entirely.
 /// </summary>
 internal sealed class MemorySystem<TPayload, TPayloadAllocator>
     where TPayload : class
     where TPayloadAllocator : struct, IAllocator<TPayload>
 {
-    private readonly ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNodeAllocator> _nodePool;
+    private readonly ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> _nodePool;
     private readonly ObjectPool<TPayload, TPayloadAllocator> _payloadPool;
 
     public MemorySystem(int initialPoolSize, TPayloadAllocator payloadAllocator = default)
@@ -34,7 +34,7 @@ internal sealed class MemorySystem<TPayload, TPayloadAllocator>
         if (initialPoolSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
-        _nodePool = new ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNodeAllocator>(initialPoolSize);
+        _nodePool = new ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator>(initialPoolSize);
         _payloadPool = new ObjectPool<TPayload, TPayloadAllocator>(initialPoolSize, payloadAllocator);
     }
 

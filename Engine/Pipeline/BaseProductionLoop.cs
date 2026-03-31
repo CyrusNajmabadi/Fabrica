@@ -19,7 +19,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
 {
     // ════════════════════════════ CHAIN STATE ═════════════════════════════════
 
-    private readonly ObjectPool<ChainNode, ChainNodeAllocator> _nodePool;
+    private readonly ObjectPool<ChainNode, ChainNode.Allocator> _nodePool;
     private readonly PinnedVersions _pinnedVersions;
     private int _currentSequence;
     private ChainNode? _currentNode;
@@ -27,7 +27,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
     private readonly HashSet<ChainNode> _pinnedQueue = new();
 
     protected BaseProductionLoop(
-        ObjectPool<ChainNode, ChainNodeAllocator> nodePool,
+        ObjectPool<ChainNode, ChainNode.Allocator> nodePool,
         PinnedVersions pinnedVersions)
     {
         _nodePool = nodePool;
@@ -139,7 +139,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
     /// Provides test access to chain internals.  Nested here so it can
     /// reach <c>PrivateChainNode</c> in DEBUG builds.
     /// </summary>
-    internal readonly struct ChainTestAccessor
+    public readonly struct ChainTestAccessor
     {
         private readonly BaseProductionLoop<TPayload> _loop;
 
@@ -178,5 +178,5 @@ internal abstract partial class BaseProductionLoop<TPayload>
         public void Release(ChainNode node) => Mutate(node).Release();
     }
 
-    internal ChainTestAccessor GetChainTestAccessor() => new(this);
+    public ChainTestAccessor GetChainTestAccessor() => new(this);
 }

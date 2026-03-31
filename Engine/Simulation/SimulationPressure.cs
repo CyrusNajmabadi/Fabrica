@@ -25,7 +25,7 @@ internal static class SimulationPressure
     ///   • Delay is capped so a separate hard-ceiling loop in the caller
     ///     can take over for extreme cases.
     /// </summary>
-    internal static long ComputeDelay(
+    public static long ComputeDelay(
         long gapNanoseconds,
         long lowWaterMarkNanoseconds,
         long bucketWidthNanoseconds,

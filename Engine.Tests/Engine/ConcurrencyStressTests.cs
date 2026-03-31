@@ -11,7 +11,7 @@ using Xunit;
 namespace Engine.Tests;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNodeAllocator;
+using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 
 [Trait("Category", "Stress")]
 public sealed class ConcurrencyStressTests
@@ -101,7 +101,7 @@ public sealed class ConcurrencyStressTests
         int renderDelayMilliseconds)
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
-        var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds);
@@ -122,7 +122,7 @@ public sealed class ConcurrencyStressTests
         CancellationToken cancellationToken)
     {
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
-        var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedState<WorldImage>();
         var producer = new SimulationProducer(imagePool, simulator);
         var consumer = new TestInvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
@@ -250,11 +250,11 @@ public sealed class ConcurrencyStressTests
                 try
                 {
                     Thread.Sleep(5);
-                    Interlocked.Increment(ref _metrics._savesCompleted);
+                    _metrics.IncrementSavesCompleted();
                 }
                 catch
                 {
-                    Interlocked.Increment(ref _metrics._savesFailed);
+                    _metrics.IncrementSavesFailed();
                     throw;
                 }
 
@@ -315,10 +315,14 @@ public sealed class ConcurrencyStressTests
 
     private sealed class TestSaveMetrics
     {
-        internal int _savesCompleted;
-        internal int _savesFailed;
+        private int _savesCompleted;
+        private int _savesFailed;
 
         public int SavesCompleted => Volatile.Read(ref _savesCompleted);
         public int SavesFailed => Volatile.Read(ref _savesFailed);
+
+        public void IncrementSavesCompleted() => Interlocked.Increment(ref _savesCompleted);
+
+        public void IncrementSavesFailed() => Interlocked.Increment(ref _savesFailed);
     }
 }

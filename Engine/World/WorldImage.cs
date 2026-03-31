@@ -26,10 +26,23 @@ internal sealed class WorldImage
 
     /// <summary>
     /// Clears all simulation state so a pooled instance starts with a clean
-    /// slate.  Called by <see cref="WorldImageAllocator.Reset"/> when the
-    /// pool reclaims the image.
+    /// slate.  Called by <see cref="Allocator.Reset"/> when the pool reclaims
+    /// the image.
     /// </summary>
-    internal void ResetForPool()
+    public void ResetForPool()
     {
+    }
+
+    /// <summary>
+    /// Allocator for <see cref="WorldImage"/> instances managed by an
+    /// <see cref="ObjectPool{T, TAllocator}"/>.  Calls
+    /// <see cref="WorldImage.ResetForPool"/> on return so pooled instances
+    /// always start with a clean slate.
+    /// </summary>
+    public struct Allocator : Memory.IAllocator<WorldImage>
+    {
+        public WorldImage Allocate() => new();
+
+        public void Reset(WorldImage item) => item.ResetForPool();
     }
 }

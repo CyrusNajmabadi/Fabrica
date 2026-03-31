@@ -22,7 +22,7 @@ internal sealed class RenderWorkerResources
     /// Resets per-frame state in preparation for a new frame dispatch.
     /// Called by the <see cref="RenderCoordinator"/> before signaling workers.
     /// </summary>
-    internal void PrepareForFrame()
+    public void PrepareForFrame()
     {
         // Future: clear scratch buffers, reset command lists, etc.
     }

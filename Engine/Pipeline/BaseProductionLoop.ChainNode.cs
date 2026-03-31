@@ -10,7 +10,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
     /// outside <see cref="BaseProductionLoop{TPayload}"/> cannot see the mutation
     /// API or walk the chain.  Any accidental use fails to compile.
     /// </summary>
-    public abstract class ChainNode
+    public abstract partial class ChainNode
 #else
     /// <summary>
     /// RELEASE: single class assembled from partial parts.  In release builds
@@ -23,7 +23,9 @@ internal abstract partial class BaseProductionLoop<TPayload>
     {
         private protected int _sequenceNumber;
         private protected long _publishTimeNanoseconds;
+#pragma warning disable IDE0370 // Suppression is required — removing default! causes CS8601
         private protected TPayload _payload = default!;
+#pragma warning restore IDE0370
         private protected int _refCount;
 
 #if DEBUG
@@ -33,17 +35,17 @@ internal abstract partial class BaseProductionLoop<TPayload>
         public int SequenceNumber => _sequenceNumber;
         public long PublishTimeNanoseconds => _publishTimeNanoseconds;
         public TPayload Payload => _payload;
-        internal bool IsUnreferenced => _refCount == 0;
+        public bool IsUnreferenced => _refCount == 0;
 
-        internal static ChainSegment Chain(ChainNode? start, ChainNode end) =>
+        public static ChainSegment Chain(ChainNode? start, ChainNode end) =>
             new(start ?? end, end);
 
-        internal readonly struct ChainSegment
+        public readonly struct ChainSegment
         {
             private readonly ChainNode _start;
             private readonly ChainNode _end;
 
-            internal ChainSegment(ChainNode start, ChainNode end)
+            public ChainSegment(ChainNode start, ChainNode end)
             {
                 _start = start;
                 _end = end;
@@ -57,7 +59,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
                 private ChainNode? _current;
                 private bool _started;
 
-                internal Enumerator(ChainNode start, ChainNode end)
+                public Enumerator(ChainNode start, ChainNode end)
                 {
                     _current = start;
                     _end = end;

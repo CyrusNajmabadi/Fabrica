@@ -48,7 +48,7 @@ internal sealed class ThreadWorker<TState, TExecutor>
     private TState _state;
     private CancellationToken _cancellationToken;
 
-    internal AutoResetEvent DoneEvent => _doneSignal;
+    public AutoResetEvent DoneEvent => _doneSignal;
 
     /// <summary>
     /// Provides direct mutable access to the executor so the coordinator can
@@ -56,14 +56,14 @@ internal sealed class ThreadWorker<TState, TExecutor>
     /// executor-owned resources (e.g. created-nodes list) after join.
     /// Returns by ref to avoid copying the struct.
     /// </summary>
-    internal ref TExecutor Executor => ref _executor;
+    public ref TExecutor Executor => ref _executor;
 
-    internal TState State
+    public TState State
     {
         set => _state = value;
     }
 
-    internal CancellationToken CancellationToken
+    public CancellationToken CancellationToken
     {
         set => _cancellationToken = value;
     }
@@ -100,14 +100,14 @@ internal sealed class ThreadWorker<TState, TExecutor>
     /// Wakes the worker thread to begin its next dispatch.
     /// The go signal auto-resets when the worker wakes.
     /// </summary>
-    internal void Signal() =>
+    public void Signal() =>
         _goSignal.Set();
 
     /// <summary>
     /// Sets the shutdown flag and unblocks the thread so it can exit.
     /// Must be followed by <see cref="Join"/> to ensure the thread has terminated.
     /// </summary>
-    internal void Shutdown()
+    public void Shutdown()
     {
         _shutdown = true;
         _goSignal.Set();
@@ -116,14 +116,14 @@ internal sealed class ThreadWorker<TState, TExecutor>
     /// <summary>
     /// Blocks until the worker thread has exited.
     /// </summary>
-    internal void Join() =>
+    public void Join() =>
         _thread.Join();
 
     /// <summary>
     /// Disposes OS handles for the go and done signals.
     /// Call after the thread has been joined and no further waits will occur.
     /// </summary>
-    internal void Cleanup()
+    public void Cleanup()
     {
         _goSignal.Dispose();
         _doneSignal.Dispose();

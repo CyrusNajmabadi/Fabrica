@@ -17,7 +17,7 @@ namespace Engine.Pipeline;
 /// devirtualises all calls — zero interface-dispatch overhead in the hot path.
 /// </summary>
 internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
-    ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNodeAllocator> nodePool,
+    ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
     SharedState<TPayload> shared,
     TProducer producer,
     TClock clock,
@@ -120,9 +120,9 @@ internal sealed class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
             _waiter.Wait(new TimeSpan(delay / 100), cancellationToken);
     }
 
-    internal TestAccessor GetTestAccessor() => new(this);
+    public TestAccessor GetTestAccessor() => new(this);
 
-    internal readonly struct TestAccessor
+    public readonly struct TestAccessor
     {
         private readonly ProductionLoop<TPayload, TProducer, TClock, TWaiter> _loop;
         private readonly ChainTestAccessor _chain;

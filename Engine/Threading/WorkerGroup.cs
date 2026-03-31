@@ -61,7 +61,7 @@ internal sealed class WorkerGroup<TState, TExecutor> : IDisposable
     /// Direct access to workers for post-join inspection of executor state
     /// (e.g. reading created-nodes lists, render results).
     /// </summary>
-    internal ReadOnlySpan<ThreadWorker<TState, TExecutor>> Workers => _workers;
+    public ReadOnlySpan<ThreadWorker<TState, TExecutor>> Workers => _workers;
 
     /// <summary>
     /// Dispatches one unit of work across all workers and blocks until all

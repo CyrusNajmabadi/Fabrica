@@ -12,7 +12,7 @@ namespace Engine.Simulation;
 /// </summary>
 internal struct SimulationExecutor : IThreadExecutor<SimulationTickState>
 {
-    internal readonly WorkerResources Resources;
+    public readonly WorkerResources Resources;
 
     public SimulationExecutor(WorkerResources resources) =>
         Resources = resources;
