@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Simulation.Memory;
-using Simulation.World;
 
 namespace Simulation.Engine;
 

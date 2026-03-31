@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Simulation.World;
+namespace Simulation.Engine;
 
 /// <summary>
 /// A node in a forward-linked chain managed by a producer/consumer pipeline.
