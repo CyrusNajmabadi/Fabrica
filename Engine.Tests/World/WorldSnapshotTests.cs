@@ -1,23 +1,25 @@
 using Engine.Pipeline;
+using Engine.Tests.Helpers;
 using Engine.World;
 using Xunit;
 
 namespace Engine.Tests.World;
 
 /// <summary>
-/// Tests for <see cref="ChainNode{WorldImage}"/> payload lifecycle — setting,
-/// clearing, and ref-count interaction with payload visibility.
+/// Tests for <see cref="BaseProductionLoop{WorldImage}.ChainNode"/> payload
+/// lifecycle — setting, clearing, and ref-count interaction with payload visibility.
 /// </summary>
 public sealed class WorldSnapshotTests
 {
+    private readonly TestChainHarness _harness = new();
+    private BaseProductionLoop<WorldImage>.ChainTestAccessor Accessor => _harness.GetChainTestAccessor();
+
     [Fact]
     public void InitializeBase_AndPayload_SetsCorrectly()
     {
         var image = new WorldImage();
-        var node = new ChainNode<WorldImage>();
-
-        node.InitializeBase(5);
-        node.Payload = image;
+        var node = this.Accessor.CreateNode(5);
+        this.Accessor.SetPayload(node, image);
 
         Assert.Same(image, node.Payload);
         Assert.Equal(5, node.SequenceNumber);
@@ -27,12 +29,11 @@ public sealed class WorldSnapshotTests
     public void Release_ToZero_AllowsPayloadClearing()
     {
         var image = new WorldImage();
-        var node = new ChainNode<WorldImage>();
-        node.InitializeBase(10);
-        node.Payload = image;
+        var node = this.Accessor.CreateNode(10);
+        this.Accessor.SetPayload(node, image);
 
-        node.ClearPayload();
-        node.Release();
+        this.Accessor.ClearPayload(node);
+        this.Accessor.Release(node);
 
         Assert.True(node.IsUnreferenced);
         Assert.Null(node.Payload);
@@ -42,12 +43,11 @@ public sealed class WorldSnapshotTests
     public void AddRef_PreventsRelease_PayloadStillAccessible()
     {
         var image = new WorldImage();
-        var node = new ChainNode<WorldImage>();
-        node.InitializeBase(5);
-        node.Payload = image;
+        var node = this.Accessor.CreateNode(5);
+        this.Accessor.SetPayload(node, image);
 
-        node.AddRef();
-        node.Release();
+        this.Accessor.AddRef(node);
+        this.Accessor.Release(node);
 
         Assert.False(node.IsUnreferenced);
         Assert.Same(image, node.Payload);
@@ -56,13 +56,12 @@ public sealed class WorldSnapshotTests
     [Fact]
     public void AddRef_ThenFullRelease_ReachesZero()
     {
-        var node = new ChainNode<WorldImage>();
-        node.InitializeBase(5);
-        node.Payload = new WorldImage();
+        var node = this.Accessor.CreateNode(5);
+        this.Accessor.SetPayload(node, new WorldImage());
 
-        node.AddRef();
-        node.Release();
-        node.Release();
+        this.Accessor.AddRef(node);
+        this.Accessor.Release(node);
+        this.Accessor.Release(node);
 
         Assert.True(node.IsUnreferenced);
     }

@@ -1,7 +1,10 @@
+using Engine.Memory;
 using Engine.Pipeline;
 using Engine.Rendering;
 using Engine.Threading;
 using Engine.World;
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
 
 namespace Engine.Tests.Helpers;
 
@@ -84,5 +87,26 @@ internal readonly struct TestNoOpRenderer : IRenderer
 
 internal readonly struct TestNoOpConsumer : IConsumer<WorldImage>
 {
-    public void Consume(ChainNode<WorldImage>? previous, ChainNode<WorldImage> latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
+    public void Consume(ChainNode? previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
+}
+
+/// <summary>
+/// Minimal concrete subclass of <see cref="BaseProductionLoop{TPayload}"/> for
+/// tests that need to create and mutate chain nodes outside of a full production loop.
+/// </summary>
+internal sealed class TestChainHarness : BaseProductionLoop<WorldImage>
+{
+    public TestChainHarness(int poolSize = 16)
+        : base(new ObjectPool<ChainNode, NodeAllocator>(poolSize), new PinnedVersions())
+    {
+    }
+
+    public TestChainHarness(
+        ObjectPool<ChainNode, NodeAllocator> nodePool,
+        PinnedVersions pinnedVersions)
+        : base(nodePool, pinnedVersions)
+    {
+    }
+
+    protected override void ReleasePayloadResources(WorldImage payload) { }
 }

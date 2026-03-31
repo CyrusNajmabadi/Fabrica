@@ -7,6 +7,9 @@ using Engine.Threading;
 using Engine.World;
 using Xunit;
 
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
+
 namespace Engine.Tests;
 
 public sealed class SimulationLoopTickTests
@@ -24,7 +27,7 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.Bootstrap();
 
-        var node = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var node = test.Accessor.CurrentNode!;
 
         Assert.Equal(0, test.Accessor.CurrentSequence);
         Assert.Same(node, test.Accessor.OldestNode);
@@ -39,7 +42,7 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var initial = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var initial = test.Accessor.CurrentNode!;
 
         test.Accessor.Tick();
 
@@ -59,8 +62,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var secondNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
-        var firstNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
+        var secondNode = test.Accessor.CurrentNode!;
+        var firstNode = test.Accessor.OldestNode!;
 
         test.Shared.ConsumptionEpoch = 2;
 
@@ -80,7 +83,7 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
+        var firstNode = test.Accessor.OldestNode!;
 
         test.Shared.ConsumptionEpoch = 2;
 
@@ -95,7 +98,7 @@ public sealed class SimulationLoopTickTests
         var test = SimulationLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var currentNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var currentNode = test.Accessor.CurrentNode!;
 
         test.Shared.ConsumptionEpoch = 100;
 
@@ -120,8 +123,8 @@ public sealed class SimulationLoopTickTests
 
         test.Accessor.CleanupStaleNodes();
 
-        Assert.Equal(1, Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode).SequenceNumber);
-        Assert.Equal(2, Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode).SequenceNumber);
+        Assert.Equal(1, test.Accessor.OldestNode!.SequenceNumber);
+        Assert.Equal(2, test.Accessor.CurrentNode!.SequenceNumber);
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
 
@@ -135,8 +138,8 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
-        var latestNode = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var firstNode = test.Accessor.OldestNode!;
+        var latestNode = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(firstNode.SequenceNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
@@ -165,10 +168,10 @@ public sealed class SimulationLoopTickTests
         test.Accessor.Tick(); // tick 2
         test.Accessor.Tick(); // tick 3
 
-        var tick0 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
-        var tick1 = Assert.IsType<ChainNode<WorldImage>>(tick0.NextInChain);
-        var tick2 = Assert.IsType<ChainNode<WorldImage>>(tick1.NextInChain);
-        var tick3 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var tick0 = test.Accessor.OldestNode!;
+        var tick1 = tick0.NextInChain!;
+        var tick2 = tick1.NextInChain!;
+        var tick3 = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(tick1.SequenceNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 3;
@@ -424,7 +427,7 @@ public sealed class SimulationLoopTickTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();

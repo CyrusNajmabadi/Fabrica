@@ -35,13 +35,13 @@ internal sealed class SharedState<TPayload>
     // ── LatestNode ───────────────────────────────────────────────────────────
     // Written by production thread only.  Read by consumption thread.
 
-    private volatile ChainNode<TPayload>? _latestNode;
+    private volatile BaseProductionLoop<TPayload>.ChainNode? _latestNode;
 
 #if DEBUG
     private int _latestNodeWriterThreadId = -1;
 #endif
 
-    public ChainNode<TPayload>? LatestNode
+    public BaseProductionLoop<TPayload>.ChainNode? LatestNode
     {
         get => _latestNode;
         set

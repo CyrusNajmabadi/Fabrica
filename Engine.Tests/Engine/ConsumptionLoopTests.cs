@@ -5,6 +5,8 @@ using Engine.Tests.Helpers;
 using Engine.Threading;
 using Engine.World;
 using Xunit;
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
 
 namespace Engine.Tests;
 
@@ -151,10 +153,10 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         var chain = test.CreatePublishedChain(startTick: 2, endTick: 6);
-        tick1.SetNext(chain[0]);
+        test.LinkNodes(tick1, chain[0]);
 
-        ChainNode<WorldImage>? capturedPrevious = null;
-        ChainNode<WorldImage>? capturedLatest = null;
+        ChainNode? capturedPrevious = null;
+        ChainNode? capturedLatest = null;
         test.ConsumerState.BeforeConsume = (prev, latest, _) =>
         {
             capturedPrevious = prev;
@@ -169,7 +171,7 @@ public sealed class ConsumptionLoopTests
         Assert.Equal(6, capturedLatest!.SequenceNumber);
 
         var ticks = new List<int>();
-        foreach (var node in ChainNode<WorldImage>.Chain(capturedPrevious, capturedLatest))
+        foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest))
             ticks.Add(node.SequenceNumber);
 
         Assert.Equal([1, 2, 3, 4, 5, 6], ticks);
@@ -184,13 +186,13 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         var chain = test.CreatePublishedChain(startTick: 1, endTick: 3);
-        tick0.SetNext(chain[0]);
+        test.LinkNodes(tick0, chain[0]);
 
         var beyondLatest = test.CreateUnpublishedNode(tick: 4);
-        chain[^1].SetNext(beyondLatest);
+        test.LinkNodes(chain[^1], beyondLatest);
 
-        ChainNode<WorldImage>? capturedPrevious = null;
-        ChainNode<WorldImage>? capturedLatest = null;
+        ChainNode? capturedPrevious = null;
+        ChainNode? capturedLatest = null;
         test.ConsumerState.BeforeConsume = (prev, latest, _) =>
         {
             capturedPrevious = prev;
@@ -201,7 +203,7 @@ public sealed class ConsumptionLoopTests
 
         Assert.NotNull(capturedLatest);
         var ticks = new List<int>();
-        foreach (var node in ChainNode<WorldImage>.Chain(capturedPrevious, capturedLatest!))
+        foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest!))
             ticks.Add(node.SequenceNumber);
 
         Assert.Equal([0, 1, 2, 3], ticks);
@@ -215,8 +217,8 @@ public sealed class ConsumptionLoopTests
         test.CreatePublishedNode(tick: 1);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        ChainNode<WorldImage>? previous2 = null;
-        ChainNode<WorldImage>? latest2 = null;
+        ChainNode? previous2 = null;
+        ChainNode? latest2 = null;
         test.ConsumerState.BeforeConsume = (prev, latest, _) =>
         {
             previous2 = prev;
@@ -228,8 +230,8 @@ public sealed class ConsumptionLoopTests
         Assert.Null(previous2);
 
         test.CreatePublishedNode(tick: 2);
-        ChainNode<WorldImage>? previous3 = null;
-        ChainNode<WorldImage>? latest3 = null;
+        ChainNode? previous3 = null;
+        ChainNode? latest3 = null;
         test.ConsumerState.BeforeConsume = (prev, latest, _) =>
         {
             previous3 = prev;
@@ -374,9 +376,9 @@ public sealed class ConsumptionLoopTests
     private sealed class TestConsumerState
     {
         public readonly List<int> ConsumedTicks = [];
-        public readonly List<(ChainNode<WorldImage>? Previous, ChainNode<WorldImage> Latest)> ConsumedPairs = [];
+        public readonly List<(ChainNode? Previous, ChainNode Latest)> ConsumedPairs = [];
 
-        public Action<ChainNode<WorldImage>?, ChainNode<WorldImage>, long>? BeforeConsume { get; set; }
+        public Action<ChainNode?, ChainNode, long>? BeforeConsume { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -388,8 +390,8 @@ public sealed class ConsumptionLoopTests
         public TestRecordingConsumer(TestConsumerState state) => _state = state;
 
         public void Consume(
-            ChainNode<WorldImage>? previous,
-            ChainNode<WorldImage> latest,
+            ChainNode? previous,
+            ChainNode latest,
             long frameStartNanoseconds,
             CancellationToken cancellationToken)
         {
@@ -431,7 +433,7 @@ public sealed class ConsumptionLoopTests
             where TWaiter : struct, IWaiter
         {
             var pinnedVersions = new PinnedVersions();
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var shared = new SharedState<WorldImage>();
             var consumer = new TestRecordingConsumer(consumerState);
@@ -442,9 +444,10 @@ public sealed class ConsumptionLoopTests
                 clock,
                 waiter,
                 deferredConsumers ?? []);
+            var harness = new TestChainHarness(nodePool, pinnedVersions);
             return new ConsumptionLoopTestContext<TClock, TWaiter>(
                 pinnedVersions,
-                nodePool,
+                harness,
                 imagePool,
                 shared,
                 loop,
@@ -458,12 +461,13 @@ public sealed class ConsumptionLoopTests
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        private readonly ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>> _nodePool;
+        private readonly TestChainHarness _harness;
         private readonly ObjectPool<WorldImage, WorldImageAllocator> _imagePool;
+        private readonly BaseProductionLoop<WorldImage>.ChainTestAccessor _chainAccessor;
 
         internal ConsumptionLoopTestContext(
             PinnedVersions pinnedVersions,
-            ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>> nodePool,
+            TestChainHarness harness,
             ObjectPool<WorldImage, WorldImageAllocator> imagePool,
             SharedState<WorldImage> shared,
             ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> loop,
@@ -472,8 +476,9 @@ public sealed class ConsumptionLoopTests
             TestWaiterState waiterState)
         {
             this.PinnedVersions = pinnedVersions;
-            _nodePool = nodePool;
+            _harness = harness;
             _imagePool = imagePool;
+            _chainAccessor = harness.GetChainTestAccessor();
             this.Shared = shared;
             this.Loop = loop;
             this.Accessor = loop.GetTestAccessor();
@@ -496,42 +501,42 @@ public sealed class ConsumptionLoopTests
 
         public TestWaiterState WaiterState { get; }
 
-        public ChainNode<WorldImage> CreatePublishedNode(int tick)
+        public ChainNode CreatePublishedNode(int tick)
         {
             var image = _imagePool.Rent();
-            var node = _nodePool.Rent();
-            node.InitializeBase(tick);
-            node.Payload = image;
+            var node = _chainAccessor.CreateNode(tick);
+            _chainAccessor.SetPayload(node, image);
             this.Shared.LatestNode = node;
             return node;
         }
 
-        public ChainNode<WorldImage> CreateUnpublishedNode(int tick)
+        public ChainNode CreateUnpublishedNode(int tick)
         {
             var image = _imagePool.Rent();
-            var node = _nodePool.Rent();
-            node.InitializeBase(tick);
-            node.Payload = image;
+            var node = _chainAccessor.CreateNode(tick);
+            _chainAccessor.SetPayload(node, image);
             return node;
         }
 
-        public ChainNode<WorldImage>[] CreatePublishedChain(int startTick, int endTick)
+        public ChainNode[] CreatePublishedChain(int startTick, int endTick)
         {
             var count = endTick - startTick + 1;
-            var chain = new ChainNode<WorldImage>[count];
+            var chain = new ChainNode[count];
             for (var i = 0; i < count; i++)
             {
                 var image = _imagePool.Rent();
-                var node = _nodePool.Rent();
-                node.InitializeBase(startTick + i);
-                node.Payload = image;
+                var node = _chainAccessor.CreateNode(startTick + i);
+                _chainAccessor.SetPayload(node, image);
                 if (i > 0)
-                    chain[i - 1].SetNext(node);
+                    _chainAccessor.LinkNodes(chain[i - 1], node);
                 chain[i] = node;
             }
 
             this.Shared.LatestNode = chain[^1];
             return chain;
         }
+
+        public void LinkNodes(ChainNode current, ChainNode next) =>
+            _chainAccessor.LinkNodes(current, next);
     }
 }

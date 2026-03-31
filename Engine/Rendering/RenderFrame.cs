@@ -48,8 +48,8 @@ namespace Engine.Rendering;
 /// </summary>
 internal readonly struct RenderFrame
 {
-    public required ChainNode<WorldImage>? Previous { get; init; }
-    public required ChainNode<WorldImage> Latest { get; init; }
+    public required BaseProductionLoop<WorldImage>.ChainNode? Previous { get; init; }
+    public required BaseProductionLoop<WorldImage>.ChainNode Latest { get; init; }
     public required InterpolationClock Interpolation { get; init; }
     public required EngineStatus EngineStatus { get; init; }
 
@@ -59,7 +59,8 @@ internal readonly struct RenderFrame
     /// through <see cref="Latest"/> inclusive.  Safely bounded — never reads
     /// past the published frontier.
     /// </summary>
-    public ChainNode<WorldImage>.ChainSegment Chain => ChainNode<WorldImage>.Chain(this.Previous, this.Latest);
+    public BaseProductionLoop<WorldImage>.ChainNode.ChainSegment Chain =>
+        BaseProductionLoop<WorldImage>.ChainNode.Chain(this.Previous, this.Latest);
 }
 
 /// <summary>

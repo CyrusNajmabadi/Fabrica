@@ -7,6 +7,9 @@ using Engine.Threading;
 using Engine.World;
 using Xunit;
 
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
+
 namespace Engine.Tests;
 
 public sealed class LoopStressHarnessTests
@@ -133,7 +136,7 @@ public sealed class LoopStressHarnessTests
 
         public static LoopStressHarness Create(int poolSize = 64)
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
@@ -196,9 +199,9 @@ public sealed class LoopStressHarnessTests
 
             public int CurrentSequence => _accessor.CurrentSequence;
 
-            public ChainNode<WorldImage>? CurrentNode => _accessor.CurrentNode;
+            public ChainNode? CurrentNode => _accessor.CurrentNode;
 
-            public ChainNode<WorldImage>? OldestNode => _accessor.OldestNode;
+            public ChainNode? OldestNode => _accessor.OldestNode;
 
             public void Bootstrap()
             {

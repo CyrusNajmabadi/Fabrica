@@ -16,8 +16,8 @@ namespace Engine.Pipeline;
 internal interface IConsumer<TPayload>
 {
     void Consume(
-        ChainNode<TPayload>? previous,
-        ChainNode<TPayload> latest,
+        BaseProductionLoop<TPayload>.ChainNode? previous,
+        BaseProductionLoop<TPayload>.ChainNode latest,
         long frameStartNanoseconds,
         CancellationToken cancellationToken);
 }

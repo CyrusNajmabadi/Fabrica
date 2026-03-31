@@ -7,6 +7,9 @@ using Engine.Threading;
 using Engine.World;
 using Xunit;
 
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
+
 namespace Engine.Tests;
 
 public sealed class SimulationLoopAdditionalTests
@@ -26,10 +29,10 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var tick0 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
-        var tick1 = Assert.IsType<ChainNode<WorldImage>>(tick0.NextInChain);
-        var tick2 = Assert.IsType<ChainNode<WorldImage>>(tick1.NextInChain);
-        var tick3 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var tick0 = test.Accessor.OldestNode!;
+        var tick1 = tick0.NextInChain!;
+        var tick2 = tick1.NextInChain!;
+        var tick3 = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(tick0.SequenceNumber, tick0Owner);
         test.PinnedVersions.Pin(tick1.SequenceNumber, tick1Owner);
@@ -64,9 +67,9 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var tick0 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
-        var tick1 = Assert.IsType<ChainNode<WorldImage>>(tick0.NextInChain);
-        var tick3 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var tick0 = test.Accessor.OldestNode!;
+        var tick1 = tick0.NextInChain!;
+        var tick3 = test.Accessor.CurrentNode!;
 
         test.PinnedVersions.Pin(tick0.SequenceNumber, tick0Owner);
         test.PinnedVersions.Pin(tick1.SequenceNumber, tick1Owner);
@@ -102,7 +105,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var tick0 = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.OldestNode);
+        var tick0 = test.Accessor.OldestNode!;
 
         test.PinnedVersions.Pin(tick0.SequenceNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
@@ -116,7 +119,7 @@ public sealed class SimulationLoopAdditionalTests
             test.Accessor.CleanupStaleNodes);
 
         Assert.Contains("more than once", exception.Message);
-        Assert.Equal(3, Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode).SequenceNumber);
+        Assert.Equal(3, test.Accessor.CurrentNode!.SequenceNumber);
     }
 
     [Fact]
@@ -276,7 +279,7 @@ public sealed class SimulationLoopAdditionalTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();

@@ -25,14 +25,14 @@ namespace Engine.Memory;
 ///
 /// ALLOCATOR STRATEGY
 ///   Both pools use struct-generic allocators (<typeparamref name="TPayloadAllocator"/>
-///   and <see cref="ChainNodeAllocator{TPayload}"/>) so the JIT specialises all
-///   allocation and reset paths, eliminating interface dispatch entirely.
+///   and <see cref="BaseProductionLoop{TPayload}.NodeAllocator"/>) so the JIT
+///   specialises all allocation and reset paths, eliminating interface dispatch entirely.
 /// </summary>
 internal sealed class MemorySystem<TPayload, TPayloadAllocator>
     where TPayload : class
     where TPayloadAllocator : struct, IAllocator<TPayload>
 {
-    private readonly ObjectPool<ChainNode<TPayload>, ChainNodeAllocator<TPayload>> _nodePool;
+    private readonly ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.NodeAllocator> _nodePool;
     private readonly ObjectPool<TPayload, TPayloadAllocator> _payloadPool;
 
     public PinnedVersions PinnedVersions { get; } = new();
@@ -42,14 +42,14 @@ internal sealed class MemorySystem<TPayload, TPayloadAllocator>
         if (initialPoolSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
-        _nodePool = new ObjectPool<ChainNode<TPayload>, ChainNodeAllocator<TPayload>>(initialPoolSize);
+        _nodePool = new ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.NodeAllocator>(initialPoolSize);
         _payloadPool = new ObjectPool<TPayload, TPayloadAllocator>(initialPoolSize, payloadAllocator);
     }
 
     // ── Node pool (simulation thread only) ───────────────────────────────────
 
-    public ChainNode<TPayload> RentNode() => _nodePool.Rent();
-    public void ReturnNode(ChainNode<TPayload> node) => _nodePool.Return(node);
+    public BaseProductionLoop<TPayload>.ChainNode RentNode() => _nodePool.Rent();
+    public void ReturnNode(BaseProductionLoop<TPayload>.ChainNode node) => _nodePool.Return(node);
 
     // ── Payload pool (simulation thread only) ────────────────────────────────
 

@@ -7,6 +7,9 @@ using Engine.Threading;
 using Engine.World;
 using Xunit;
 
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
+
 namespace Engine.Tests;
 
 public sealed class SimulationLoopRunTests
@@ -106,7 +109,7 @@ public sealed class SimulationLoopRunTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        var node = Assert.IsType<ChainNode<WorldImage>>(test.Accessor.CurrentNode);
+        var node = test.Accessor.CurrentNode!;
         Assert.Equal(0, test.Accessor.CurrentSequence);
         Assert.Same(node, test.Accessor.OldestNode);
         Assert.Same(node, test.Shared.LatestNode);
@@ -148,7 +151,7 @@ public sealed class SimulationLoopRunTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(poolSize);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(poolSize);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();

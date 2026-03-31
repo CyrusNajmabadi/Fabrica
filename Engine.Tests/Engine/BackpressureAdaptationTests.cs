@@ -7,6 +7,9 @@ using Engine.Threading;
 using Engine.World;
 using Xunit;
 
+using ChainNode = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.ChainNode;
+using NodeAllocator = Engine.Pipeline.BaseProductionLoop<Engine.World.WorldImage>.NodeAllocator;
+
 namespace Engine.Tests;
 
 /// <summary>
@@ -242,7 +245,7 @@ public sealed class BackpressureAdaptationTests
 
         public static BackpressureHarness Create()
         {
-            var nodePool = new ObjectPool<ChainNode<WorldImage>, ChainNodeAllocator<WorldImage>>(512);
+            var nodePool = new ObjectPool<ChainNode, NodeAllocator>(512);
             var imagePool = new ObjectPool<WorldImage, WorldImageAllocator>(512);
             var pinnedVersions = new PinnedVersions();
             var shared = new SharedState<WorldImage>();
