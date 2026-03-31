@@ -69,7 +69,9 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
     private readonly TClock _clock = clock;
     private readonly TWaiter _waiter = waiter;
     private readonly DeferredConsumerScheduler<TPayload> _deferred = new(shared.PinnedVersions, deferredConsumers);
+#pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
     private TConsumer _consumer = consumer;
+#pragma warning restore IDE0044
 
     private BaseProductionLoop<TPayload>.ChainNode? _previous;
     private BaseProductionLoop<TPayload>.ChainNode? _latest;

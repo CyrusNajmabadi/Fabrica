@@ -41,8 +41,8 @@ internal sealed class WorldImage
     /// </summary>
     public struct Allocator : Memory.IAllocator<WorldImage>
     {
-        public WorldImage Allocate() => new();
+        public readonly WorldImage Allocate() => new();
 
-        public void Reset(WorldImage item) => item.ResetForPool();
+        public readonly void Reset(WorldImage item) => item.ResetForPool();
     }
 }

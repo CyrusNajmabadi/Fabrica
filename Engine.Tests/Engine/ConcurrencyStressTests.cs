@@ -209,12 +209,12 @@ public sealed class ConcurrencyStressTests
                 var ticks = Stopwatch.GetTimestamp();
                 var seconds = ticks / Stopwatch.Frequency;
                 var remainder = ticks % Stopwatch.Frequency;
-                return seconds * 1_000_000_000L + remainder * 1_000_000_000L / Stopwatch.Frequency;
+                return (seconds * 1_000_000_000L) + (remainder * 1_000_000_000L / Stopwatch.Frequency);
             }
         }
     }
 
-    private struct TestInvariantCheckingConsumer : IConsumer<WorldImage>
+    private readonly struct TestInvariantCheckingConsumer : IConsumer<WorldImage>
     {
         private readonly TestStressMetrics _metrics;
         private readonly int _renderDelayMilliseconds;
@@ -260,7 +260,7 @@ public sealed class ConcurrencyStressTests
                 var ticks = Stopwatch.GetTimestamp();
                 var seconds = ticks / Stopwatch.Frequency;
                 var remainder = ticks % Stopwatch.Frequency;
-                var now = seconds * 1_000_000_000L + remainder * 1_000_000_000L / Stopwatch.Frequency;
+                var now = (seconds * 1_000_000_000L) + (remainder * 1_000_000_000L / Stopwatch.Frequency);
                 return now + 100_000_000L;
             }, cancellationToken);
     }

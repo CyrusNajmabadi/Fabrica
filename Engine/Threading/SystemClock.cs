@@ -28,7 +28,7 @@ internal readonly struct SystemClock : IClock
             var seconds = ticks / Stopwatch.Frequency;
             var remainder = ticks % Stopwatch.Frequency;
             // Safe: remainder < Frequency < long.MaxValue / 1_000_000_000 (asserted above)
-            return seconds * 1_000_000_000L + remainder * 1_000_000_000L / Stopwatch.Frequency;
+            return (seconds * 1_000_000_000L) + (remainder * 1_000_000_000L / Stopwatch.Frequency);
         }
     }
 }
