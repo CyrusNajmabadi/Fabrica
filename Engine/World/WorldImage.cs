@@ -1,3 +1,5 @@
+using Engine.Memory;
+
 namespace Engine.World;
 
 /// <summary>
@@ -36,10 +38,10 @@ internal sealed class WorldImage
     /// <summary>
     /// Allocator for <see cref="WorldImage"/> instances managed by an
     /// <see cref="ObjectPool{T, TAllocator}"/>.  Calls
-    /// <see cref="WorldImage.ResetForPool"/> on return so pooled instances
+    /// <see cref="ResetForPool"/> on return so pooled instances
     /// always start with a clean slate.
     /// </summary>
-    public struct Allocator : Memory.IAllocator<WorldImage>
+    public struct Allocator : IAllocator<WorldImage>
     {
         public readonly WorldImage Allocate() => new();
 

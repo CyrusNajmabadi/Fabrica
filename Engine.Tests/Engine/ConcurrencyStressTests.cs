@@ -223,7 +223,7 @@ public sealed class ConcurrencyStressTests
         public long ErrorRetryDelayNanoseconds => 1_000_000_000L;
 
         public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken) =>
-            Task.Run<long>(() =>
+            Task.Run(() =>
             {
                 try
                 {

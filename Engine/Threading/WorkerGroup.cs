@@ -19,9 +19,9 @@ namespace Engine.Threading;
 /// from simulation executors, gathering render results).
 ///
 /// THREAD PINNING
-///   Workers are pinned to logical cores starting at <c>coreIndexOffset</c>.
-///   This lets simulation workers pin to cores 0..N-1 and render workers pin to
-///   cores N..N+M-1, avoiding overlap.
+///   Workers are pinned to logical cores 0..N-1 at thread startup.
+///   This is best-effort — pinning may fail silently on restricted kernels,
+///   containerised environments, or macOS.
 ///
 /// OWNERSHIP
 ///   The group owns the workers and their threads.  <see cref="Shutdown"/> signals
@@ -34,7 +34,7 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
     private readonly ThreadWorker[] _workers;
     private readonly WaitHandleBatch _doneBatch;
 
-    public WorkerGroup(int workerCount, Func<int, TExecutor> executorFactory, string threadNamePrefix, int coreIndexOffset = 0)
+    public WorkerGroup(int workerCount, Func<int, TExecutor> executorFactory, string threadNamePrefix)
     {
         if (workerCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(workerCount));
@@ -47,7 +47,7 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
             var executor = executorFactory(i);
             _workers[i] = new ThreadWorker(
                 executor,
-                coreIndexOffset + i,
+                i,
                 $"{threadNamePrefix}-{i}");
             doneEvents[i] = _workers[i].DoneEvent;
         }
