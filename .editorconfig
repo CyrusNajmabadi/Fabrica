@@ -210,9 +210,15 @@ dotnet_diagnostic.IDE0055.severity = warning
 # IDE0004: Remove unnecessary cast
 dotnet_diagnostic.IDE0004.severity = warning
 
+# IDE0005: Remove unnecessary using directives
+dotnet_diagnostic.IDE0005.severity = warning
+
 # IDE0040: Add accessibility modifiers
 dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
 dotnet_diagnostic.IDE0040.severity = warning
+
+# IDE0290: Use primary constructor
+dotnet_diagnostic.IDE0290.severity = suggestion
 
 # IDE0060: Remove unused parameter (suggestion for now; elevate once stubs are filled in)
 dotnet_diagnostic.IDE0060.severity = suggestion

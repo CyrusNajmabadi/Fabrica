@@ -1,5 +1,3 @@
-using Engine;
-using Engine.Memory;
 using Engine.Threading;
 
 namespace Engine.Pipeline;
@@ -57,20 +55,20 @@ namespace Engine.Pipeline;
 /// Generic constraints (all struct) eliminate interface dispatch on every call
 /// in the hot frame loop.
 /// </summary>
-internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
-    SharedState<TPayload> shared,
+internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
+    SharedPipelineState<TPayload> shared,
     TConsumer consumer,
     TClock clock,
     TWaiter waiter,
-    DeferredConsumerRegistration<TPayload>[] deferredConsumers)
+    IDeferredConsumer<TPayload>[] deferredConsumers)
     where TConsumer : struct, IConsumer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
 {
-    private readonly SharedState<TPayload> _shared = shared;
+    private readonly SharedPipelineState<TPayload> _shared = shared;
     private readonly TClock _clock = clock;
     private readonly TWaiter _waiter = waiter;
-    private readonly DeferredConsumerScheduler _deferred = new(shared.PinnedVersions, deferredConsumers);
+    private readonly DeferredConsumerScheduler<TPayload> _deferred = new(shared.PinnedVersions, deferredConsumers);
     private TConsumer _consumer = consumer;
 
     private BaseProductionLoop<TPayload>.ChainNode? _previous;
@@ -84,12 +82,25 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
             this.RunOneIteration(cancellationToken);
     }
 
+    /// <summary>
+    /// Single frame of the consumption loop.
+    ///
+    /// Housekeeping first: finalise any deferred tasks that completed since
+    /// last frame (unpin, re-schedule), then check whether the production
+    /// thread has published a new node.  If so, rotate the previous/latest
+    /// pair so the consumer always sees the two most-recent distinct nodes.
+    ///
+    /// Once we have a valid pair, dispatch due deferred consumers (O(1) peek
+    /// on the min-heap — no work when nothing is scheduled) and then hand
+    /// the pair to the fast consumer.  Finally, advance the epoch to keep
+    /// both held nodes alive and sleep for any remaining frame budget.
+    /// </summary>
     private void RunOneIteration(CancellationToken cancellationToken)
     {
         var frameStart = _clock.NowNanoseconds;
 
         _deferred.EnsureScheduleInitialized(frameStart);
-        _deferred.DrainCompletedTasks();
+        _deferred.DrainCompletedTasks(frameStart);
 
         var latestNode = _shared.LatestNode;
         if (latestNode is not null)
@@ -129,118 +140,5 @@ internal sealed class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
         var remaining = SimulationConstants.RenderIntervalNanoseconds - elapsed;
         if (remaining > 0)
             _waiter.Wait(new TimeSpan(remaining / 100), cancellationToken);
-    }
-
-    // ── Deferred consumer scheduler ──────────────────────────────────────────
-
-    /// <summary>
-    /// Encapsulates all state and logic for scheduling and dispatching deferred
-    /// consumers (e.g. periodic saves).  Keeps the main consumption loop lean.
-    /// </summary>
-    private sealed class DeferredConsumerScheduler
-    {
-        private readonly PinnedVersions _pinnedVersions;
-        private readonly IDeferredConsumer<TPayload>[] _consumers;
-        private readonly long[] _initialDelays;
-        private readonly Task<long>?[] _inFlightTasks;
-        private readonly int[] _pinnedSequences;
-        private readonly PriorityQueue<int, long> _schedule;
-        private bool _initialized;
-
-        public DeferredConsumerScheduler(
-            PinnedVersions pinnedVersions,
-            DeferredConsumerRegistration<TPayload>[] registrations)
-        {
-            _pinnedVersions = pinnedVersions;
-
-            var count = registrations.Length;
-            _consumers = new IDeferredConsumer<TPayload>[count];
-            _initialDelays = new long[count];
-            _inFlightTasks = new Task<long>?[count];
-            _pinnedSequences = new int[count];
-            _schedule = new PriorityQueue<int, long>(count);
-
-            for (var i = 0; i < count; i++)
-            {
-                _consumers[i] = registrations[i].Consumer;
-                _initialDelays[i] = registrations[i].InitialDelayNanoseconds;
-            }
-        }
-
-        public void EnsureScheduleInitialized(long nowNanoseconds)
-        {
-            if (_initialized)
-                return;
-            _initialized = true;
-
-            for (var i = 0; i < _consumers.Length; i++)
-                _schedule.Enqueue(i, nowNanoseconds + _initialDelays[i]);
-        }
-
-        public void DrainCompletedTasks()
-        {
-            for (var i = 0; i < _inFlightTasks.Length; i++)
-            {
-                var task = _inFlightTasks[i];
-                if (task is null || !task.IsCompleted)
-                    continue;
-
-                _pinnedVersions.Unpin(_pinnedSequences[i], _consumers[i]);
-                _inFlightTasks[i] = null;
-
-                var nextRunTime = task.IsCompletedSuccessfully ? task.Result : 0L;
-                _schedule.Enqueue(i, nextRunTime);
-            }
-        }
-
-        public void MaybeRunConsumers(
-            BaseProductionLoop<TPayload>.ChainNode latest,
-            long frameStartNanoseconds,
-            CancellationToken cancellationToken)
-        {
-            while (_schedule.TryPeek(out var consumerIndex, out var nextRun))
-            {
-                if (nextRun > frameStartNanoseconds)
-                    break;
-
-                _schedule.Dequeue();
-
-                if (_inFlightTasks[consumerIndex] is not null)
-                {
-                    _schedule.Enqueue(consumerIndex, nextRun);
-                    break;
-                }
-
-                var seq = latest.SequenceNumber;
-                _pinnedVersions.Pin(seq, _consumers[consumerIndex]);
-                _pinnedSequences[consumerIndex] = seq;
-
-                try
-                {
-                    _inFlightTasks[consumerIndex] = _consumers[consumerIndex]
-                        .ConsumeAsync(latest.Payload, seq, cancellationToken);
-                }
-                catch
-                {
-                    _pinnedVersions.Unpin(seq, _consumers[consumerIndex]);
-                    _schedule.Enqueue(consumerIndex, 0);
-                    throw;
-                }
-            }
-        }
-    }
-
-    public TestAccessor GetTestAccessor() => new(this);
-
-    public readonly struct TestAccessor
-    {
-        private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _loop;
-
-        public TestAccessor(ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> loop) => _loop = loop;
-
-        public void RunOneIteration(CancellationToken cancellationToken) => _loop.RunOneIteration(cancellationToken);
-
-        public void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken) =>
-            _loop.ThrottleToFrameRate(frameStart, cancellationToken);
     }
 }

@@ -1,15 +1,13 @@
-using Engine.Pipeline;
-
 namespace Engine.Memory;
 
 /// <summary>
-/// Owns all object pools for chain nodes and payloads.
+/// Owns the payload object pool.
 ///
 /// SINGLE-THREAD POOL OWNERSHIP
-///   Both ObjectPool instances (nodes and payloads) are accessed exclusively
-///   from the simulation thread.  This is intentional: the simulation is the sole
-///   memory manager, which eliminates all locking, atomic operations, and ABA
-///   hazards from the allocation fast path.
+///   The ObjectPool instance is accessed exclusively from the simulation thread.
+///   This is intentional: the simulation is the sole memory manager, which
+///   eliminates all locking, atomic operations, and ABA hazards from the
+///   allocation fast path.
 ///
 ///   Other threads (consumption, deferred consumers) interact with memory only
 ///   indirectly: the consumption thread reads the ChainNode reference published
@@ -17,16 +15,18 @@ namespace Engine.Memory;
 ///   Neither ever calls Rent or Return — the objects are always reclaimed by the
 ///   simulation after both threads have finished with them.
 ///
+///   Chain node pooling is owned by <see cref="Pipeline.BaseProductionLoop{TPayload}"/>
+///   directly, since only the production loop allocates and frees nodes.
+///
 /// ALLOCATOR STRATEGY
-///   Both pools use struct-generic allocators (<typeparamref name="TPayloadAllocator"/>
-///   and <see cref="BaseProductionLoop{TPayload}.ChainNode.Allocator"/>) so the JIT
-///   specialises all allocation and reset paths, eliminating interface dispatch entirely.
+///   The pool uses a struct-generic allocator (<typeparamref name="TPayloadAllocator"/>)
+///   so the JIT specialises all allocation and reset paths, eliminating interface
+///   dispatch entirely.
 /// </summary>
 internal sealed class MemorySystem<TPayload, TPayloadAllocator>
     where TPayload : class
     where TPayloadAllocator : struct, IAllocator<TPayload>
 {
-    private readonly ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> _nodePool;
     private readonly ObjectPool<TPayload, TPayloadAllocator> _payloadPool;
 
     public MemorySystem(int initialPoolSize, TPayloadAllocator payloadAllocator = default)
@@ -34,14 +34,8 @@ internal sealed class MemorySystem<TPayload, TPayloadAllocator>
         if (initialPoolSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(initialPoolSize));
 
-        _nodePool = new ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator>(initialPoolSize);
         _payloadPool = new ObjectPool<TPayload, TPayloadAllocator>(initialPoolSize, payloadAllocator);
     }
-
-    // ── Node pool (simulation thread only) ───────────────────────────────────
-
-    public BaseProductionLoop<TPayload>.ChainNode RentNode() => _nodePool.Rent();
-    public void ReturnNode(BaseProductionLoop<TPayload>.ChainNode node) => _nodePool.Return(node);
 
     // ── Payload pool (simulation thread only) ────────────────────────────────
 

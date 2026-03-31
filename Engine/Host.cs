@@ -38,27 +38,27 @@ namespace Engine;
 ///
 ///  DEFERRED CONSUMERS  (threadpool — dispatched by consumption thread)
 ///  ──────────────────────────────────────────────────────────────────────────
-///    • Consumer.ConsumeAsync(payload, sequence, ct)
+///    • Consumer.ConsumeAsync(payload, ct)
 ///    • Returns Task&lt;long&gt; with next-run wall-clock nanoseconds
 ///    • Loop auto-pins before dispatch, auto-unpins on completion
 ///
 /// ══════════════════════════════ SHARED STATE ════════════════════════════════
 ///
-///  All cross-thread communication lives in SharedState&lt;TPayload&gt;:
+///  All cross-thread communication lives in SharedPipelineState&lt;TPayload&gt;:
 ///
-///  SharedState.LatestNode        (volatile ChainNode&lt;TPayload&gt;?)
+///  SharedPipelineState.LatestNode        (volatile ChainNode&lt;TPayload&gt;?)
 ///    Written by production only; read by consumption.
 ///    The volatile release/acquire pair guarantees that all payload writes
 ///    made before the publish are visible to any thread that reads the node.
 ///    No additional synchronisation is needed to access payload fields.
 ///
-///  SharedState.ConsumptionEpoch  (volatile int)
+///  SharedPipelineState.ConsumptionEpoch  (volatile int)
 ///    Written by consumption only; read by production.
 ///    Production frees sequence &lt; epoch.  Conservative race: if production
 ///    reads a stale (lower) epoch it retains a node one extra cleanup pass —
 ///    it never frees something the consumption thread is still touching.
 ///
-///  SharedState.PinnedVersions    (ConcurrentDictionary-backed)
+///  SharedPipelineState.PinnedVersions    (ConcurrentDictionary-backed)
 ///    Thread-safe registry of sequences that deferred consumers hold.
 ///    Consumption thread pins before dispatching; threadpool tasks unpin on
 ///    completion; production thread reads IsPinned during cleanup.
@@ -201,14 +201,14 @@ internal static class SimulationEngine
             TRenderer renderer,
             int simulationWorkerCount,
             int renderWorkerCount,
-            params DeferredConsumerRegistration<WorldImage>[] deferredConsumers)
+            params IDeferredConsumer<WorldImage>[] deferredConsumers)
         where TRenderer : struct, IRenderer
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
         var nodePool = new ObjectPool<BaseProductionLoop<WorldImage>.ChainNode, BaseProductionLoop<WorldImage>.ChainNode.Allocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedState<WorldImage>();
+        var shared = new SharedPipelineState<WorldImage>();
         var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
         var renderCoordinator = new RenderCoordinator(renderWorkerCount);
 

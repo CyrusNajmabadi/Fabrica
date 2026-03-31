@@ -1,9 +1,7 @@
-using Engine;
 using Engine.Memory;
 using Engine.Pipeline;
 using Engine.Simulation;
 using Engine.Tests.Helpers;
-using Engine.Threading;
 using Engine.World;
 using Xunit;
 
@@ -189,6 +187,7 @@ public sealed class LoopHarnessExampleTests
         Assert.Empty(test.Renderer.RenderedTicks);
 
         test.DeferredConsumer.ClearDispatchFailure();
+        test.Clock.AdvanceBy(1_000_000_000L); // past ErrorRetryDelayNanoseconds so deferred consumer is due again
         test.ConsumptionLoop.RunIteration();
 
         Assert.Equal([1], test.Renderer.RenderedTicks);
@@ -203,7 +202,7 @@ public sealed class LoopHarnessExampleTests
         private long _simulationAccumulator;
 
         private LoopHarness(
-            SharedState<WorldImage> shared,
+            SharedPipelineState<WorldImage> shared,
             TestClockState clockState,
             TestDeferredConsumerState deferredConsumerState,
             TestRendererState rendererState,
@@ -221,7 +220,7 @@ public sealed class LoopHarnessExampleTests
             _simulationAccessor = productionLoop.GetTestAccessor();
         }
 
-        public SharedState<WorldImage> Shared { get; }
+        public SharedPipelineState<WorldImage> Shared { get; }
 
         public ClockController Clock { get; }
 
@@ -238,8 +237,7 @@ public sealed class LoopHarnessExampleTests
         public static LoopHarness Create(int poolSize = 8)
         {
             var deferredState = new TestDeferredConsumerState();
-            return CreateInternal(poolSize, [new DeferredConsumerRegistration<WorldImage>(
-                new TestDeferredConsumer(deferredState), 0L)], deferredState);
+            return CreateInternal(poolSize, [new TestDeferredConsumer(deferredState)], deferredState);
         }
 
         public static LoopHarness CreateWithNoDeferredConsumers(int poolSize = 8) =>
@@ -247,12 +245,12 @@ public sealed class LoopHarnessExampleTests
 
         private static LoopHarness CreateInternal(
             int poolSize,
-            DeferredConsumerRegistration<WorldImage>[] deferredConsumers,
+            IDeferredConsumer<WorldImage>[] deferredConsumers,
             TestDeferredConsumerState deferredState)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
             var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedState<WorldImage>();
+            var shared = new SharedPipelineState<WorldImage>();
             var clockState = new TestClockState();
             var rendererState = new TestRendererState();
             var clock = new TestRecordingClock(clockState);
@@ -386,7 +384,11 @@ public sealed class LoopHarnessExampleTests
 
         public TestDeferredConsumer(TestDeferredConsumerState state) => _state = state;
 
-        public Task<long> ConsumeAsync(WorldImage payload, int sequenceNumber, CancellationToken cancellationToken)
+        public long InitialDelayNanoseconds => 0L;
+
+        public long ErrorRetryDelayNanoseconds => 1_000_000_000L;
+
+        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken)
         {
             if (_state.ExceptionToThrow is { } ex)
                 throw ex;

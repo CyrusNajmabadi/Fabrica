@@ -1,5 +1,3 @@
-using Engine.Memory;
-
 namespace Engine.Pipeline;
 
 /// <summary>
@@ -19,23 +17,24 @@ namespace Engine.Pipeline;
 /// consumers when nothing is due.
 ///
 /// SCHEDULING
-///   Each deferred consumer is registered with an initial delay.  The consumption
-///   loop converts this to an absolute timestamp at startup and inserts it into
-///   the priority queue.  When the task completes, the returned value replaces
-///   the entry in the queue.
+///   <see cref="InitialDelayNanoseconds"/> controls how long after the loop starts
+///   before the first run.  The consumption loop converts this to an absolute
+///   timestamp at startup and inserts it into the priority queue.  When the task
+///   completes, the returned value replaces the entry in the queue.  On failure,
+///   the consumer is re-scheduled after <see cref="ErrorRetryDelayNanoseconds"/>.
 ///
 /// EXAMPLE: saving is one deferred consumer.  Its ConsumeAsync dispatches the
 /// actual I/O to a threadpool task and returns the next save time when done.
 /// </summary>
 internal interface IDeferredConsumer<in TPayload> : IPinOwner
 {
-    Task<long> ConsumeAsync(TPayload payload, int sequenceNumber, CancellationToken cancellationToken);
-}
+    /// <summary>Delay (in nanoseconds) from loop start until the first eligible run.</summary>
+    long InitialDelayNanoseconds { get; }
 
-/// <summary>
-/// Pairs a deferred consumer with the delay (in nanoseconds) from the loop's
-/// start time until the consumer's first eligible run.
-/// </summary>
-internal readonly record struct DeferredConsumerRegistration<TPayload>(
-    IDeferredConsumer<TPayload> Consumer,
-    long InitialDelayNanoseconds);
+    /// <summary>
+    /// Delay (in nanoseconds) before retrying after a failed <see cref="ConsumeAsync"/> task.
+    /// </summary>
+    long ErrorRetryDelayNanoseconds { get; }
+
+    Task<long> ConsumeAsync(TPayload payload, CancellationToken cancellationToken);
+}
