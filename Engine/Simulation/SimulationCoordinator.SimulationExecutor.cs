@@ -12,7 +12,7 @@ internal sealed partial class SimulationCoordinator
     /// <see cref="Prepare"/> clears per-tick accumulation state before each dispatch.
     /// <see cref="Execute"/> performs the worker's portion of the tick computation.
     /// </summary>
-    public struct SimulationExecutor : IThreadExecutor<SimulationTickState>
+    public readonly struct SimulationExecutor : IThreadExecutor<SimulationTickState>
     {
         public readonly WorkerResources Resources;
 

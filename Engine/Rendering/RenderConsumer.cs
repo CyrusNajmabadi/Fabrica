@@ -15,7 +15,9 @@ internal struct RenderConsumer<TRenderer> : IConsumer<WorldImage>
     where TRenderer : struct, IRenderer
 {
     private readonly RenderCoordinator _renderCoordinator;
+#pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
     private TRenderer _renderer;
+#pragma warning restore IDE0044
 
     public RenderConsumer(RenderCoordinator renderCoordinator, TRenderer renderer)
     {

@@ -17,14 +17,14 @@ internal abstract partial class BaseProductionLoop<TPayload>
         /// </summary>
         public struct Allocator : IAllocator<ChainNode>
         {
-            public ChainNode Allocate() =>
+            public readonly ChainNode Allocate() =>
 #if DEBUG
                 new PrivateChainNode();
 #else
                 new ChainNode();
 #endif
 
-            public void Reset(ChainNode item) { }
+            public readonly void Reset(ChainNode item) { }
         }
     }
 }

@@ -179,7 +179,7 @@ public sealed class LoopHarnessExampleTests
         test.DeferredConsumer.FailDispatchWith(new InvalidOperationException("dispatch failed"));
 
         var exception = Assert.Throws<InvalidOperationException>(
-            () => test.ConsumptionLoop.RunIteration());
+            test.ConsumptionLoop.RunIteration);
 
         Assert.Equal("dispatch failed", exception.Message);
         Assert.False(test.Pins.IsPinned(1));

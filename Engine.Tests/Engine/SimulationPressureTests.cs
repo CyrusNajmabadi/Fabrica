@@ -48,7 +48,7 @@ public sealed class SimulationPressureTests
 
         for (var i = 0; i < expectedDelays.Length; i++)
         {
-            var gap = Lwm + (i + 1) * Tick;
+            var gap = Lwm + ((i + 1) * Tick);
             var actual = SimulationPressure.ComputeDelay(
                 gapNanoseconds: gap,
                 lowWaterMarkNanoseconds: Lwm,
@@ -65,7 +65,7 @@ public sealed class SimulationPressureTests
     public void ComputeDelay_IsCappedAtMaximum()
     {
         var delay = SimulationPressure.ComputeDelay(
-            gapNanoseconds: Lwm + 100 * Tick,
+            gapNanoseconds: Lwm + (100 * Tick),
             lowWaterMarkNanoseconds: Lwm,
             bucketWidthNanoseconds: Tick,
             bucketCount: 8,

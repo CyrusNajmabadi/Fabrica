@@ -13,7 +13,7 @@ namespace Engine.Simulation;
 /// The pool's allocator handles <see cref="WorldImage.ResetForPool"/> on
 /// return, so <see cref="ReleaseResources"/> just returns to the pool.
 /// </summary>
-internal struct SimulationProducer : IProducer<WorldImage>
+internal readonly struct SimulationProducer : IProducer<WorldImage>
 {
     private readonly ObjectPool<WorldImage, WorldImage.Allocator> _imagePool;
     private readonly SimulationCoordinator _coordinator;

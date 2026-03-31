@@ -29,7 +29,9 @@ internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaite
     private readonly SharedPipelineState<TPayload> _shared = shared;
     private readonly TClock _clock = clock;
     private readonly TWaiter _waiter = waiter;
+#pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
     private TProducer _producer = producer;
+#pragma warning restore IDE0044
 
     protected override void ReleasePayloadResources(TPayload payload) =>
         _producer.ReleaseResources(payload);

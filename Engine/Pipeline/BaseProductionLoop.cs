@@ -23,7 +23,7 @@ internal abstract partial class BaseProductionLoop<TPayload>(
 
     private readonly ObjectPool<ChainNode, ChainNode.Allocator> _nodePool = nodePool;
     private readonly PinnedVersions _pinnedVersions = pinnedVersions;
-    private readonly HashSet<ChainNode> _pinnedQueue = new();
+    private readonly HashSet<ChainNode> _pinnedQueue = [];
     private int _currentSequence;
     private ChainNode? _currentNode;
     private ChainNode? _oldestNode;

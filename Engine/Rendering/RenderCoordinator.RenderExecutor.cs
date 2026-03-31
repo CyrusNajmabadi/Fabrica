@@ -12,7 +12,7 @@ internal sealed partial class RenderCoordinator
     /// <see cref="Prepare"/> clears per-frame state before each dispatch.
     /// <see cref="Execute"/> performs the worker's portion of the frame rendering.
     /// </summary>
-    public struct RenderExecutor : IThreadExecutor<RenderDispatchState>
+    public readonly struct RenderExecutor : IThreadExecutor<RenderDispatchState>
     {
         public readonly RenderWorkerResources Resources;
 

@@ -33,7 +33,9 @@ internal sealed class ObjectPool<T, TAllocator>
     where TAllocator : struct, IAllocator<T>
 {
     private readonly Stack<T> _items;
+#pragma warning disable IDE0044 // Mutable struct — readonly would cause defensive copies
     private TAllocator _allocator;
+#pragma warning restore IDE0044
 
 #if DEBUG
     private int _ownerThreadId = -1;

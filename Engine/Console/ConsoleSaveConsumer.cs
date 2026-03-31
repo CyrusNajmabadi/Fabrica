@@ -31,6 +31,6 @@ internal sealed class ConsoleSaveConsumer(long intervalNanoseconds) : IDeferredC
         var ticks = Stopwatch.GetTimestamp();
         var seconds = ticks / Stopwatch.Frequency;
         var remainder = ticks % Stopwatch.Frequency;
-        return seconds * 1_000_000_000L + remainder * 1_000_000_000L / Stopwatch.Frequency;
+        return (seconds * 1_000_000_000L) + (remainder * 1_000_000_000L / Stopwatch.Frequency);
     }
 }
