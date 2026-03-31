@@ -1,57 +1,58 @@
 using Simulation.Memory;
+using Simulation.World;
 
 namespace Simulation.Engine;
 
 /// <summary>
-/// Top-level coordinator: owns the simulation and consumption loops and manages
+/// Top-level coordinator: owns the production and consumption loops and manages
 /// their thread lifetimes.
 ///
-/// ════════════════════════ TWO-THREAD DESIGN OVERVIEW ════════════════════════
+/// ═══════════════════════ TWO-THREAD DESIGN OVERVIEW ═════════════════════════
 ///
-///  SIMULATION THREAD  (producer / memory owner)                   40 ticks/sec
+///  PRODUCTION THREAD  (producer / memory owner)                   40 ticks/sec
 ///  ──────────────────────────────────────────────────────────────────────────
-///  Bootstrap() → allocates tick-0 snapshot and publishes it
+///  Bootstrap() → allocates sequence-0 node and publishes it
 ///  Tick loop:
-///    • Advance world state into a fresh WorldImage
-///    • Append new WorldSnapshot onto the forward chain:
-///        [tick 0] → [tick 1] → [tick 2] → … → [tick N]
-///         _oldest                                _current / LatestSnapshot
-///    • Volatile-write LatestSnapshot = [tick N]  (release fence)
-///    • CleanupStaleSnapshots(): walk chain from _oldest, freeing every
-///      snapshot whose tick &lt; ConsumptionEpoch and is not pinned
-///    • ApplyPressureDelay(): slow down if pool is under pressure
+///    • Delegate payload production to TProducer
+///    • Append new TNode onto the forward chain:
+///        [seq 0] → [seq 1] → [seq 2] → … → [seq N]
+///         _oldest                            _current / LatestNode
+///    • Volatile-write LatestNode = [seq N]  (release fence)
+///    • CleanupStaleNodes(): walk chain from _oldest, freeing every
+///      node whose sequence &lt; ConsumptionEpoch and is not pinned
+///    • ApplyPressureDelay(): slow down if running too far ahead
 ///
-///  CONSUMPTION THREAD  (renderer / save coordinator)              ≈60 fps
+///  CONSUMPTION THREAD  (consumer / save coordinator)               ≈60 fps
 ///  ──────────────────────────────────────────────────────────────────────────
 ///  Frame loop:
-///    • Volatile-read LatestSnapshot                (acquire fence)
-///    • MaybeStartSave(): if a save is due, pin the snapshot and hand it
+///    • Volatile-read LatestNode                     (acquire fence)
+///    • MaybeStartSave(): if a save is due, pin the node and hand it
 ///      off to the save task before advancing the epoch
-///    • Render(previous, latest): always called, even if snapshot unchanged
-///    • Volatile-write ConsumptionEpoch = tick      (release fence)
+///    • Consume(previous, latest): always called, even if node unchanged
+///    • Volatile-write ConsumptionEpoch = sequence   (release fence)
 ///    • ThrottleToFrameRate()
 ///
 ///  SAVE TASK  (threadpool — spawned by consumption thread)
 ///  ──────────────────────────────────────────────────────────────────────────
-///    • Saver.Save(image, tick)
-///    • PinnedVersions.Unpin(tick)  ← releases the simulation's hold
-///    • NextSaveAtTick = tick + SaveIntervalTicks
+///    • Saver.Save(node, sequence)
+///    • PinnedVersions.Unpin(sequence)  ← releases the production hold
+///    • NextSaveAtTick = sequence + SaveIntervalTicks
 ///
 /// ══════════════════════════════ SHARED STATE ════════════════════════════════
 ///
 ///  Exactly three volatile fields cross the thread boundary:
 ///
-///  SharedState.LatestSnapshot   (volatile WorldSnapshot?)
-///    Written by simulation only; read by consumption.
-///    The volatile release/acquire pair guarantees that all WorldImage writes
-///    made before the publish are visible to any thread that reads the snapshot.
-///    No additional synchronisation is needed to access Image fields.
+///  SharedState.LatestNode        (volatile TNode?)
+///    Written by production only; read by consumption.
+///    The volatile release/acquire pair guarantees that all payload writes
+///    made before the publish are visible to any thread that reads the node.
+///    No additional synchronisation is needed to access payload fields.
 ///
 ///  SharedState.ConsumptionEpoch  (volatile int)
-///    Written by consumption only; read by simulation.
-///    Simulation frees tick &lt; epoch.  Conservative race: if simulation reads
-///    a stale (lower) epoch it retains a snapshot one extra cleanup pass — it
-///    never frees something the consumption thread is still touching.
+///    Written by consumption only; read by production.
+///    Production frees sequence &lt; epoch.  Conservative race: if production
+///    reads a stale (lower) epoch it retains a node one extra cleanup pass —
+///    it never frees something the consumption thread is still touching.
 ///
 ///  SharedState.NextSaveAtTick   (volatile int)
 ///    Written by consumption (sets to 0) AND the save task (sets next interval).
@@ -59,140 +60,101 @@ namespace Simulation.Engine;
 ///    the field is non-zero, and the save task writes non-zero later from
 ///    a different execution context.
 ///
-/// ══════════════════════════ WHY NO LOCKS IN THE HOT PATH ════════════════════
+/// ═══════════════════════ WHY NO LOCKS IN THE HOT PATH ══════════════════════
 ///
 ///  Each field above has at most one writer thread in the hot path.
 ///  Volatile fences provide the required visibility across CPUs.
 ///  The epoch is conservative, so races can only make the system hold memory
 ///  slightly longer — they can never corrupt state or free a live object.
 ///
-///  The sole exception is PinnedVersions (snapshot pinning for saves), which
+///  The sole exception is PinnedVersions (node pinning for saves), which
 ///  uses ConcurrentDictionary because Unpin arrives from a threadpool save
 ///  task.  Pinning only happens at save boundaries (≈every 5 minutes of game
 ///  time), so it is not on the hot path.  See PinnedVersions for details.
 ///
-/// ══════════════════════════ PARALLELISM OPPORTUNITIES ═══════════════════════
+/// ═══════════════════════ PARALLELISM OPPORTUNITIES ═════════════════════════
 ///
-///  MULTITHREADED SIMULATION (future)
-///    _currentSnapshot is never freed by cleanup (it is explicitly excluded by
-///    the _oldestSnapshot != _currentSnapshot guard).  Its WorldImage is fully
-///    immutable once published.  The simulation can therefore spawn any number
-///    of worker threads to read the current image and compute parts of the next
-///    world state in parallel — all workers read immutable data, and their
-///    output goes into a fresh WorldImage not yet visible to any other thread.
-///    No locks or atomics are required between workers and the owning thread
-///    beyond a final join/await before publishing the new snapshot.
+///  MULTITHREADED PRODUCTION (future)
+///    _currentNode is never freed by cleanup (it is explicitly excluded by
+///    the _oldestNode != _currentNode guard).  Its payload is fully immutable
+///    once published.  The producer can spawn any number of worker threads to
+///    read the current payload and compute parts of the next state in parallel
+///    — all workers read immutable data, and their output goes into a fresh
+///    payload not yet visible to any other thread.  No locks or atomics are
+///    required between workers and the owning thread beyond a final join/await
+///    before publishing the new node.
 ///
-///  MULTITHREADED RENDERING
-///    When a <see cref="RenderCoordinator"/> is provided, the consumption loop
-///    dispatches each frame to parallel render workers instead of calling
-///    <see cref="IRenderer.Render"/> directly.  During a dispatch, both
-///    'previous' and 'latest' snapshots — and the entire chain between them —
-///    are guaranteed alive:
-///      • 'latest' is at tick M; ConsumptionEpoch has not advanced past M yet.
-///      • 'previous' is at tick N ≤ M; epoch = N, and cleanup frees only
-///        tick &lt; N (strictly less than), so tick N itself is never freed.
-///    All images are fully immutable.  Render workers can safely read any
-///    snapshot in the chain without synchronization.
-///    Constraint: all workers must finish before DispatchFrame returns, because
-///    ConsumptionEpoch advances immediately afterward and the simulation may
-///    then reclaim 'previous' on the very next cleanup pass.
-///    Both simulation and render workers pin to the same core range (0..N-1).
-///    When one group is idle (e.g. simulation is throttled), the OS scheduler
-///    naturally gives the other group full CPU time.
+///  MULTITHREADED CONSUMPTION
+///    When the consumer dispatches to parallel workers, both 'previous' and
+///    'latest' nodes — and the entire chain between them — are guaranteed alive:
+///      • 'latest' is at sequence M; ConsumptionEpoch has not advanced past M.
+///      • 'previous' is at sequence N ≤ M; epoch = N, and cleanup frees only
+///        sequence &lt; N (strictly less than), so sequence N itself is never freed.
+///    All payloads are fully immutable.  Workers can safely read any node in
+///    the chain without synchronization.
+///    Constraint: all workers must finish before the consumer call returns,
+///    because ConsumptionEpoch advances immediately afterward and the
+///    production loop may then reclaim 'previous' on the very next cleanup.
 ///
 ///  TEMPORAL DECOUPLING
-///    Rendering always operates on already-computed, immutable snapshots.
-///    The simulation is concurrently producing ticks further ahead.  The two
-///    threads are temporally decoupled: rendering is always at a point in the
-///    past relative to the latest simulated state, and neither thread blocks the
-///    other's internal parallelism.
+///    Consumption always operates on already-produced, immutable nodes.
+///    The production loop is concurrently producing ticks further ahead.
+///    The two threads are temporally decoupled: consumption is always at a
+///    point in the past relative to the latest produced state, and neither
+///    thread blocks the other's internal parallelism.
 ///
-/// ══════════════════════════════ THROTTLING ═══════════════════════════════════
+/// ════════════════════════════════ THROTTLING ════════════════════════════════
 ///
-///  SIMULATION SELF-THROTTLING (wall time)
-///    The simulation uses a fixed-timestep accumulator (see SimulationLoop).
+///  PRODUCTION SELF-THROTTLING (wall time)
+///    The production loop uses a fixed-timestep accumulator (see ProductionLoop).
 ///    If each tick is cheap, the loop yields for most of each 25 ms window.
 ///    If a tick takes longer than 25 ms of wall time, the accumulator falls
-///    behind and game time runs slower than real time — the simulation always
-///    runs as fast as it can, never artificially fast and never artificially
+///    behind and game time runs slower than real time — the loop always runs
+///    as fast as it can, never artificially fast and never artificially
 ///    throttled just to hit a fixed Hz when it cannot sustain it.
 ///
-///  CONSUMPTION → SIMULATION BACK-PRESSURE (pool pressure)
-///    Because consumption always reads LatestSnapshot (the most recent tick),
-///    a slow consumption frame rate does not by itself cause pool pressure:
+///  CONSUMPTION → PRODUCTION BACK-PRESSURE (epoch gap)
+///    Because consumption always reads LatestNode (the most recent tick),
+///    a slow consumption frame rate does not by itself cause pressure:
 ///    each frame still advances the epoch to the latest tick and allows
 ///    cleanup to reclaim the entire backlog in one pass.
 ///
-///    Pool pressure builds only when the consumption thread stalls long enough
-///    for simulation to produce more snapshots than the pool can hold.  With
-///    a 256-slot pool at 40 Hz, simulation can run unimpeded for ≈6.4 seconds
+///    Pressure builds only when the consumption thread stalls long enough
+///    for production to produce more nodes than the pool can hold.  With
+///    a 256-slot pool at 40 Hz, production can run unimpeded for ≈6.4 seconds
 ///    before the pool fills.  Beyond that:
 ///      • Each 1/8 capacity bucket filled adds an exponential pre-tick delay
 ///        (1 ms → 2 ms → 4 ms → … → 64 ms).
 ///      • Full pool exhaustion blocks Tick() entirely until a slot is freed.
-///    This ensures the simulation never silently allocates unboundedly and
+///    This ensures production never silently allocates unboundedly and
 ///    instead applies explicit back-pressure that scales with the stall depth.
 ///
 /// ════════════════════════════════════════════════════════════════════════════
 ///
-/// Use <see cref="Create"/> for the default production configuration.
 /// Use the explicit constructor to inject custom loops (e.g. in tests).
+/// For the default simulation configuration, see <see cref="SimulationEngine"/>.
 /// </summary>
-internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
+internal sealed class Engine<TNode, TProducer, TConsumer, TSaveRunner, TSaver, TClock, TWaiter>
+    where TNode : ChainNode<TNode>, new()
+    where TProducer : struct, IProducer<TNode>
+    where TConsumer : struct, IConsumer<TNode>
+    where TSaveRunner : struct, ISaveRunner<TNode>
+    where TSaver : struct, ISaver<TNode>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
-    where TSaveRunner : struct, ISaveRunner
-    where TSaver : struct, ISaver
-    where TRenderer : struct, IRenderer
 {
-    private readonly SimulationCoordinator _simulationCoordinator;
-    private readonly RenderCoordinator _renderCoordinator;
-    private readonly SimulationLoop<TClock, TWaiter> _simulationLoop;
-    private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _consumptionLoop;
+    private readonly ProductionLoop<TNode, TProducer, TClock, TWaiter> _productionLoop;
+    private readonly ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> _consumptionLoop;
+    private readonly IDisposable[] _disposables;
 
     public Engine(
-        SimulationCoordinator simulationCoordinator,
-        RenderCoordinator renderCoordinator,
-        SimulationLoop<TClock, TWaiter> simulationLoop,
-        ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> consumptionLoop)
+        ProductionLoop<TNode, TProducer, TClock, TWaiter> productionLoop,
+        ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> consumptionLoop,
+        params IDisposable[] disposables)
     {
-        _simulationCoordinator = simulationCoordinator;
-        _renderCoordinator = renderCoordinator;
-        _simulationLoop = simulationLoop;
+        _productionLoop = productionLoop;
         _consumptionLoop = consumptionLoop;
-    }
-
-    /// <summary>
-    /// Builds a fully wired engine with default pool sizes and the supplied clock.
-    /// </summary>
-    public static Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> Create(
-        TClock clock,
-        TWaiter waiter,
-        TSaveRunner saveRunner,
-        TSaver saver,
-        TRenderer renderer,
-        int simulationWorkerCount,
-        int renderWorkerCount)
-    {
-        var memory = new MemorySystem(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedState();
-        var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
-        var renderCoordinator = new RenderCoordinator(renderWorkerCount);
-
-        return new Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
-            simulationCoordinator,
-            renderCoordinator,
-            new SimulationLoop<TClock, TWaiter>(memory, shared, simulationCoordinator, clock, waiter),
-            new ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>(
-                memory,
-                shared,
-                clock,
-                waiter,
-                saveRunner,
-                saver,
-                renderer,
-                renderCoordinator));
+        _disposables = disposables;
     }
 
     /// <summary>
@@ -202,9 +164,9 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
     {
         try
         {
-            var simulationThread = new Thread(() => _simulationLoop.Run(cancellationToken))
+            var productionThread = new Thread(() => _productionLoop.Run(cancellationToken))
             {
-                Name = "Simulation",
+                Name = "Production",
                 IsBackground = false,
             };
 
@@ -214,16 +176,54 @@ internal sealed class Engine<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
                 IsBackground = false,
             };
 
-            simulationThread.Start();
+            productionThread.Start();
             consumptionThread.Start();
 
-            simulationThread.Join();
+            productionThread.Join();
             consumptionThread.Join();
         }
         finally
         {
-            _renderCoordinator.Dispose();
-            _simulationCoordinator.Dispose();
+            foreach (var disposable in _disposables)
+                disposable.Dispose();
         }
+    }
+}
+
+/// <summary>
+/// Factory for the default simulation engine configuration.
+/// </summary>
+internal static class SimulationEngine
+{
+    public static Engine<WorldSnapshot, SimulationProducer, SimulationConsumer<TRenderer>, TaskSaveRunner, TSaver, TClock, TWaiter>
+        Create<TRenderer, TSaver, TClock, TWaiter>(
+            TClock clock,
+            TWaiter waiter,
+            TSaver saver,
+            TRenderer renderer,
+            int simulationWorkerCount,
+            int renderWorkerCount)
+        where TRenderer : struct, IRenderer
+        where TSaver : struct, ISaver<WorldSnapshot>
+        where TClock : struct, IClock
+        where TWaiter : struct, IWaiter
+    {
+        var nodePool = new ObjectPool<WorldSnapshot>(SimulationConstants.SnapshotPoolSize);
+        var imagePool = new ObjectPool<WorldImage>(SimulationConstants.SnapshotPoolSize);
+        var pinnedVersions = new PinnedVersions();
+        var shared = new SharedState<WorldSnapshot>();
+        var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
+        var renderCoordinator = new RenderCoordinator(renderWorkerCount);
+
+        var producer = new SimulationProducer(imagePool, simulationCoordinator);
+        var consumer = new SimulationConsumer<TRenderer>(renderCoordinator, renderer);
+
+        return new Engine<WorldSnapshot, SimulationProducer, SimulationConsumer<TRenderer>, TaskSaveRunner, TSaver, TClock, TWaiter>(
+            new ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>(
+                nodePool, pinnedVersions, shared, producer, clock, waiter),
+            new ConsumptionLoop<WorldSnapshot, SimulationConsumer<TRenderer>, TaskSaveRunner, TSaver, TClock, TWaiter>(
+                pinnedVersions, shared, consumer, clock, waiter, new TaskSaveRunner(), saver),
+            simulationCoordinator,
+            renderCoordinator);
     }
 }

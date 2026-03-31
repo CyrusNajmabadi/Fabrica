@@ -23,28 +23,28 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
         var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
         var tick2 = Assert.IsType<WorldSnapshot>(tick1.NextInChain);
-        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
-        test.Memory.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
-        test.Memory.PinnedVersions.Pin(tick1.TickNumber, tick1Owner);
+        test.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
+        test.PinnedVersions.Pin(tick1.TickNumber, tick1Owner);
         test.Shared.ConsumptionEpoch = 3;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
-        Assert.Same(tick3, test.Accessor.OldestSnapshot);
-        Assert.Same(tick3, test.Accessor.CurrentSnapshot);
+        Assert.Same(tick3, test.Accessor.OldestNode);
+        Assert.Same(tick3, test.Accessor.CurrentNode);
         Assert.Equal(2, test.Accessor.PinnedQueueCount);
         Assert.Null(tick0.NextInChain);
         Assert.Null(tick1.NextInChain);
         Assert.True(tick2.IsUnreferenced);
 
-        test.Memory.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
-        test.Memory.PinnedVersions.Unpin(tick1.TickNumber, tick1Owner);
+        test.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
+        test.PinnedVersions.Unpin(tick1.TickNumber, tick1Owner);
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
     }
@@ -61,28 +61,28 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
         var tick1 = Assert.IsType<WorldSnapshot>(tick0.NextInChain);
-        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot);
+        var tick3 = Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode);
 
-        test.Memory.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
-        test.Memory.PinnedVersions.Pin(tick1.TickNumber, tick1Owner);
+        test.PinnedVersions.Pin(tick0.TickNumber, tick0Owner);
+        test.PinnedVersions.Pin(tick1.TickNumber, tick1Owner);
         test.Shared.ConsumptionEpoch = 3;
 
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(2, test.Accessor.PinnedQueueCount);
 
-        test.Memory.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
-        test.Accessor.CleanupStaleSnapshots();
+        test.PinnedVersions.Unpin(tick0.TickNumber, tick0Owner);
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
         Assert.True(tick0.IsUnreferenced);
         Assert.False(tick1.IsUnreferenced);
-        Assert.Same(tick3, test.Accessor.OldestSnapshot);
+        Assert.Same(tick3, test.Accessor.OldestNode);
 
-        test.Memory.PinnedVersions.Unpin(tick1.TickNumber, tick1Owner);
-        test.Accessor.CleanupStaleSnapshots();
+        test.PinnedVersions.Unpin(tick1.TickNumber, tick1Owner);
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(0, test.Accessor.PinnedQueueCount);
         Assert.True(tick1.IsUnreferenced);
@@ -99,21 +99,21 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestSnapshot);
+        var tick0 = Assert.IsType<WorldSnapshot>(test.Accessor.OldestNode);
 
-        test.Memory.PinnedVersions.Pin(tick0.TickNumber, pinOwner);
+        test.PinnedVersions.Pin(tick0.TickNumber, pinOwner);
         test.Shared.ConsumptionEpoch = 2;
-        test.Accessor.CleanupStaleSnapshots();
+        test.Accessor.CleanupStaleNodes();
 
         Assert.Equal(1, test.Accessor.PinnedQueueCount);
 
-        test.Accessor.SetOldestSnapshotForTesting(tick0);
+        test.Accessor.SetOldestNodeForTesting(tick0);
 
         var exception = Assert.Throws<InvalidOperationException>(
-            test.Accessor.CleanupStaleSnapshots);
+            test.Accessor.CleanupStaleNodes);
 
         Assert.Contains("more than once", exception.Message);
-        Assert.Equal(3, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentSnapshot).TickNumber);
+        Assert.Equal(3, Assert.IsType<WorldSnapshot>(test.Accessor.CurrentNode).TickNumber);
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class SimulationLoopAdditionalTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(1, test.Accessor.CurrentTick);
+        Assert.Equal(1, test.Accessor.CurrentSequence);
         Assert.Equal(
             [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
@@ -151,7 +151,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         var tickBefore = LowWaterMarkTicks + 1;
-        Assert.Equal(tickBefore + 1, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore + 1, test.Accessor.CurrentSequence);
         Assert.Equal(
             [
                 GetExpectedPressureDelay(outstandingTicks: tickBefore),
@@ -177,7 +177,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         var tickBefore = LowWaterMarkTicks + 2;
-        Assert.Equal(tickBefore + 1, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore + 1, test.Accessor.CurrentSequence);
         Assert.Equal(
             [
                 GetExpectedPressureDelay(outstandingTicks: tickBefore),
@@ -203,7 +203,7 @@ public sealed class SimulationLoopAdditionalTests
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         var tickBefore = LowWaterMarkTicks + 1;
-        Assert.Equal(tickBefore + 2, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore + 2, test.Accessor.CurrentSequence);
         Assert.Equal(
             [
                 GetExpectedPressureDelay(outstandingTicks: tickBefore),
@@ -222,7 +222,7 @@ public sealed class SimulationLoopAdditionalTests
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
             test.Accessor.Tick();
 
-        var tickBefore = test.Accessor.CurrentTick;
+        var tickBefore = test.Accessor.CurrentSequence;
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
@@ -234,7 +234,7 @@ public sealed class SimulationLoopAdditionalTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(tickBefore, test.Accessor.CurrentTick);
+        Assert.Equal(tickBefore, test.Accessor.CurrentSequence);
         Assert.Equal(SimulationConstants.TickDurationNanoseconds, accumulator);
         Assert.Equal(
             [GetExpectedPressureDelay(outstandingTicks: tickBefore)],
@@ -273,10 +273,14 @@ public sealed class SimulationLoopAdditionalTests
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter
         {
-            var memory = new MemorySystem(poolSize);
-            var shared = new SharedState();
-            var loop = new SimulationLoop<TClock, TWaiter>(memory, shared, new SimulationCoordinator(1), clock, waiter);
-            return new SimulationLoopTestContext<TClock, TWaiter>(memory, shared, waiterState, loop);
+            var snapshotPool = new ObjectPool<WorldSnapshot>(poolSize);
+            var imagePool = new ObjectPool<WorldImage>(poolSize);
+            var pinnedVersions = new PinnedVersions();
+            var shared = new SharedState<WorldSnapshot>();
+            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var loop = new ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>(
+                snapshotPool, pinnedVersions, shared, producer, clock, waiter);
+            return new SimulationLoopTestContext<TClock, TWaiter>(pinnedVersions, shared, waiterState, loop);
         }
     }
 
@@ -285,23 +289,23 @@ public sealed class SimulationLoopAdditionalTests
         where TWaiter : struct, IWaiter
     {
         internal SimulationLoopTestContext(
-            MemorySystem memory,
-            SharedState shared,
+            PinnedVersions pinnedVersions,
+            SharedState<WorldSnapshot> shared,
             TestWaiterState waiterState,
-            SimulationLoop<TClock, TWaiter> loop)
+            ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter> loop)
         {
-            this.Memory = memory;
+            this.PinnedVersions = pinnedVersions;
             this.Shared = shared;
             this.WaiterState = waiterState;
             this.Accessor = loop.GetTestAccessor();
         }
 
-        public MemorySystem Memory { get; }
+        public PinnedVersions PinnedVersions { get; }
 
-        public SharedState Shared { get; }
+        public SharedState<WorldSnapshot> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 
-        public SimulationLoop<TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ProductionLoop<WorldSnapshot, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
 }

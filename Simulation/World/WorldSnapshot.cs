@@ -14,7 +14,7 @@ internal sealed class WorldSnapshot : ChainNode<WorldSnapshot>
     /// (belt state, machine state, etc.) that the renderer reads during
     /// interpolation.
     /// </summary>
-    public WorldImage Image { get; private set; } = null!;
+    public WorldImage Image { get; internal set; } = null!;
 
     /// <summary>
     /// Domain alias for <see cref="ChainNode{TSelf}.SequenceNumber"/>.

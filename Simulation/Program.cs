@@ -11,10 +11,9 @@ Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellat
 // 0..N-1, relying on the OS to time-share when both are active.
 var workerCount = Math.Max(1, Environment.ProcessorCount);
 
-Engine<SystemClock, ThreadWaiter, TaskSaveRunner, ConsoleSaver, ConsoleRenderer>.Create(
+SimulationEngine.Create(
     new SystemClock(),
     new ThreadWaiter(),
-    new TaskSaveRunner(),
     new ConsoleSaver(),
     new ConsoleRenderer(),
     workerCount,

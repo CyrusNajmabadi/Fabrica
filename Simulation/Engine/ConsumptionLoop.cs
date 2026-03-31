@@ -5,114 +5,102 @@ using Simulation.World;
 namespace Simulation.Engine;
 
 /// <summary>
-/// The consumption ("consumer") thread.  Renders the latest snapshot at ≈60 fps
+/// The consumption ("consumer") thread.  Processes the latest node at ≈60 fps
 /// and coordinates periodic saves.
 ///
 /// FRAME LOOP  (RunOneIteration)
 ///   1. DrainSaveEvents: process any completed save results from the threadpool.
-///   2. Volatile-read LatestSnapshot (acquire fence: all image writes by the
-///      simulation thread are now visible).
-///   3. Rotate the snapshot pair if a new snapshot has arrived (see below).
-///   4. MaybeStartSave: if a save is due and not in flight, pin the snapshot
+///   2. Volatile-read LatestNode (acquire fence: all payload writes by the
+///      production thread are now visible).
+///   3. Rotate the node pair if a new node has arrived (see below).
+///   4. MaybeStartSave: if a save is due and not in flight, pin the node
 ///      and dispatch to the save task.
-///   5. Build RenderFrame (snapshots + interpolation factor + engine status).
-///   6. Render(frame): the renderer uses the snapshots for the duration of the
-///      call only — it must not store them.
-///   7. ConsumptionEpoch = _previous.TickNumber (or _latest's if no previous
-///      exists yet).  This keeps both held snapshots alive.
-///   8. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
+///   5. Consume: the consumer processes the previous/latest pair for the
+///      duration of the call only — it must not store them.
+///   6. ConsumptionEpoch = _previous.SequenceNumber (or _latest's if no
+///      previous exists yet).  This keeps both held nodes alive.
+///   7. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
 ///
 /// PREVIOUS / LATEST MODEL
-///   The loop holds two distinct snapshot references: _previous and _latest.
-///   When LatestSnapshot changes (new ticks published), the pair rotates:
-///   old latest becomes previous, new snapshot becomes latest.  Between
+///   The loop holds two distinct node references: _previous and _latest.
+///   When LatestNode changes (new ticks published), the pair rotates:
+///   old latest becomes previous, new node becomes latest.  Between
 ///   rotations the pair is stable.
 ///
 ///   The full forward-linked chain from _previous to _latest is guaranteed
-///   alive during the Render call.  When the simulation publishes multiple
-///   ticks between render frames, _previous and _latest may be several ticks
-///   apart — the renderer uses <see cref="RenderFrame.Chain"/> to iterate
-///   every intermediate snapshot, or simply interpolates between the two
-///   endpoints.
+///   alive during the Consume call.  When production publishes multiple
+///   nodes between frames, _previous and _latest may be several sequences
+///   apart — the consumer can iterate every intermediate node via the
+///   chain, or simply work with the two endpoints.
 ///
-///   The interpolation factor progresses from 0 (show previous) to 1 (show
-///   latest) over one tick duration, based on wall-clock time elapsed since
-///   latest was published.  This gives the renderer two real simulation
-///   endpoints to blend between — no extrapolation needed.
+///   INVARIANT: when _previous is non-null, it is always a different object
+///   reference from _latest.  The rotation guard guarantees this.
 ///
 /// EPOCH ADVANCEMENT
-///   The epoch is set to _previous.TickNumber when both snapshots exist,
-///   or _latest.TickNumber on the first frame (no previous yet).
-///   Cleanup frees strictly below the epoch, so both _previous (tick N,
-///   not &lt; N) and _latest (tick &gt; N) remain alive — along with the entire
-///   chain between them.
+///   The epoch is set to _previous.SequenceNumber when both nodes exist,
+///   or _latest.SequenceNumber on the first frame (no previous yet).
+///   Cleanup frees strictly below the epoch, so both _previous (sequence N,
+///   not &lt; N) and _latest (sequence &gt; N) remain alive — along with the
+///   entire chain between them.
 ///
 /// SAVE PIN DISCIPLINE
 ///   The ordering within a save-triggering frame is load-bearing:
 ///
-///     1. Pin(tick)         ← epoch hasn't advanced; simulation holds snapshot alive
-///     2. RunSave(image)    ← dispatch to save task
-///     3. Render(…)         ← may throw; epoch still not advanced (safe)
-///     4. ConsumptionEpoch  ← simulation may now look past older ticks
+///     1. Pin(sequence)     ← epoch hasn't advanced; production holds node alive
+///     2. RunSave(node)     ← dispatch to save task
+///     3. Consume(…)        ← may throw; epoch still not advanced (safe)
+///     4. ConsumptionEpoch  ← production may now look past older nodes
 ///
 ///   If RunSave throws (dispatch failure): pin is released, NextSaveAtTick is
-///   restored to the current tick, and the save will be retried next frame.
-///   If Render throws after a successful dispatch: the pin remains so the save
-///   task can still safely read the image.  The save task's finally block always
+///   restored to the current sequence, and the save will be retried next frame.
+///   If Consume throws after a successful dispatch: the pin remains so the save
+///   task can still safely read the node.  The save task's finally block always
 ///   clears the pin and reschedules NextSaveAtTick.
 ///
-/// Generic constraints (struct IClock, IWaiter, etc.) eliminate interface
-/// dispatch on every call in the hot frame loop.  See Engine summary for
-/// the full rationale.
+/// Generic constraints (all struct) eliminate interface dispatch on every call
+/// in the hot frame loop.
 /// </summary>
-internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer>
+internal sealed class ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter>
+    where TNode : ChainNode<TNode>
+    where TConsumer : struct, IConsumer<TNode>
+    where TSaveRunner : struct, ISaveRunner<TNode>
+    where TSaver : struct, ISaver<TNode>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
-    where TSaveRunner : struct, ISaveRunner
-    where TSaver : struct, ISaver
-    where TRenderer : struct, IRenderer
 {
     private readonly object _savePinOwner = new();
     private readonly ConcurrentQueue<SaveEvent> _saveEvents = new();
 
-    // The two snapshots the renderer interpolates between.
-    // Only touched by the consumption thread — no synchronisation needed.
-    // _previous is null before two distinct snapshots have been observed.
-    private WorldSnapshot? _previous;
-    private WorldSnapshot? _latest;
+    private TNode? _previous;
+    private TNode? _latest;
 
-    // Local save tracking — written only by the consumption thread (after draining
-    // the concurrent queue), so no synchronisation needed for reads.
     private bool _saveInFlight;
     private SaveEvent? _lastSaveResult;
 
-    private readonly MemorySystem _memory;
-    private readonly SharedState _shared;
+    private readonly PinnedVersions _pinnedVersions;
+    private readonly SharedState<TNode> _shared;
+    private TConsumer _consumer;
     private readonly TClock _clock;
     private readonly TWaiter _waiter;
-    private readonly TSaveRunner _saveRunner;
-    private readonly TSaver _saver;
-    private readonly TRenderer _renderer;
-    private readonly RenderCoordinator _renderCoordinator;
+    private TSaveRunner _saveRunner;
+    private TSaver _saver;
 
     public ConsumptionLoop(
-        MemorySystem memory,
-        SharedState shared,
+        PinnedVersions pinnedVersions,
+        SharedState<TNode> shared,
+        TConsumer consumer,
         TClock clock,
         TWaiter waiter,
         TSaveRunner saveRunner,
-        TSaver saver,
-        TRenderer renderer,
-        RenderCoordinator renderCoordinator)
+        TSaver saver)
     {
-        _memory = memory;
+        _pinnedVersions = pinnedVersions;
         _shared = shared;
+        _consumer = consumer;
         _clock = clock;
         _waiter = waiter;
         _saveRunner = saveRunner;
         _saver = saver;
-        _renderer = renderer;
-        _renderCoordinator = renderCoordinator;
     }
 
     public void Run(CancellationToken cancellationToken)
@@ -129,45 +117,30 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
         this.DrainSaveEvents();
 
-        var latestSnapshot = _shared.LatestSnapshot;
-        if (latestSnapshot is not null)
+        var latestNode = _shared.LatestNode;
+        if (latestNode is not null)
         {
-            if (!ReferenceEquals(latestSnapshot, _latest))
+            if (!ReferenceEquals(latestNode, _latest))
             {
                 _previous = _latest;
-                _latest = latestSnapshot;
+                _latest = latestNode;
             }
 
             this.MaybeStartSave(_latest!);
 
-            var frame = new RenderFrame
-            {
-                Previous = _previous,
-                Latest = _latest!,
-                Interpolation = new InterpolationClock
+            _consumer.Consume(
+                _previous,
+                _latest!,
+                frameStart,
+                new SaveStatus
                 {
-                    ElapsedNanoseconds = frameStart - _latest!.PublishTimeNanoseconds,
-                    TickDurationNanoseconds = SimulationConstants.TickDurationNanoseconds,
+                    InFlight = _saveInFlight,
+                    LastResult = _lastSaveResult,
                 },
-                EngineStatus = new EngineStatus
-                {
-                    Save = new SaveStatus
-                    {
-                        InFlight = _saveInFlight,
-                        LastResult = _lastSaveResult,
-                    },
-                },
-            };
+                cancellationToken);
 
-            _renderCoordinator.DispatchFrame(in frame, cancellationToken);
-            _renderer.Render(in frame);
-
-            // Epoch protects both held snapshots and the entire chain between
-            // them.  Cleanup frees strictly below the epoch, so _previous
-            // (tick N, not < N), _latest (tick > N), and all intermediate
-            // nodes remain alive.
-            _shared.ConsumptionEpoch = _previous?.TickNumber
-                                       ?? _latest!.TickNumber;
+            _shared.ConsumptionEpoch = _previous?.SequenceNumber
+                                       ?? _latest!.SequenceNumber;
         }
 
         this.ThrottleToFrameRate(frameStart, cancellationToken);
@@ -183,47 +156,38 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     }
 
     /// <summary>
-    /// Starts a background save if the latest tick has reached (or passed) the
-    /// scheduled save tick and no save is currently in flight.
+    /// Starts a background save if the latest sequence has reached (or passed)
+    /// the scheduled save tick and no save is currently in flight.
     ///
-    /// "In flight" is signalled by NextSaveAtTick == 0.  This field is cleared
-    /// here, before dispatch, so a second frame cannot trigger a double-save
-    /// against the same snapshot.  The save task resets it in its finally block.
-    ///
-    /// Pin ordering: the tick is pinned BEFORE RunSave is called.  At this point
-    /// ConsumptionEpoch has not yet advanced past the tick, so the simulation
-    /// already holds the snapshot alive via the epoch.  The pin extends that
-    /// protection beyond the epoch advance that happens later in the same frame.
-    /// On dispatch failure the pin is immediately released and the save tick is
-    /// restored so the next frame can retry.
+    /// Pin ordering: the node is pinned BEFORE RunSave is called.  At this
+    /// point ConsumptionEpoch has not yet advanced past the sequence, so the
+    /// production loop already holds the node alive via the epoch.  The pin
+    /// extends that protection beyond the epoch advance that happens later in
+    /// the same frame.  On dispatch failure the pin is immediately released
+    /// and the save tick is restored so the next frame can retry.
     /// </summary>
-    private void MaybeStartSave(WorldSnapshot snapshot)
+    private void MaybeStartSave(TNode node)
     {
         var nextSaveAt = _shared.NextSaveAtTick;
 
-        if (nextSaveAt == 0 || snapshot.TickNumber < nextSaveAt)
+        if (nextSaveAt == 0 || node.SequenceNumber < nextSaveAt)
             return;
 
-        var tickToSave = snapshot.TickNumber;
+        var seqToSave = node.SequenceNumber;
 
-        // Clear the timer BEFORE firing so the save task controls the next trigger.
         _shared.NextSaveAtTick = 0;
 
-        // Pin the snapshot so the simulation will not reclaim it while saving.
-        // Safe: ConsumptionEpoch has not yet advanced past tickToSave (we advance it
-        // after Render below), so the simulation already holds this snapshot alive.
-        _memory.PinnedVersions.Pin(tickToSave, _savePinOwner);
+        _pinnedVersions.Pin(seqToSave, _savePinOwner);
 
-        var imageToSave = snapshot.Image;
         try
         {
-            _saveRunner.RunSave(imageToSave, tickToSave, this.RunSaveTask);
+            _saveRunner.RunSave(node, seqToSave, this.RunSaveTask);
             _saveInFlight = true;
         }
         catch
         {
-            _memory.PinnedVersions.Unpin(tickToSave, _savePinOwner);
-            _shared.NextSaveAtTick = tickToSave;
+            _pinnedVersions.Unpin(seqToSave, _savePinOwner);
+            _shared.NextSaveAtTick = seqToSave;
             throw;
         }
     }
@@ -234,32 +198,30 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
     /// Exceptions from the saver are caught and reported via the save event queue
     /// rather than propagating as unobserved task exceptions.  The consumption
     /// thread drains the queue each frame and surfaces the result through
-    /// <see cref="EngineStatus.Save"/> in the <see cref="RenderFrame"/>.
+    /// <see cref="SaveStatus"/> in the consumer frame.
     ///
     /// The finally block runs regardless of success or failure, guaranteeing:
-    ///   - The pin is always released so the simulation is never permanently stalled
+    ///   - The pin is always released so production is never permanently stalled
     ///     waiting for a save that failed or was never completed.
     ///   - NextSaveAtTick is always rescheduled so saves resume after a failure.
     /// </summary>
-    private void RunSaveTask(WorldImage image, int tick)
+    private void RunSaveTask(TNode node, int sequenceNumber)
     {
         var startTime = _clock.NowNanoseconds;
         try
         {
-            _saver.Save(image, tick);
-            _saveEvents.Enqueue(new SaveEvent(tick, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: null));
+            _saver.Save(node, sequenceNumber);
+            _saveEvents.Enqueue(new SaveEvent(sequenceNumber, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: null));
         }
         catch (Exception ex)
         {
-            _saveEvents.Enqueue(new SaveEvent(tick, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: ex));
+            _saveEvents.Enqueue(new SaveEvent(sequenceNumber, DurationNanoseconds: _clock.NowNanoseconds - startTime, Error: ex));
         }
         finally
         {
-            // Always unpin — even on failure — so the simulation is never permanently stalled.
-            _memory.PinnedVersions.Unpin(tick, _savePinOwner);
+            _pinnedVersions.Unpin(sequenceNumber, _savePinOwner);
 
-            // Schedule the next save relative to the tick we just saved.
-            _shared.NextSaveAtTick = tick + SimulationConstants.SaveIntervalTicks;
+            _shared.NextSaveAtTick = sequenceNumber + SimulationConstants.SaveIntervalTicks;
         }
     }
 
@@ -275,15 +237,15 @@ internal sealed class ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRen
 
     internal readonly struct TestAccessor
     {
-        private readonly ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> _loop;
+        private readonly ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> _loop;
 
-        public TestAccessor(ConsumptionLoop<TClock, TWaiter, TSaveRunner, TSaver, TRenderer> loop) => _loop = loop;
+        public TestAccessor(ConsumptionLoop<TNode, TConsumer, TSaveRunner, TSaver, TClock, TWaiter> loop) => _loop = loop;
 
         public void RunOneIteration(CancellationToken cancellationToken) => _loop.RunOneIteration(cancellationToken);
 
-        public void MaybeStartSave(WorldSnapshot snapshot) => _loop.MaybeStartSave(snapshot);
+        public void MaybeStartSave(TNode node) => _loop.MaybeStartSave(node);
 
-        public void RunSaveTask(WorldImage image, int tick) => _loop.RunSaveTask(image, tick);
+        public void RunSaveTask(TNode node, int sequenceNumber) => _loop.RunSaveTask(node, sequenceNumber);
 
         public void ThrottleToFrameRate(long frameStart, CancellationToken cancellationToken) =>
             _loop.ThrottleToFrameRate(frameStart, cancellationToken);

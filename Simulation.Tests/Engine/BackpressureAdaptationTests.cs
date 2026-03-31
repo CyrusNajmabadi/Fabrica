@@ -1,6 +1,7 @@
 using Simulation.Engine;
 using Simulation.Memory;
 using Simulation.Tests.Helpers;
+using Simulation.World;
 using Xunit;
 
 namespace Simulation.Tests.Engine;
@@ -225,21 +226,21 @@ public sealed class BackpressureAdaptationTests
 
     private sealed class BackpressureHarness
     {
-        private readonly SharedState _shared;
+        private readonly SharedState<WorldSnapshot> _shared;
         private readonly TestClockState _clockState;
         private readonly TestWaiterState _waiterState;
-        private readonly SimulationLoop<TestRecordingClock, TestRecordingWaiter>.TestAccessor _simulationAccessor;
-        private readonly ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>.TestAccessor _consumptionAccessor;
+        private readonly ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _simulationAccessor;
+        private readonly ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestNoOpSaveRunner, TestNoOpSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor _consumptionAccessor;
         private long _simulationLastTime;
         private long _simulationAccumulator;
         private int _totalPressureDelays;
 
         private BackpressureHarness(
-            SharedState shared,
+            SharedState<WorldSnapshot> shared,
             TestClockState clockState,
             TestWaiterState waiterState,
-            SimulationLoop<TestRecordingClock, TestRecordingWaiter>.TestAccessor simulationAccessor,
-            ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>.TestAccessor consumptionAccessor)
+            ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor simulationAccessor,
+            ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestNoOpSaveRunner, TestNoOpSaver, TestRecordingClock, TestNoOpWaiter>.TestAccessor consumptionAccessor)
         {
             _shared = shared;
             _clockState = clockState;
@@ -248,7 +249,7 @@ public sealed class BackpressureAdaptationTests
             _consumptionAccessor = consumptionAccessor;
         }
 
-        public int SimulationTick => _simulationAccessor.CurrentTick;
+        public int SimulationTick => _simulationAccessor.CurrentSequence;
         public int ConsumptionEpoch => _shared.ConsumptionEpoch;
         public int TotalPressureDelays => _totalPressureDelays;
 
@@ -260,22 +261,25 @@ public sealed class BackpressureAdaptationTests
 
         public static BackpressureHarness Create()
         {
-            var memory = new MemorySystem(512);
-            var shared = new SharedState { NextSaveAtTick = 0 };
+            var snapshotPool = new ObjectPool<WorldSnapshot>(512);
+            var imagePool = new ObjectPool<WorldImage>(512);
+            var pinnedVersions = new PinnedVersions();
+            var shared = new SharedState<WorldSnapshot> { NextSaveAtTick = 0 };
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);
+            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
 
-            var simulationLoop = new SimulationLoop<TestRecordingClock, TestRecordingWaiter>(
-                memory, shared, new SimulationCoordinator(1), clock, new TestRecordingWaiter(waiterState));
-            var consumptionLoop = new ConsumptionLoop<TestRecordingClock, TestNoOpWaiter, TestNoOpSaveRunner, TestNoOpSaver, TestNoOpRenderer>(
-                memory, shared, clock, new TestNoOpWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver(), new TestNoOpRenderer(), new RenderCoordinator(1));
+            var productionLoop = new ProductionLoop<WorldSnapshot, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
+                snapshotPool, pinnedVersions, shared, producer, clock, new TestRecordingWaiter(waiterState));
+            var consumptionLoop = new ConsumptionLoop<WorldSnapshot, TestNoOpConsumer, TestNoOpSaveRunner, TestNoOpSaver, TestRecordingClock, TestNoOpWaiter>(
+                pinnedVersions, shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), new TestNoOpSaveRunner(), new TestNoOpSaver());
 
             return new BackpressureHarness(
                 shared,
                 clockState,
                 waiterState,
-                simulationLoop.GetTestAccessor(),
+                productionLoop.GetTestAccessor(),
                 consumptionLoop.GetTestAccessor());
         }
 
