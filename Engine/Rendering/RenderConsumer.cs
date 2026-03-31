@@ -7,9 +7,9 @@ namespace Engine.Rendering;
 /// Adapts the simulation-specific rendering/display logic to the generic
 /// <see cref="IConsumer{TPayload}"/> interface.
 ///
-/// Builds a <see cref="RenderFrame"/> from the generic previous/latest pair,
-/// dispatches to parallel render workers via <see cref="RenderCoordinator"/>,
-/// and calls the domain renderer.
+/// Owns the <see cref="RenderCoordinator"/> that dispatches parallel render
+/// work.  Builds a <see cref="RenderFrame"/> from the generic previous/latest
+/// pair and calls the domain renderer.
 /// </summary>
 internal struct RenderConsumer<TRenderer> : IConsumer<WorldImage>
     where TRenderer : struct, IRenderer
@@ -19,9 +19,9 @@ internal struct RenderConsumer<TRenderer> : IConsumer<WorldImage>
     private TRenderer _renderer;
 #pragma warning restore IDE0044
 
-    public RenderConsumer(RenderCoordinator renderCoordinator, TRenderer renderer)
+    public RenderConsumer(int workerCount, TRenderer renderer)
     {
-        _renderCoordinator = renderCoordinator;
+        _renderCoordinator = new RenderCoordinator(workerCount);
         _renderer = renderer;
     }
 

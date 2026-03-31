@@ -249,7 +249,7 @@ public sealed class BackpressureAdaptationTests
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);
-            var producer = new SimulationProducer(imagePool, new SimulationCoordinator(1));
+            var producer = new SimulationProducer(imagePool, 1);
 
             var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
                 nodePool, shared, producer, clock, new TestRecordingWaiter(waiterState));

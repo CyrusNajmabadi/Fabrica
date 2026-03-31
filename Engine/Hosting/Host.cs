@@ -198,11 +198,9 @@ internal static class SimulationEngine
         var nodePool = new ObjectPool<BaseProductionLoop<WorldImage>.ChainNode, BaseProductionLoop<WorldImage>.ChainNode.Allocator>(SimulationConstants.SnapshotPoolSize);
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>();
-        var simulationCoordinator = new SimulationCoordinator(simulationWorkerCount);
-        var renderCoordinator = new RenderCoordinator(renderWorkerCount);
 
-        var producer = new SimulationProducer(imagePool, simulationCoordinator);
-        var consumer = new RenderConsumer<TRenderer>(renderCoordinator, renderer);
+        var producer = new SimulationProducer(imagePool, simulationWorkerCount);
+        var consumer = new RenderConsumer<TRenderer>(renderWorkerCount, renderer);
 
         return new Host<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>(
             new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
