@@ -1,26 +1,23 @@
-using Fabrica.Engine.Simulation;
-using Fabrica.Engine.Tests.Helpers;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Fabrica.Pipeline.Threading;
 using Xunit;
 
-namespace Fabrica.Engine.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
-using SimulationPressure = ProductionLoop<WorldImage, SimulationProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
+using SimulationPressure = ProductionLoop<TestPayload, TestWorkerProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
 
-public sealed class SimulationLoopAdditionalTests
+public sealed class ProductionLoopAdditionalTests
 {
     private static int LowWaterMarkTicks =>
-        (int)(SimulationConstants.PressureLowWaterMarkNanoseconds / SimulationConstants.TickDurationNanoseconds);
+        (int)(TestPipelineConfiguration.PressureLowWaterMarkNanoseconds / TestPipelineConfiguration.TickDurationNanoseconds);
 
     [Fact]
     public void Cleanup_QueuesMultiplePinnedStaleSnapshots_AndDrainsThemAfterUnpin()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
         var tick0Owner = new TestPinOwner();
         var tick1Owner = new TestPinOwner();
 
@@ -58,7 +55,7 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void Cleanup_KeepsStillPinnedQueuedSnapshots_AndDrainsOnlyReleasedOnes()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
         var tick0Owner = new TestPinOwner();
         var tick1Owner = new TestPinOwner();
 
@@ -97,7 +94,7 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void Cleanup_ThrowsWhenTheSamePinnedSnapshotWouldBeQueuedTwice()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
         var pinOwner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
@@ -125,12 +122,12 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void RunOneIteration_WithNoPressure_OnlyPerformsTheFinalIdleWait()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
 
         long lastTime = 0;
-        var accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
@@ -143,7 +140,7 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void RunOneIteration_WithFirstPressureBucket_WaitsBaseDelayThenIdleWait()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
@@ -152,7 +149,7 @@ public sealed class SimulationLoopAdditionalTests
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        var accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
@@ -169,7 +166,7 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void RunOneIteration_UsesPressureDelayBeforeTick_ThenIdleWait()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < LowWaterMarkTicks + 2; i++)
@@ -178,7 +175,7 @@ public sealed class SimulationLoopAdditionalTests
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        var accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
@@ -195,7 +192,7 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void RunOneIteration_UsesPressureDelayForEachDueTick_BeforeFinalIdleWait()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
@@ -204,7 +201,7 @@ public sealed class SimulationLoopAdditionalTests
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        var accumulator = SimulationConstants.TickDurationNanoseconds * 2;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds * 2;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
@@ -222,7 +219,7 @@ public sealed class SimulationLoopAdditionalTests
     [Fact]
     public void RunOneIteration_ThrowsWhenCancelledDuringNonTrivialPressureDelay()
     {
-        var test = SimulationLoopTestContext.Create();
+        var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
@@ -232,7 +229,7 @@ public sealed class SimulationLoopAdditionalTests
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
-        var accumulator = SimulationConstants.TickDurationNanoseconds;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds;
 
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = cancellationSource.Cancel;
@@ -241,28 +238,28 @@ public sealed class SimulationLoopAdditionalTests
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
         Assert.Equal(tickBefore, test.Accessor.CurrentSequence);
-        Assert.Equal(SimulationConstants.TickDurationNanoseconds, accumulator);
+        Assert.Equal(TestPipelineConfiguration.TickDurationNanoseconds, accumulator);
         Assert.Equal(
             [GetExpectedPressureDelay(outstandingTicks: tickBefore)],
             test.WaiterState.WaitCalls);
     }
 
     private static TimeSpan GetIdleYieldWait() =>
-        TimeSpan.FromTicks(SimulationConstants.IdleYieldNanoseconds / 100);
+        TimeSpan.FromTicks(TestPipelineConfiguration.IdleYieldNanoseconds / 100);
 
     private static TimeSpan GetExpectedPressureDelay(int outstandingTicks) =>
         TimeSpan.FromTicks(
             SimulationPressure.ComputeDelay(
-                gapNanoseconds: outstandingTicks * SimulationConstants.TickDurationNanoseconds,
-                lowWaterMarkNanoseconds: SimulationConstants.PressureLowWaterMarkNanoseconds,
-                bucketWidthNanoseconds: SimulationConstants.TickDurationNanoseconds,
-                bucketCount: SimulationConstants.PressureBucketCount,
-                baseNanoseconds: SimulationConstants.PressureBaseDelayNanoseconds,
-                maxNanoseconds: SimulationConstants.PressureMaxDelayNanoseconds) / 100);
+                gapNanoseconds: outstandingTicks * TestPipelineConfiguration.TickDurationNanoseconds,
+                lowWaterMarkNanoseconds: TestPipelineConfiguration.PressureLowWaterMarkNanoseconds,
+                bucketWidthNanoseconds: TestPipelineConfiguration.TickDurationNanoseconds,
+                bucketCount: TestPipelineConfiguration.PressureBucketCount,
+                baseNanoseconds: TestPipelineConfiguration.PressureBaseDelayNanoseconds,
+                maxNanoseconds: TestPipelineConfiguration.PressureMaxDelayNanoseconds) / 100);
 
-    private static class SimulationLoopTestContext
+    private static class ProductionLoopTestContext
     {
-        public static SimulationLoopTestContext<TestFakeClock, TestRecordingWaiter> Create()
+        public static ProductionLoopTestContext<TestFakeClock, TestRecordingWaiter> Create()
         {
             var waiterState = new TestWaiterState();
             return Create(
@@ -271,52 +268,55 @@ public sealed class SimulationLoopAdditionalTests
                 waiterState: waiterState);
         }
 
-        public static SimulationLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(
+        public static ProductionLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(
             TClock clock,
             TWaiter waiter,
             TestWaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter =>
-            SimulationLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
+            ProductionLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
     }
 
-    private sealed class SimulationLoopTestContext<TClock, TWaiter>
+    private sealed class ProductionLoopTestContext<TClock, TWaiter>
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        public static SimulationLoopTestContext<TClock, TWaiter> Create(
+        public static ProductionLoopTestContext<TClock, TWaiter> Create(
             TClock clock,
             TWaiter waiter,
             TestWaiterState waiterState,
             int poolSize = 8)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedPipelineState<WorldImage>();
-            var producer = new SimulationProducer(imagePool, 1);
-            var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
+            var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
+            var shared = new SharedPipelineState<TestPayload>();
+            var producer = new TestWorkerProducer(payloadPool, 1);
+            var loop = new ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter>(
                 nodePool, shared, producer, clock, waiter, TestPipelineConfiguration.Default);
-            return new SimulationLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
+            return new ProductionLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
         }
 
-        private SimulationLoopTestContext(
-            SharedPipelineState<WorldImage> shared,
+        private ProductionLoopTestContext(
+            SharedPipelineState<TestPayload> shared,
             TestWaiterState waiterState,
-            ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> loop)
+            ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter> loop)
         {
             this.Shared = shared;
             this.WaiterState = waiterState;
+            this.Loop = loop;
             this.Accessor = loop.GetTestAccessor();
         }
 
         public PinnedVersions PinnedVersions => this.Shared.PinnedVersions;
 
-        public SharedPipelineState<WorldImage> Shared { get; }
+        public SharedPipelineState<TestPayload> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 
-        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter> Loop { get; }
+
+        public ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
 
     private sealed class TestPinOwner : IPinOwner;

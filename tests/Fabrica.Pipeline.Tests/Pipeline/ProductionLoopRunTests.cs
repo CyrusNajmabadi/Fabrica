@@ -1,17 +1,14 @@
-using Fabrica.Engine.Simulation;
-using Fabrica.Engine.Tests.Helpers;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Fabrica.Pipeline.Threading;
 using Xunit;
 
-namespace Fabrica.Engine.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
-public sealed class SimulationLoopRunTests
+public sealed class ProductionLoopRunTests
 {
     [Fact]
     public void RunOneIteration_UsesElapsedTimeToCrossTheTickThreshold()
@@ -26,7 +23,7 @@ public sealed class SimulationLoopRunTests
         test.Accessor.Bootstrap();
 
         long lastTime = 100;
-        var accumulator = SimulationConstants.TickDurationNanoseconds - 200;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds - 200;
         clockState.NowNanoseconds = 300;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
@@ -163,18 +160,18 @@ public sealed class SimulationLoopRunTests
             int poolSize = 8)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedPipelineState<WorldImage>();
-            var producer = new SimulationProducer(imagePool, 1);
-            var loop = new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
+            var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
+            var shared = new SharedPipelineState<TestPayload>();
+            var producer = new TestWorkerProducer(payloadPool, 1);
+            var loop = new ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter>(
                 nodePool, shared, producer, clock, waiter, TestPipelineConfiguration.Default);
             return new ProductionLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
         }
 
         private ProductionLoopTestContext(
-            SharedPipelineState<WorldImage> shared,
+            SharedPipelineState<TestPayload> shared,
             TestWaiterState waiterState,
-            ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> loop)
+            ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter> loop)
         {
             this.Shared = shared;
             this.WaiterState = waiterState;
@@ -182,12 +179,12 @@ public sealed class SimulationLoopRunTests
             this.Accessor = loop.GetTestAccessor();
         }
 
-        public SharedPipelineState<WorldImage> Shared { get; }
+        public SharedPipelineState<TestPayload> Shared { get; }
 
         public TestWaiterState WaiterState { get; }
 
-        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter> Loop { get; }
+        public ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter> Loop { get; }
 
-        public ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter>.TestAccessor Accessor { get; }
     }
 }
