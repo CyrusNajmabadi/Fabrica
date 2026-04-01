@@ -69,9 +69,9 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
                     _inFlightTasks[consumerIndex] is null,
                     $"Deferred consumer {consumerIndex} is scheduled to run but already has an in-flight task.");
 
-                var seq = latest.SequenceNumber;
-                _pinnedVersions.Pin(seq, _consumers[consumerIndex]);
-                _pinnedSequences[consumerIndex] = seq;
+                var sequenceNumber = latest.SequenceNumber;
+                _pinnedVersions.Pin(sequenceNumber, _consumers[consumerIndex]);
+                _pinnedSequences[consumerIndex] = sequenceNumber;
 
                 try
                 {
@@ -80,7 +80,7 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
                 }
                 catch
                 {
-                    _pinnedVersions.Unpin(seq, _consumers[consumerIndex]);
+                    _pinnedVersions.Unpin(sequenceNumber, _consumers[consumerIndex]);
                     _schedule.Enqueue(consumerIndex, frameStartNanoseconds + _consumers[consumerIndex].ErrorRetryDelayNanoseconds);
                     throw;
                 }

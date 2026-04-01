@@ -16,9 +16,9 @@ public sealed class ChainNodeTests
     private readonly TestChainHarness _harness = new();
     private BaseProductionLoop<WorldImage>.ChainTestAccessor Accessor => _harness.GetChainTestAccessor();
 
-    private ChainNode CreateNode(int seq, WorldImage? payload = null)
+    private ChainNode CreateNode(int sequenceNumber, WorldImage? payload = null)
     {
-        var node = this.Accessor.CreateNode(seq);
+        var node = this.Accessor.CreateNode(sequenceNumber);
         this.Accessor.SetPayload(node, payload ?? new WorldImage());
         return node;
     }

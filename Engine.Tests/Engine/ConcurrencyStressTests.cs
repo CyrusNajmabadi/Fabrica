@@ -170,15 +170,15 @@ public sealed class ConcurrencyStressTests
         simulationThread.Join();
         consumptionThread.Join();
 
-        var simEx = Volatile.Read(ref simulationException);
-        var conEx = Volatile.Read(ref consumptionException);
+        var simulationThreadException = Volatile.Read(ref simulationException);
+        var consumptionThreadException = Volatile.Read(ref consumptionException);
 
-        if (simEx is not null && conEx is not null)
-            throw new AggregateException("Both threads threw.", simEx, conEx);
-        if (simEx is not null)
-            throw new AggregateException("Simulation thread threw.", simEx);
-        if (conEx is not null)
-            throw new AggregateException("Consumption thread threw.", conEx);
+        if (simulationThreadException is not null && consumptionThreadException is not null)
+            throw new AggregateException("Both threads threw.", simulationThreadException, consumptionThreadException);
+        if (simulationThreadException is not null)
+            throw new AggregateException("Simulation thread threw.", simulationThreadException);
+        if (consumptionThreadException is not null)
+            throw new AggregateException("Consumption thread threw.", consumptionThreadException);
 
         var violation = metrics.InvariantViolation;
         if (violation is not null)

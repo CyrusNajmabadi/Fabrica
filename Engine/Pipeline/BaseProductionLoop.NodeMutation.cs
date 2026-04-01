@@ -14,7 +14,7 @@ internal abstract partial class BaseProductionLoop<TPayload>
         private readonly ChainNode _node = node;
 #endif
 
-        public void InitializeBase(int seq) => _node.InitializeBase(seq);
+        public void InitializeBase(int sequenceNumber) => _node.InitializeBase(sequenceNumber);
         public void SetPayload(TPayload payload) => _node.SetPayload(payload);
         public void MarkPublished(long time) => _node.MarkPublished(time);
         public void SetNext(ChainNode next) => _node.SetNext(next);
