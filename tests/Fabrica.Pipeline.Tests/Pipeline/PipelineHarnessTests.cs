@@ -1,28 +1,25 @@
-using Fabrica.Engine.Simulation;
-using Fabrica.Engine.Tests.Helpers;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Engine.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
-public sealed class LoopHarnessExampleTests
+public sealed class PipelineHarnessTests
 {
     [Fact]
-    public void DeferredConsumerPinnedNode_SurvivesSimulationCleanup_UntilTaskCompletes()
+    public void DeferredConsumerPinnedNode_SurvivesCleanup_UntilTaskCompletes()
     {
         var test = LoopHarness.Create();
 
-        test.SimulationLoop.Bootstrap();
+        test.ProductionLoop.Bootstrap();
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T1
-        var tick1Node = test.SimulationLoop.CurrentNode!;
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // T1
+        var tick1Node = test.ProductionLoop.CurrentNode!;
 
         test.ConsumptionLoop.RunIteration(); // previous=T0, latest=T1; deferred dispatched for T1
         Assert.True(test.Pins.IsPinned(1));
@@ -31,8 +28,8 @@ public sealed class LoopHarnessExampleTests
 
         for (var i = 0; i < 3; i++)
         {
-            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-            test.SimulationLoop.RunIteration();
+            test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+            test.ProductionLoop.RunIteration();
             test.ConsumptionLoop.RunIteration();
         }
 
@@ -45,33 +42,33 @@ public sealed class LoopHarnessExampleTests
         test.ConsumptionLoop.RunIteration();
         Assert.False(test.Pins.IsPinned(1));
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration();
 
         Assert.True(tick1Node.IsUnreferenced);
-        Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
+        Assert.Equal(0, test.ProductionLoop.PinnedQueueCount);
     }
 
     [Fact]
-    public void DeferredConsumerPinAndExternalPin_BothMustClearBeforeSimulationCanReclaim()
+    public void DeferredConsumerPinAndExternalPin_BothMustClearBeforeReclaim()
     {
         var test = LoopHarness.Create();
         var externalOwner = new ExternalPinOwner();
 
-        test.SimulationLoop.Bootstrap();
+        test.ProductionLoop.Bootstrap();
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T1
-        var tick1Node = test.SimulationLoop.CurrentNode!;
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // T1
+        var tick1Node = test.ProductionLoop.CurrentNode!;
 
         test.ConsumptionLoop.RunIteration(); // deferred dispatched for T1
         test.Pins.Pin(1, externalOwner);
 
         for (var i = 0; i < 3; i++)
         {
-            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-            test.SimulationLoop.RunIteration();
+            test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+            test.ProductionLoop.RunIteration();
             test.ConsumptionLoop.RunIteration();
         }
 
@@ -86,24 +83,24 @@ public sealed class LoopHarnessExampleTests
 
         test.Pins.Unpin(1, externalOwner);
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration();
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration();
 
         Assert.False(test.Pins.IsPinned(1));
         Assert.True(tick1Node.IsUnreferenced);
-        Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
+        Assert.Equal(0, test.ProductionLoop.PinnedQueueCount);
     }
 
     [Fact]
-    public void ConsumptionIterationBeforeSimulationIteration_SeesThePreviouslyPublishedSnapshot()
+    public void ConsumptionIterationBeforeProductionIteration_SeesThePreviouslyPublishedSnapshot()
     {
         var test = LoopHarness.Create();
 
-        test.SimulationLoop.Bootstrap();
-        test.ConsumptionLoop.RunIteration(); // pick up T0, no consume yet
+        test.ProductionLoop.Bootstrap();
+        test.ConsumptionLoop.RunIteration(); // pick up T0
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // publish tick 1
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // publish tick 1
 
         test.ConsumptionLoop.RunIteration(); // previous=T0, latest=T1, consume tick 1
         Assert.Equal([1], test.Renderer.RenderedTicks);
@@ -113,8 +110,8 @@ public sealed class LoopHarnessExampleTests
         Assert.Equal([1, 1], test.Renderer.RenderedTicks);
         Assert.Equal(0, test.Shared.ConsumptionEpoch);
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // publish tick 2
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // publish tick 2
 
         test.ConsumptionLoop.RunIteration(); // previous=T1, latest=T2, consume tick 2
         Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
@@ -126,38 +123,38 @@ public sealed class LoopHarnessExampleTests
     {
         var test = LoopHarness.CreateWithNoDeferredConsumers();
 
-        test.SimulationLoop.Bootstrap();
+        test.ProductionLoop.Bootstrap();
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // T1
-        var tick1Node = test.SimulationLoop.CurrentNode!;
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // T1
+        var tick1Node = test.ProductionLoop.CurrentNode!;
 
         test.ConsumptionLoop.RunIteration(); // consume T1, epoch=0
 
         for (var i = 0; i < 3; i++)
         {
-            test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-            test.SimulationLoop.RunIteration();
+            test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+            test.ProductionLoop.RunIteration();
             test.ConsumptionLoop.RunIteration();
         }
 
         Assert.True(tick1Node.IsUnreferenced);
-        Assert.Equal(0, test.SimulationLoop.PinnedQueueCount);
+        Assert.Equal(0, test.ProductionLoop.PinnedQueueCount);
     }
 
     [Fact]
-    public void SimulationIterationBeforeConsumptionIteration_PublishesNewestSnapshotForConsumption()
+    public void ProductionIterationBeforeConsumptionIteration_PublishesNewestSnapshotForConsumption()
     {
         var test = LoopHarness.CreateWithNoDeferredConsumers();
 
-        test.SimulationLoop.Bootstrap();
+        test.ProductionLoop.Bootstrap();
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 2
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // tick 1
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // tick 2
 
         test.ConsumptionLoop.RunIteration(); // previous=T0, latest=T2
 
@@ -170,11 +167,11 @@ public sealed class LoopHarnessExampleTests
     {
         var test = LoopHarness.Create();
 
-        test.SimulationLoop.Bootstrap();
+        test.ProductionLoop.Bootstrap();
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
-        test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);
-        test.SimulationLoop.RunIteration(); // tick 1
+        test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
+        test.ProductionLoop.RunIteration(); // tick 1
 
         test.DeferredConsumer.FailDispatchWith(new InvalidOperationException("dispatch failed"));
 
@@ -197,30 +194,30 @@ public sealed class LoopHarnessExampleTests
 
     private sealed class LoopHarness
     {
-        private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _simulationAccessor;
-        private long _simulationLastTime;
-        private long _simulationAccumulator;
+        private readonly ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _productionAccessor;
+        private long _productionLastTime;
+        private long _productionAccumulator;
 
         private LoopHarness(
-            SharedPipelineState<WorldImage> shared,
+            SharedPipelineState<TestPayload> shared,
             TestClockState clockState,
             TestDeferredConsumerState deferredConsumerState,
             TestRendererState rendererState,
-            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter> productionLoop,
-            ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
+            ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter> productionLoop,
+            ConsumptionLoop<TestPayload, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter> consumptionLoop)
         {
             this.Shared = shared;
             this.Clock = new ClockController(clockState);
             this.Pins = new PinController(shared.PinnedVersions);
             this.DeferredConsumer = new DeferredConsumerController(deferredConsumerState);
             this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
-            this.SimulationLoop = new SimulationLoopController(this, productionLoop.GetTestAccessor());
+            this.ProductionLoop = new ProductionLoopController(this, productionLoop.GetTestAccessor());
             this.Renderer = new RendererController(rendererState);
 
-            _simulationAccessor = productionLoop.GetTestAccessor();
+            _productionAccessor = productionLoop.GetTestAccessor();
         }
 
-        public SharedPipelineState<WorldImage> Shared { get; }
+        public SharedPipelineState<TestPayload> Shared { get; }
 
         public ClockController Clock { get; }
 
@@ -230,7 +227,7 @@ public sealed class LoopHarnessExampleTests
 
         public RendererController Renderer { get; }
 
-        public SimulationLoopController SimulationLoop { get; }
+        public ProductionLoopController ProductionLoop { get; }
 
         public ConsumptionLoopController ConsumptionLoop { get; }
 
@@ -245,22 +242,22 @@ public sealed class LoopHarnessExampleTests
 
         private static LoopHarness CreateInternal(
             int poolSize,
-            IDeferredConsumer<WorldImage>[] deferredConsumers,
+            IDeferredConsumer<TestPayload>[] deferredConsumers,
             TestDeferredConsumerState deferredState)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedPipelineState<WorldImage>();
+            var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
+            var shared = new SharedPipelineState<TestPayload>();
             var clockState = new TestClockState();
             var rendererState = new TestRendererState();
             var clock = new TestRecordingClock(clockState);
             var waiter = new TestNoOpWaiter();
-            var producer = new SimulationProducer(imagePool, 1);
+            var producer = new TestWorkerProducer(payloadPool, 1);
             var consumer = new TestRecordingConsumer(rendererState);
 
-            var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>(
+            var productionLoop = new ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>(
                 nodePool, shared, producer, clock, waiter, TestPipelineConfiguration.Default);
-            var consumptionLoop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>(
+            var consumptionLoop = new ConsumptionLoop<TestPayload, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>(
                 shared, consumer, clock, waiter, deferredConsumers, TestPipelineConfiguration.Default);
 
             return new LoopHarness(
@@ -272,12 +269,12 @@ public sealed class LoopHarnessExampleTests
                 consumptionLoop);
         }
 
-        public sealed class SimulationLoopController(
+        public sealed class ProductionLoopController(
             LoopHarness owner,
-            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
+            ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
         {
             private readonly LoopHarness _owner = owner;
-            private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
+            private readonly ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
             public ChainNode? CurrentNode => _accessor.CurrentNode;
 
@@ -286,21 +283,21 @@ public sealed class LoopHarnessExampleTests
             public void Bootstrap()
             {
                 _accessor.Bootstrap();
-                _owner._simulationLastTime = _owner.Clock.NowNanoseconds;
-                _owner._simulationAccumulator = 0;
+                _owner._productionLastTime = _owner.Clock.NowNanoseconds;
+                _owner._productionAccumulator = 0;
             }
 
             public void RunIteration() => _accessor.RunOneIteration(
                     CancellationToken.None,
-                    ref _owner._simulationLastTime,
-                    ref _owner._simulationAccumulator);
+                    ref _owner._productionLastTime,
+                    ref _owner._productionAccumulator);
 
         }
 
         public sealed class ConsumptionLoopController(
-            ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
+            ConsumptionLoop<TestPayload, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor accessor)
         {
-            private readonly ConsumptionLoop<WorldImage, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
+            private readonly ConsumptionLoop<TestPayload, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
             public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
         }
@@ -361,7 +358,7 @@ public sealed class LoopHarnessExampleTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private sealed class TestDeferredConsumer(TestDeferredConsumerState state) : IDeferredConsumer<WorldImage>
+    private sealed class TestDeferredConsumer(TestDeferredConsumerState state) : IDeferredConsumer<TestPayload>
     {
         private readonly TestDeferredConsumerState _state = state;
 
@@ -369,7 +366,7 @@ public sealed class LoopHarnessExampleTests
 
         public long ErrorRetryDelayNanoseconds => 1_000_000_000L;
 
-        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken)
+        public Task<long> ConsumeAsync(TestPayload payload, CancellationToken cancellationToken)
         {
             if (_state.ExceptionToThrow is { } ex)
                 throw ex;
@@ -387,7 +384,7 @@ public sealed class LoopHarnessExampleTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingConsumer(TestRendererState state) : IConsumer<WorldImage>
+    private readonly struct TestRecordingConsumer(TestRendererState state) : IConsumer<TestPayload>
     {
         private readonly TestRendererState _state = state;
 

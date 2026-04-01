@@ -1,14 +1,11 @@
-using Fabrica.Engine.Simulation;
-using Fabrica.Engine.Tests.Helpers;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
+using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Engine.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using SimulationPressure = ProductionLoop<WorldImage, SimulationProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
+using SimulationPressure = ProductionLoop<TestPayload, TestWorkerProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
 
-public sealed class SimulationPressureTests
+public sealed class PressureComputationTests
 {
     private const long Tick = 25_000_000;  // one tick duration in ns (matches 40 Hz)
     private const long Lwm = 100_000_000; // low water mark in ns (4 ticks)

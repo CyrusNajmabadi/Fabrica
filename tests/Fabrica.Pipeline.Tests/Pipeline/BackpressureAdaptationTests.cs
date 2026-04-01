@@ -1,21 +1,18 @@
-using Fabrica.Engine.Simulation;
-using Fabrica.Engine.Tests.Helpers;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Engine.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 /// <summary>
-/// Multi-phase behavioral tests that verify the backpressure feedback loop adapts dynamically to changing simulation/consumption
-/// speed ratios.
+/// Multi-phase behavioral tests that verify the backpressure feedback loop adapts dynamically to changing
+/// production/consumption speed ratios.
 ///
-/// Unlike the existing LoopStressHarnessTests (which verify individual iterations), these tests run sustained phases of many
-/// iterations and assert on aggregate behavior: total pressure delay, gap bounds, and transitions between pressured and
+/// Unlike the existing PipelineStressHarnessTests (which verify individual iterations), these tests run sustained phases of
+/// many iterations and assert on aggregate behavior: total pressure delay, gap bounds, and transitions between pressured and
 /// unpressured steady states.
 ///
 /// All tests are deterministic — they use a controllable clock and recording waiter, stepping both loops single-threaded with
@@ -24,13 +21,13 @@ using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 public sealed class BackpressureAdaptationTests
 {
     private static int LowWaterMarkTicks =>
-        (int)(SimulationConstants.PressureLowWaterMarkNanoseconds / SimulationConstants.TickDurationNanoseconds);
+        (int)(TestPipelineConfiguration.PressureLowWaterMarkNanoseconds / TestPipelineConfiguration.TickDurationNanoseconds);
 
     private static int HardCeilingTicks =>
-        (int)(SimulationConstants.PressureHardCeilingNanoseconds / SimulationConstants.TickDurationNanoseconds);
+        (int)(TestPipelineConfiguration.PressureHardCeilingNanoseconds / TestPipelineConfiguration.TickDurationNanoseconds);
 
     private static TimeSpan IdleYield =>
-        TimeSpan.FromTicks(SimulationConstants.IdleYieldNanoseconds / 100);
+        TimeSpan.FromTicks(TestPipelineConfiguration.IdleYieldNanoseconds / 100);
 
     [Fact]
     public void MatchedRates_NoBackpressureOverSustainedRun()
@@ -40,12 +37,12 @@ public sealed class BackpressureAdaptationTests
 
         for (var i = 0; i < 200; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             test.StepConsumption();
         }
 
         Assert.Equal(0, test.TotalPressureDelays);
-        Assert.Equal(200, test.SimulationTick);
+        Assert.Equal(200, test.ProductionTick);
     }
 
     [Fact]
@@ -56,12 +53,12 @@ public sealed class BackpressureAdaptationTests
 
         var ticksToRun = LowWaterMarkTicks + 20;
         for (var i = 0; i < ticksToRun; i++)
-            test.StepSimulation();
+            test.StepProduction();
 
         Assert.True(test.TotalPressureDelays > 0,
             "Expected backpressure delays when consumption is stalled.");
-        Assert.True(test.SimulationTick > LowWaterMarkTicks,
-            "Simulation should have advanced past the low water mark.");
+        Assert.True(test.ProductionTick > LowWaterMarkTicks,
+            "Production should have advanced past the low water mark.");
     }
 
     [Fact]
@@ -72,20 +69,20 @@ public sealed class BackpressureAdaptationTests
 
         var phase1Ticks = LowWaterMarkTicks + 10;
         for (var i = 0; i < phase1Ticks; i++)
-            test.StepSimulation();
+            test.StepProduction();
 
         Assert.True(test.TotalPressureDelays > 0, "Phase 1: expected pressure.");
 
         for (var i = 0; i < phase1Ticks + 5; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             test.StepConsumption();
         }
 
         test.ResetPressureCount();
         for (var i = 0; i < 20; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             test.StepConsumption();
         }
 
@@ -100,31 +97,31 @@ public sealed class BackpressureAdaptationTests
 
         for (var i = 0; i < 50; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             test.StepConsumption();
         }
         Assert.Equal(0, test.TotalPressureDelays);
 
         for (var i = 0; i < LowWaterMarkTicks + 10; i++)
-            test.StepSimulation();
+            test.StepProduction();
         Assert.True(test.TotalPressureDelays > 0, "Phase 2: expected pressure.");
 
         for (var i = 0; i < LowWaterMarkTicks + 15; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             test.StepConsumption();
         }
         test.ResetPressureCount();
         for (var i = 0; i < 20; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             test.StepConsumption();
         }
         Assert.Equal(0, test.TotalPressureDelays);
 
         test.ResetPressureCount();
         for (var i = 0; i < LowWaterMarkTicks + 10; i++)
-            test.StepSimulation();
+            test.StepProduction();
         Assert.True(test.TotalPressureDelays > 0, "Phase 4: expected pressure to re-engage.");
     }
 
@@ -137,7 +134,7 @@ public sealed class BackpressureAdaptationTests
         var delays = new List<TimeSpan>();
         for (var i = 0; i < LowWaterMarkTicks + 10; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             delays.AddRange(test.DrainPressureDelays());
         }
 
@@ -152,15 +149,15 @@ public sealed class BackpressureAdaptationTests
     }
 
     [Fact]
-    public void HardCeiling_BlocksSimulation_UntilConsumptionAdvances()
+    public void HardCeiling_BlocksProduction_UntilConsumptionAdvances()
     {
         var test = BackpressureHarness.Create();
         test.Bootstrap();
 
         for (var i = 0; i < HardCeilingTicks - 1; i++)
-            test.StepSimulation();
+            test.StepProduction();
 
-        var tickBeforeCeiling = test.SimulationTick;
+        var tickBeforeCeiling = test.ProductionTick;
 
         var waitCallsDuringCeiling = 0;
         test.OnWait = _ =>
@@ -170,11 +167,11 @@ public sealed class BackpressureAdaptationTests
                 test.AdvanceConsumptionEpochDirectly(tickBeforeCeiling);
         };
 
-        test.StepSimulation();
+        test.StepProduction();
         test.OnWait = null;
 
-        Assert.True(test.SimulationTick > tickBeforeCeiling,
-            "Simulation should have advanced after consumption caught up.");
+        Assert.True(test.ProductionTick > tickBeforeCeiling,
+            "Production should have advanced after consumption caught up.");
         Assert.True(waitCallsDuringCeiling >= 1,
             "Expected at least one hard-ceiling wait before consumption advanced.");
     }
@@ -187,17 +184,17 @@ public sealed class BackpressureAdaptationTests
 
         for (var i = 0; i < 200; i++)
         {
-            test.StepSimulation();
+            test.StepProduction();
             if (i % 4 == 0)
                 test.StepConsumption();
         }
 
-        var gapTicks = test.SimulationTick - test.ConsumptionEpoch;
-        var gapNanoseconds = gapTicks * SimulationConstants.TickDurationNanoseconds;
+        var gapTicks = test.ProductionTick - test.ConsumptionEpoch;
+        var gapNanoseconds = gapTicks * TestPipelineConfiguration.TickDurationNanoseconds;
 
-        Assert.True(gapNanoseconds < SimulationConstants.PressureHardCeilingNanoseconds,
+        Assert.True(gapNanoseconds < TestPipelineConfiguration.PressureHardCeilingNanoseconds,
             $"Gap ({gapTicks} ticks = {gapNanoseconds / 1_000_000}ms) should stay below " +
-            $"hard ceiling ({SimulationConstants.PressureHardCeilingNanoseconds / 1_000_000}ms).");
+            $"hard ceiling ({TestPipelineConfiguration.PressureHardCeilingNanoseconds / 1_000_000}ms).");
         Assert.True(test.TotalPressureDelays > 0,
             "Expected soft pressure delays to keep the gap bounded.");
     }
@@ -206,30 +203,30 @@ public sealed class BackpressureAdaptationTests
 
     private sealed class BackpressureHarness
     {
-        private readonly SharedPipelineState<WorldImage> _shared;
+        private readonly SharedPipelineState<TestPayload> _shared;
         private readonly TestClockState _clockState;
         private readonly TestWaiterState _waiterState;
-        private readonly ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _simulationAccessor;
-        private readonly ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _consumptionAccessor;
-        private long _simulationLastTime;
-        private long _simulationAccumulator;
+        private readonly ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _productionAccessor;
+        private readonly ConsumptionLoop<TestPayload, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _consumptionAccessor;
+        private long _productionLastTime;
+        private long _productionAccumulator;
         private int _totalPressureDelays;
 
         private BackpressureHarness(
-            SharedPipelineState<WorldImage> shared,
+            SharedPipelineState<TestPayload> shared,
             TestClockState clockState,
             TestWaiterState waiterState,
-            ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor simulationAccessor,
-            ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor consumptionAccessor)
+            ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor productionAccessor,
+            ConsumptionLoop<TestPayload, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor consumptionAccessor)
         {
             _shared = shared;
             _clockState = clockState;
             _waiterState = waiterState;
-            _simulationAccessor = simulationAccessor;
+            _productionAccessor = productionAccessor;
             _consumptionAccessor = consumptionAccessor;
         }
 
-        public int SimulationTick => _simulationAccessor.CurrentSequence;
+        public int ProductionTick => _productionAccessor.CurrentSequence;
         public int ConsumptionEpoch => _shared.ConsumptionEpoch;
         public int TotalPressureDelays => _totalPressureDelays;
 
@@ -242,16 +239,16 @@ public sealed class BackpressureAdaptationTests
         public static BackpressureHarness Create()
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(512);
-            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(512);
-            var shared = new SharedPipelineState<WorldImage>();
+            var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(512);
+            var shared = new SharedPipelineState<TestPayload>();
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);
-            var producer = new SimulationProducer(imagePool, 1);
+            var producer = new TestWorkerProducer(payloadPool, 1);
 
-            var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, TestRecordingClock, TestRecordingWaiter>(
+            var productionLoop = new ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestRecordingWaiter>(
                 nodePool, shared, producer, clock, new TestRecordingWaiter(waiterState), TestPipelineConfiguration.Default);
-            var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
+            var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
                 shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), [], TestPipelineConfiguration.Default);
 
             return new BackpressureHarness(
@@ -264,20 +261,20 @@ public sealed class BackpressureAdaptationTests
 
         public void Bootstrap()
         {
-            _simulationAccessor.Bootstrap();
-            _simulationLastTime = 0;
-            _simulationAccumulator = 0;
+            _productionAccessor.Bootstrap();
+            _productionLastTime = 0;
+            _productionAccumulator = 0;
         }
 
-        public void StepSimulation()
+        public void StepProduction()
         {
-            _clockState.NowNanoseconds += SimulationConstants.TickDurationNanoseconds;
+            _clockState.NowNanoseconds += TestPipelineConfiguration.TickDurationNanoseconds;
             _waiterState.WaitCalls.Clear();
 
-            _simulationAccessor.RunOneIteration(
+            _productionAccessor.RunOneIteration(
                 CancellationToken.None,
-                ref _simulationLastTime,
-                ref _simulationAccumulator);
+                ref _productionLastTime,
+                ref _productionAccumulator);
 
             _totalPressureDelays += CountPressureDelays(_waiterState.WaitCalls);
         }
