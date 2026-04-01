@@ -11,9 +11,8 @@ internal abstract partial class BaseProductionLoop<TPayload>
 #endif
     {
         /// <summary>
-        /// Allocator for the node pool.  Nested inside <see cref="ChainNode"/> so it
-        /// can construct <c>PrivateChainNode</c> in DEBUG builds (the type is private
-        /// to <see cref="BaseProductionLoop{TPayload}"/>).
+        /// Allocator for the node pool. Nested inside <see cref="ChainNode"/> so it can construct <c>PrivateChainNode</c> in
+        /// DEBUG builds (the type is private to <see cref="BaseProductionLoop{TPayload}"/>).
         /// </summary>
         public struct Allocator : IAllocator<ChainNode>
         {

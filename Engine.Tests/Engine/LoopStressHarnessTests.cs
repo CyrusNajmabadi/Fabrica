@@ -90,9 +90,8 @@ public sealed class LoopStressHarnessTests
             .ToList();
         Assert.NotEmpty(pressureWaitsBeforeConsumption);
 
-        // Advance epoch by producing new ticks and letting consumption catch up.
-        // Each consumption iteration advances the epoch to _previous.SequenceNumber,
-        // and _previous only changes when a new LatestNode appears.
+        // Advance epoch by producing new ticks and letting consumption catch up. Each consumption iteration advances the epoch to
+        // _previous.SequenceNumber, and _previous only changes when a new LatestNode appears.
         for (var i = 0; i < LowWaterMarkTicks + 3; i++)
         {
             test.Clock.AdvanceBy(SimulationConstants.TickDurationNanoseconds);

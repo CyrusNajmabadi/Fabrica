@@ -8,8 +8,8 @@ namespace Engine.Tests.World;
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
 
 /// <summary>
-/// Tests for <see cref="ChainNode"/> mechanics, exercised
-/// through <see cref="BaseProductionLoop{WorldImage}.ChainTestAccessor"/>.
+/// Tests for <see cref="ChainNode"/> mechanics, exercised through <see cref="BaseProductionLoop{WorldImage}.ChainTestAccessor"/>
+/// .
 /// </summary>
 public sealed class ChainNodeTests
 {

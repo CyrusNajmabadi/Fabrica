@@ -6,8 +6,7 @@ namespace Engine.Rendering;
 /// Parallel coordinator for N render workers.
 ///
 /// FRAME DISPATCH CYCLE
-///   <see cref="DispatchFrame"/> runs once per consumption-loop frame, called
-///   by <see cref="RenderConsumer{TRenderer}"/>:
+///   <see cref="DispatchFrame"/> runs once per consumption-loop frame, called by <see cref="RenderConsumer{TRenderer}"/>:
 ///
 ///     1. PREPARE — each worker's <see cref="RenderExecutor.Prepare"/>
 ///        clears per-frame state via <see cref="RenderWorkerResources"/>.
@@ -17,14 +16,12 @@ namespace Engine.Rendering;
 ///     4. JOIN — <see cref="WorkerGroup{TState,TExecutor}.Dispatch"/> waits
 ///        on every worker's done signal.
 ///
-///   All workers must finish before <see cref="DispatchFrame"/> returns,
-///   because the consumption loop advances the epoch immediately afterward
-///   and the simulation may then reclaim the snapshots.
+///   All workers must finish before <see cref="DispatchFrame"/> returns, because the consumption loop advances the epoch
+///   immediately afterward and the simulation may then reclaim the snapshots.
 ///
 /// THREAD PINNING
-///   Each worker attempts to pin itself to a specific logical core at thread
-///   startup via <see cref="ThreadPinningNative"/>.  This is best-effort and
-///   purely a cache-affinity optimisation.
+///   Each worker attempts to pin itself to a specific logical core at thread startup via <see cref="ThreadPinningNative"/>. This
+///   is best-effort and purely a cache-affinity optimisation.
 /// </summary>
 internal sealed partial class RenderCoordinator(int workerCount)
 {
@@ -36,8 +33,7 @@ internal sealed partial class RenderCoordinator(int workerCount)
     public int WorkerCount => _group.WorkerCount;
 
     /// <summary>
-    /// Dispatches one frame of render work across all workers and blocks
-    /// until all have completed.
+    /// Dispatches one frame of render work across all workers and blocks until all have completed.
     /// </summary>
     public void DispatchFrame(in RenderFrame frame, CancellationToken cancellationToken)
     {

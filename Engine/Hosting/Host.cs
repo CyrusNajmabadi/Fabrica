@@ -8,8 +8,7 @@ using Engine.World;
 namespace Engine.Hosting;
 
 /// <summary>
-/// Top-level coordinator: owns the production and consumption loops and manages
-/// their thread lifetimes.
+/// Top-level coordinator: owns the production and consumption loops and manages their thread lifetimes.
 ///
 /// ═══════════════════════ TWO-THREAD DESIGN OVERVIEW ═════════════════════════
 ///
@@ -135,8 +134,8 @@ namespace Engine.Hosting;
 ///
 /// ════════════════════════════════════════════════════════════════════════════
 ///
-/// Use the explicit constructor to inject custom loops (e.g. in tests).
-/// For the default simulation configuration, see <see cref="SimulationEngine"/>.
+/// Use the explicit constructor to inject custom loops (e.g. in tests). For the default simulation configuration, see
+/// <see cref="SimulationEngine"/>.
 /// </summary>
 internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
     ProductionLoop<TPayload, TProducer, TClock, TWaiter> productionLoop,
@@ -150,10 +149,9 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
     private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _consumptionLoop = consumptionLoop;
 
     /// <summary>
-    /// Starts both loops on dedicated threads and blocks until both exit.
-    /// Exceptions from either loop are captured and re-thrown after both
-    /// threads have joined.  A linked <see cref="CancellationTokenSource"/>
-    /// ensures a fault in one loop cancels the other so it can exit promptly.
+    /// Starts both loops on dedicated threads and blocks until both exit. Exceptions from either loop are captured and re-thrown
+    /// after both threads have joined. A linked <see cref="CancellationTokenSource"/> ensures a fault in one loop cancels the
+    /// other so it can exit promptly.
     /// </summary>
     public void Run(CancellationToken cancellationToken)
     {

@@ -7,9 +7,8 @@ namespace Engine.Hosting.ConsoleHost;
 /// <summary>
 /// Deferred consumer that performs periodic saves on the thread pool.
 ///
-/// Replaces the old ISaver/ISaveRunner/TaskSaveRunner pipeline with a single
-/// <see cref="IDeferredConsumer{TPayload}"/> implementation.  The consumption
-/// loop handles pinning/unpinning and scheduling automatically.
+/// Replaces the old ISaver/ISaveRunner/TaskSaveRunner pipeline with a single <see cref="IDeferredConsumer{TPayload}"/>
+/// implementation. The consumption loop handles pinning/unpinning and scheduling automatically.
 /// </summary>
 internal sealed class ConsoleSaveConsumer(long intervalNanoseconds) : IDeferredConsumer<WorldImage>
 {

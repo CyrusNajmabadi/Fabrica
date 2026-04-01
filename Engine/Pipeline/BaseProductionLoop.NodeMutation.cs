@@ -3,8 +3,8 @@ namespace Engine.Pipeline;
 internal abstract partial class BaseProductionLoop<TPayload>
 {
     /// <summary>
-    /// Private facade that concentrates all <c>#if DEBUG</c> casts in one place.
-    /// The rest of the base class calls <c>Mutate(node).Method()</c> — ifdef-free.
+    /// Private facade that concentrates all <c>#if DEBUG</c> casts in one place. The rest of the base class calls
+    /// <c>Mutate(node).Method()</c> — ifdef-free.
     /// </summary>
     private readonly struct NodeMutation(ChainNode node)
     {

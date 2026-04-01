@@ -3,8 +3,7 @@ namespace Engine.Pipeline;
 internal abstract partial class BaseProductionLoop<TPayload>
 {
     /// <summary>
-    /// Provides test access to chain internals.  Nested here so it can
-    /// reach <c>PrivateChainNode</c> in DEBUG builds.
+    /// Provides test access to chain internals. Nested here so it can reach <c>PrivateChainNode</c> in DEBUG builds.
     /// </summary>
     public readonly struct ChainTestAccessor(BaseProductionLoop<TPayload> loop)
     {

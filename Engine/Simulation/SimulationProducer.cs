@@ -5,13 +5,11 @@ using Engine.World;
 namespace Engine.Simulation;
 
 /// <summary>
-/// Adapts the simulation-specific tick logic to the generic
-/// <see cref="IProducer{TPayload}"/> interface.
+/// Adapts the simulation-specific tick logic to the generic <see cref="IProducer{TPayload}"/> interface.
 ///
-/// Owns the image pool (allocation is a producer concern) and the
-/// <see cref="SimulationCoordinator"/> that dispatches parallel tick work.
-/// The pool's allocator handles <see cref="WorldImage.ResetForPool"/> on
-/// return, so <see cref="ReleaseResources"/> just returns to the pool.
+/// Owns the image pool (allocation is a producer concern) and the <see cref="SimulationCoordinator"/> that dispatches parallel
+/// tick work. The pool's allocator handles <see cref="WorldImage.ResetForPool"/> on return, so <see cref="ReleaseResources"/>
+/// just returns to the pool.
 /// </summary>
 internal readonly struct SimulationProducer(ObjectPool<WorldImage, WorldImage.Allocator> imagePool, int workerCount) : IProducer<WorldImage>
 {

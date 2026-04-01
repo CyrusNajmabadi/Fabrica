@@ -5,13 +5,12 @@ namespace Engine.Pipeline;
 internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>
 {
     /// <summary>
-    /// Encapsulates all state and logic for scheduling and dispatching deferred
-    /// consumers (e.g. periodic saves).  Keeps the main consumption loop lean.
+    /// Encapsulates all state and logic for scheduling and dispatching deferred consumers (e.g. periodic saves). Keeps the main
+    /// consumption loop lean.
     ///
-    /// Uses a min-heap (<see cref="PriorityQueue{TElement,TPriority}"/>) keyed by
-    /// the next-run wall-clock timestamp.  Each frame the consumption loop calls
-    /// <see cref="MaybeRunConsumers"/>; a single O(1) peek determines whether any
-    /// consumer is due — no virtual calls or iteration when nothing is scheduled.
+    /// Uses a min-heap (<see cref="PriorityQueue{TElement,TPriority}"/>) keyed by the next-run wall-clock timestamp. Each frame
+    /// the consumption loop calls <see cref="MaybeRunConsumers"/>; a single O(1) peek determines whether any consumer is due —
+    /// no virtual calls or iteration when nothing is scheduled.
     /// </summary>
     private sealed class DeferredConsumerScheduler(
         PinnedVersions pinnedVersions,

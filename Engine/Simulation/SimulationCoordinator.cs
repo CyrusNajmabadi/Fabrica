@@ -7,8 +7,7 @@ namespace Engine.Simulation;
 /// Parallel coordinator for N simulation workers.
 ///
 /// TICK DISPATCH CYCLE
-///   <see cref="AdvanceTick"/> runs once per simulation tick, called by
-///   <see cref="SimulationProducer"/>:
+///   <see cref="AdvanceTick"/> runs once per simulation tick, called by <see cref="SimulationProducer"/>:
 ///
 ///     1. PREPARE — each worker's <see cref="SimulationExecutor.Prepare"/>
 ///        clears per-tick accumulation state via <see cref="WorkerResources"/>.
@@ -16,15 +15,13 @@ namespace Engine.Simulation;
 ///        written to each worker as a <see cref="SimulationTickState"/>.
 ///     3. SIGNAL — all workers are woken from their park state.
 ///     4. JOIN — <see cref="WorkerGroup{SimulationTickState,SimulationExecutor}.Dispatch"/> waits
-///        on every worker's done signal via
-///        <see cref="WorkerGroup{SimulationTickState,SimulationExecutor}.WaitHandleBatch"/>.
+///        on every worker's done signal via <see cref="WorkerGroup{SimulationTickState,SimulationExecutor}.WaitHandleBatch"/>.
 ///     5. REF-COUNT — the SimulationCoordinator walks each worker's created-nodes list
-///        and performs AddRef on shared subtree nodes.  This is the only
-///        phase that touches ref-counts, and it runs on a single thread —
-///        no interlocked operations needed.
+///        and performs AddRef on shared subtree nodes. This is the only phase that touches ref-counts, and it runs on a single
+///        thread — no interlocked operations needed.
 ///
-///   Because the group always joins all workers before returning, the calling thread sees a fully-consistent next image
-///   with all reference counts correct.
+///   Because the group always joins all workers before returning, the calling thread sees a fully-consistent next image with all
+///   reference counts correct.
 ///
 /// CANCELLATION
 ///   The engine's <see cref="CancellationToken"/> flows through AdvanceTick
@@ -32,11 +29,10 @@ namespace Engine.Simulation;
 ///   the engine shuts down.
 ///
 /// THREAD PINNING
-///   Each worker attempts to pin itself to a specific logical core
-///   (worker N → core N) at thread startup via <see cref="ThreadPinningNative"/>.
-///   This is best-effort: pinning may fail silently on restricted kernels,
-///   containerised environments, or macOS (not supported).  The simulation
-///   is correct regardless — pinning is purely a cache-affinity optimisation.
+///   Each worker attempts to pin itself to a specific logical core (worker N → core N) at thread startup via
+///   <see cref="ThreadPinningNative"/>. This is best-effort: pinning may fail silently on restricted kernels, containerised
+///   environments, or macOS (not supported). The simulation is correct regardless — pinning is purely a cache-affinity
+///   optimisation.
 /// </summary>
 internal sealed partial class SimulationCoordinator(int workerCount)
 {
@@ -48,7 +44,7 @@ internal sealed partial class SimulationCoordinator(int workerCount)
     public int WorkerCount => _group.WorkerCount;
 
     /// <summary>
-    /// Dispatches one tick of work across all workers and blocks until all have completed.  After join, performs deferred
+    /// Dispatches one tick of work across all workers and blocks until all have completed. After join, performs deferred
     /// ref-counting on shared subtree nodes created by workers.
     /// </summary>
     public void AdvanceTick(WorldImage previous, WorldImage next, CancellationToken cancellationToken)
@@ -69,8 +65,8 @@ internal sealed partial class SimulationCoordinator(int workerCount)
     private void CollectCreatedNodes(ref SimulationExecutor executor)
 #pragma warning restore IDE0060
     {
-        // Future: for each node in executor.Resources.CreatedNodes,
-        // call node.AddRef() to increment shared subtree reference counts.
+        // Future: for each node in executor.Resources.CreatedNodes, call node.AddRef() to increment shared subtree reference
+        // counts.
     }
 
     public void Shutdown() =>

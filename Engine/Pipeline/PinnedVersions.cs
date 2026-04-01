@@ -4,16 +4,13 @@ using System.Runtime.CompilerServices;
 namespace Engine.Pipeline;
 
 /// <summary>
-/// Thread-safe multi-owner registry of snapshot sequence numbers that must not
-/// be reclaimed by the simulation.
+/// Thread-safe multi-owner registry of snapshot sequence numbers that must not be reclaimed by the simulation.
 ///
 /// WHY THIS EXISTS
-///   The simulation thread (sole memory owner) normally reclaims a node once
-///   ConsumptionEpoch has advanced past it.  A deferred consumer task, however,
-///   holds a live reference to the payload for the full duration of its async
-///   work — potentially long after the consumption thread has moved on.
-///   PinnedVersions lets the consumption thread declare a hold on a sequence
-///   before dispatching the deferred task, and the task releases it when done.
+///   The simulation thread (sole memory owner) normally reclaims a node once ConsumptionEpoch has advanced past it. A deferred
+///   consumer task, however, holds a live reference to the payload for the full duration of its async work — potentially long
+///   after the consumption thread has moved on. PinnedVersions lets the consumption thread declare a hold on a sequence before
+///   dispatching the deferred task, and the task releases it when done.
 ///
 /// WHY ConcurrentDictionary IS REQUIRED HERE
 ///   Pin is called on the consumption thread (before dispatch).
@@ -25,11 +22,9 @@ namespace Engine.Pipeline;
 ///   structures — everything else is confined to a single owning thread.
 ///
 /// WHY IT IS STILL LIGHTWEIGHT
-///   Pin/Unpin are called only at deferred-consumer boundaries — infrequent
-///   relative to the per-tick hot path.  At most a handful of entries are
-///   present at any given moment.  IsPinned is called once per node during
-///   CleanupStaleNodes, but for the overwhelming majority of nodes the
-///   dictionary is empty and TryGetValue returns false immediately.
+///   Pin/Unpin are called only at deferred-consumer boundaries — infrequent relative to the per-tick hot path. At most a handful
+///   of entries are present at any given moment. IsPinned is called once per node during CleanupStaleNodes, but for the
+///   overwhelming majority of nodes the dictionary is empty and TryGetValue returns false immediately.
 ///
 /// CONSERVATIVE RACE FOR IsPinned
 ///   If the simulation reads IsPinned = false and then Pin arrives on the
@@ -40,11 +35,9 @@ namespace Engine.Pipeline;
 ///   protects the node until after Pin is guaranteed to be visible.
 ///
 /// MULTI-OWNER DESIGN
-///   Each sequence maps to a set of <see cref="IPinOwner"/> objects rather
-///   than a boolean flag.  Currently each deferred consumer acts as its own
-///   pin owner, but the multi-owner structure exists to support future callers
-///   — e.g. an external viewer that wants to freeze a specific node for
-///   inspection while a deferred consumer is also processing the same sequence.
+///   Each sequence maps to a set of <see cref="IPinOwner"/> objects rather than a boolean flag. Currently each deferred consumer
+///   acts as its own pin owner, but the multi-owner structure exists to support future callers — e.g. an external viewer that
+///   wants to freeze a specific node for inspection while a deferred consumer is also processing the same sequence.
 /// </summary>
 internal sealed class PinnedVersions
 {

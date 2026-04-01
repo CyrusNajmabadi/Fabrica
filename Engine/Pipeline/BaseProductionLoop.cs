@@ -4,16 +4,13 @@ using Engine.Memory;
 namespace Engine.Pipeline;
 
 /// <summary>
-/// Abstract base class that owns the forward-linked chain of nodes and all
-/// mutation of those nodes.  <see cref="ChainNode"/> is a nested type so that
-/// in DEBUG builds its mutation surface can be hidden behind a private derived
-/// type (<c>PrivateChainNode</c>), giving compile-time enforcement that only
-/// the production loop can mutate nodes.  In RELEASE the two types collapse
-/// into a single class via <c>partial</c> with zero overhead.
+/// Abstract base class that owns the forward-linked chain of nodes and all mutation of those nodes. <see cref="ChainNode"/> is a
+/// nested type so that in DEBUG builds its mutation surface can be hidden behind a private derived type
+/// (<c>PrivateChainNode</c>), giving compile-time enforcement that only the production loop can mutate nodes. In RELEASE the two
+/// types collapse into a single class via <c>partial</c> with zero overhead.
 ///
-/// The derived <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}"/>
-/// adds the tick loop, backpressure, and domain-specific producer/consumer
-/// coordination.  It calls the protected chain helpers defined here.
+/// The derived <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}"/> adds the tick loop, backpressure, and
+/// domain-specific producer/consumer coordination. It calls the protected chain helpers defined here.
 /// </summary>
 internal abstract partial class BaseProductionLoop<TPayload>(
     ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
@@ -31,8 +28,8 @@ internal abstract partial class BaseProductionLoop<TPayload>(
     // ══════════════════════════ ABSTRACT HOOK ═════════════════════════════════
 
     /// <summary>
-    /// Release domain-specific resources from a payload being freed (e.g. return
-    /// a WorldImage to its pool).  Called on the production thread during cleanup.
+    /// Release domain-specific resources from a payload being freed (e.g. return a WorldImage to its pool). Called on the
+    /// production thread during cleanup.
     /// </summary>
     protected abstract void ReleasePayloadResources(TPayload payload);
 
@@ -45,8 +42,8 @@ internal abstract partial class BaseProductionLoop<TPayload>(
     protected int CurrentSequence => _currentSequence;
 
     /// <summary>
-    /// Allocates the sequence-0 node, sets both anchors, and returns it.
-    /// The caller is responsible for publishing to shared state.
+    /// Allocates the sequence-0 node, sets both anchors, and returns it. The caller is responsible for publishing to shared
+    /// state.
     /// </summary>
     protected ChainNode BootstrapChain(TPayload payload, long publishTimeNanoseconds)
     {
@@ -65,8 +62,7 @@ internal abstract partial class BaseProductionLoop<TPayload>(
     }
 
     /// <summary>
-    /// Appends a new node to the chain and returns it.
-    /// The caller is responsible for publishing to shared state.
+    /// Appends a new node to the chain and returns it. The caller is responsible for publishing to shared state.
     /// </summary>
     protected ChainNode AppendToChain(TPayload payload, long publishTimeNanoseconds)
     {
