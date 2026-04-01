@@ -1,5 +1,23 @@
 namespace Engine;
 
+/// <summary>
+/// Compile-time constants governing simulation timing, transport, pooling,
+/// backpressure, and rendering.
+///
+/// DETERMINISM
+///   The simulation advances in fixed-size ticks (<see cref="TickDurationNanoseconds"/>).
+///   All game-state transitions are expressed in integer tick units or integer
+///   domain units (belt units, speeds-per-tick) — never wall-clock floats.
+///   This makes every tick transition fully reproducible given the same inputs
+///   in the same order, regardless of frame rate or machine speed.
+///
+///   Floating-point arithmetic is confined to the rendering/interpolation
+///   layer (consumption thread), which is purely visual and has no effect on
+///   game state.  If cross-machine determinism is ever required (e.g. lockstep
+///   multiplayer), the rendering layer is already isolated — but the simulation
+///   layer would need an audit for any future use of floats, FMA instructions,
+///   or platform-specific math libraries.
+/// </summary>
 internal static class SimulationConstants
 {
     public const int TicksPerSecond = 40;
