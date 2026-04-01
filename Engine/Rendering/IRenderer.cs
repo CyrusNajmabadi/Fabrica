@@ -33,8 +33,9 @@ internal interface IRenderer
     ///   <see cref="RenderFrame.Interpolation"/> provides raw integral timing
     ///   data; the renderer computes the blend factor (typically
     ///   elapsed / tickDuration, clamped to [0, 1], where 0 = Previous and
-    ///   1 = Latest).  On the very first frame, Previous is null — the
-    ///   renderer should display Latest as-is.
+    ///   1 = Latest).  The consumption loop waits for two distinct published
+    ///   nodes before calling Consume, so Previous and Latest are always
+    ///   non-null and distinct — no null-check needed.
     /// </summary>
     void Render(in RenderFrame frame);
 }
