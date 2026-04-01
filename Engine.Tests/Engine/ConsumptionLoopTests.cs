@@ -439,6 +439,8 @@ public sealed class ConsumptionLoopTests
             _state.ConsumedTicks.Add(latest.SequenceNumber);
             _state.ConsumedPairs.Add((previous, latest));
         }
+
+        public void Shutdown() { }
     }
 
     private static class ConsumptionLoopTestContext
