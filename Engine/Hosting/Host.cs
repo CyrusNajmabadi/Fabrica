@@ -151,16 +151,36 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
     /// <summary>
     /// Starts both loops on dedicated threads and blocks until both exit.
+    /// Exceptions from either loop are captured and re-thrown after both
+    /// threads have joined and Shutdown has been called.  A linked
+    /// <see cref="CancellationTokenSource"/> ensures a fault in one loop
+    /// cancels the other so it can exit promptly.
     /// </summary>
     public void Run(CancellationToken cancellationToken)
     {
-        var productionThread = new Thread(() => _productionLoop.Run(cancellationToken))
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var linkedToken = linkedCts.Token;
+
+        Exception? productionException = null;
+        Exception? consumptionException = null;
+
+        var productionThread = new Thread(() =>
+        {
+            try { _productionLoop.Run(linkedToken); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { productionException = ex; linkedCts.Cancel(); }
+        })
         {
             Name = "Production",
             IsBackground = false,
         };
 
-        var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
+        var consumptionThread = new Thread(() =>
+        {
+            try { _consumptionLoop.Run(linkedToken); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { consumptionException = ex; linkedCts.Cancel(); }
+        })
         {
             Name = "Consumption",
             IsBackground = false,

@@ -37,6 +37,31 @@ public sealed class HostTests
         Assert.True(tracker.ConsumerShutdownCalled, "Host.Run must call Shutdown on the consumption loop after it exits.");
     }
 
+    [Fact]
+    public void Run_PropagatesProducerException_AfterShutdown()
+    {
+        var tracker = new ShutdownTracker();
+        var producer = new TestThrowingProducer(tracker, throwOnTickNumber: 2);
+        var consumer = new TestTrackingConsumer(tracker);
+        var clock = new TestAutoAdvancingClock(new AutoAdvancingClockState());
+
+        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(16);
+        var shared = new SharedPipelineState<WorldImage>();
+
+        var productionLoop = new ProductionLoop<WorldImage, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
+            nodePool, shared, producer, clock, default);
+        var consumptionLoop = new ConsumptionLoop<WorldImage, TestTrackingConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+            shared, consumer, clock, default, []);
+
+        var host = new Host<WorldImage, TestThrowingProducer, TestTrackingConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+            productionLoop, consumptionLoop);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => host.Run(CancellationToken.None));
+        Assert.Equal("Deliberate producer fault.", ex.Message);
+        Assert.True(tracker.ProducerShutdownCalled, "Shutdown must be called even when an exception occurs.");
+        Assert.True(tracker.ConsumerShutdownCalled, "Shutdown must be called even when an exception occurs.");
+    }
+
     // ── Shared tracking state ─────────────────────────────────────────────
 
     private sealed class ShutdownTracker
@@ -64,6 +89,18 @@ public sealed class HostTests
         public long NowNanoseconds => 0;
     }
 
+    private sealed class AutoAdvancingClockState
+    {
+        private long _now;
+        public long Read() => Interlocked.Add(ref _now, SimulationConstants.TickDurationNanoseconds);
+    }
+
+    private readonly struct TestAutoAdvancingClock(AutoAdvancingClockState state) : IClock
+    {
+        private readonly AutoAdvancingClockState _state = state;
+        public readonly long NowNanoseconds => _state.Read();
+    }
+
     private readonly struct TestTrackingProducer(ShutdownTracker tracker) : IProducer<WorldImage>
     {
         private readonly ShutdownTracker _tracker = tracker;
@@ -78,6 +115,34 @@ public sealed class HostTests
 
         public readonly void Shutdown() =>
             _tracker.ProducerShutdownCalled = true;
+    }
+
+    private readonly struct TestThrowingProducer(ShutdownTracker tracker, int throwOnTickNumber) : IProducer<WorldImage>
+    {
+        private readonly ShutdownTracker _tracker = tracker;
+        private readonly int _throwOnTickNumber = throwOnTickNumber;
+        private readonly TickCounter _counter = new();
+
+        public readonly WorldImage CreateInitialPayload(CancellationToken cancellationToken) =>
+            default(WorldImage.Allocator).Allocate();
+
+        public readonly WorldImage Produce(WorldImage current, CancellationToken cancellationToken)
+        {
+            if (++_counter.Value >= _throwOnTickNumber)
+                throw new InvalidOperationException("Deliberate producer fault.");
+            return default(WorldImage.Allocator).Allocate();
+        }
+
+        public readonly void ReleaseResources(WorldImage payload) { }
+
+        public readonly void Shutdown() =>
+            _tracker.ProducerShutdownCalled = true;
+
+        private sealed class TickCounter
+        {
+            private int _value;
+            public int Value { get => _value; set => _value = value; }
+        }
     }
 
     private readonly struct TestTrackingConsumer(ShutdownTracker tracker) : IConsumer<WorldImage>
