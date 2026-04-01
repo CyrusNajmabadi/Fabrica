@@ -81,7 +81,8 @@ internal abstract partial class BaseProductionLoop<TPayload>(
     }
 
     /// <summary>
-    /// Reclaims nodes the consumption thread has moved past.
+    /// Reclaims nodes the consumption thread has moved past. Nodes that are pinned by deferred consumers are spliced into a
+    /// deferred queue and re-checked on subsequent passes. See <see cref="PinnedVersions"/> for the full pinning protocol.
     /// </summary>
     protected void CleanupStaleNodes(int consumptionEpoch)
     {

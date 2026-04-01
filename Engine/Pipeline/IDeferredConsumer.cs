@@ -4,14 +4,12 @@ namespace Engine.Pipeline;
 /// A slow consumer that runs asynchronously on a configurable schedule.
 ///
 /// Extends <see cref="IPinOwner"/> so the consumption loop can pass the consumer itself as the pin identity to
-/// <see cref="PinnedVersions"/> — no synthetic owner objects needed.
-///
-/// The consumption loop auto-pins the node before calling <see cref="ConsumeAsync"/> and auto-unpins it when the returned task
-/// completes. The consumer receives only the payload (not the chain node) because it has no need for chain mechanics.
+/// <see cref="PinnedVersions"/> — no synthetic owner objects needed. The consumption loop auto-pins the node before calling
+/// <see cref="ConsumeAsync"/> and auto-unpins it when the returned task completes. See <see cref="PinnedVersions"/> for the full
+/// pinning protocol.
 ///
 /// The returned <see cref="Task{Long}"/> contains the next wall-clock nanosecond timestamp at which this consumer should run
-/// again. The loop inserts this into a min-heap so the hot-path check is O(1) — no virtual calls or iteration over consumers when
-/// nothing is due.
+/// again.
 ///
 /// SCHEDULING
 ///   <see cref="InitialDelayNanoseconds"/> controls how long after the loop starts
