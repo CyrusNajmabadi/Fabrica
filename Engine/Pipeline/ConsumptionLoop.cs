@@ -73,6 +73,8 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
     private TConsumer _consumer = consumer;
 #pragma warning restore IDE0044
 
+    public void Shutdown() => _consumer.Shutdown();
+
     private BaseProductionLoop<TPayload>.ChainNode? _previous;
     private BaseProductionLoop<TPayload>.ChainNode? _latest;
 

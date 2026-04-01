@@ -397,6 +397,8 @@ public sealed class LoopHarnessExampleTests
                 throw exception;
             _state.RenderedTicks.Add(latest.SequenceNumber);
         }
+
+        public void Shutdown() { }
     }
 
     private sealed class ExternalPinOwner : IPinOwner;

@@ -38,4 +38,10 @@ internal interface IConsumer<TPayload>
         BaseProductionLoop<TPayload>.ChainNode latest,
         long frameStartNanoseconds,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Called once after the consumption loop has exited.  Use this to shut down
+    /// owned worker groups or release other long-lived resources.
+    /// </summary>
+    void Shutdown();
 }

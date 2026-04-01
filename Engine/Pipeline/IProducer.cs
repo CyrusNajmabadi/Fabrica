@@ -36,4 +36,10 @@ internal interface IProducer<TPayload>
     /// before the node is returned to the node pool.
     /// </summary>
     void ReleaseResources(TPayload payload);
+
+    /// <summary>
+    /// Called once after the production loop has exited.  Use this to shut down
+    /// owned worker groups or release other long-lived resources.
+    /// </summary>
+    void Shutdown();
 }

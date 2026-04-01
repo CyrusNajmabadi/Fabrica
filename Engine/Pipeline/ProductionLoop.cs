@@ -33,6 +33,8 @@ internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaite
     private TProducer _producer = producer;
 #pragma warning restore IDE0044
 
+    public void Shutdown() => _producer.Shutdown();
+
     protected override void ReleasePayloadResources(TPayload payload) =>
         _producer.ReleaseResources(payload);
 

@@ -40,4 +40,7 @@ internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) :
         _renderCoordinator.DispatchFrame(in frame, cancellationToken);
         _renderer.Render(in frame);
     }
+
+    public readonly void Shutdown() =>
+        _renderCoordinator.Shutdown();
 }

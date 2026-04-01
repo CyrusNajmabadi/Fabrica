@@ -212,6 +212,8 @@ public sealed class ConcurrencyStressTests
             if (_renderDelayMilliseconds > 0)
                 Thread.Sleep(_renderDelayMilliseconds);
         }
+
+        public void Shutdown() { }
     }
 
     private sealed class TestSlowDeferredSaveConsumer(TestSaveMetrics metrics) : IDeferredConsumer<WorldImage>
