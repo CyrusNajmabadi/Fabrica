@@ -27,6 +27,11 @@ internal interface IProducer<TPayload>
     /// <summary>
     /// Create the next payload using data from <paramref name="current"/>.
     /// Called once per tick on the production thread.
+    ///
+    /// DETERMINISM: if the producer ingests external inputs (e.g. player
+    /// commands, network messages), those inputs must be sorted into a
+    /// canonical order before being applied — otherwise two runs with the
+    /// same inputs arriving in different wall-clock order will diverge.
     /// </summary>
     TPayload Produce(TPayload current, CancellationToken cancellationToken);
 
