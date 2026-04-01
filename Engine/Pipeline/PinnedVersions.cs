@@ -43,10 +43,30 @@ namespace Engine.Pipeline;
 ///   thread. All three can be in flight concurrently. This is the ONLY place in the codebase that requires a concurrent data
 ///   structure — everything else is confined to a single owning thread.
 ///
-/// WHY IT IS STILL LIGHTWEIGHT
-///   Pin/Unpin are called only at deferred-consumer boundaries — infrequent relative to the per-tick hot path. At most a handful
-///   of entries are present at any given moment. IsPinned is called once per node during cleanup, but for the overwhelming
-///   majority of nodes the dictionary is empty and TryGetValue returns false immediately.
+/// PERFORMANCE — WHY THIS DOES NOT IMPACT THE HOT PATH
+///   Despite using a concurrent collection, the pinning system has negligible impact on both the production and consumption
+///   threads:
+///
+///   PRODUCTION THREAD (calls IsPinned every tick during CleanupStaleNodes):
+///     IsPinned delegates to ConcurrentDictionary.TryGetValue, which is lock-free on .NET 5+ (volatile reads only, no
+///     synchronization). For the overwhelming majority of ticks, no deferred consumers are in flight and the dictionary is empty —
+///     TryGetValue returns false immediately with no contention. Even when entries exist, the read never blocks and never competes
+///     with writers for a lock.
+///
+///   CONSUMPTION THREAD (DrainCompletedTasks every frame):
+///     The per-frame cost is a scan of the in-flight task array (typically 1-2 entries). Task.IsCompleted is a simple volatile read
+///     of an internal status field — no allocation, no lock, no contention. Only when a task has actually completed does the loop
+///     call Unpin, which happens at most once per deferred consumer per scheduling cycle (e.g. once every 5 minutes for a save
+///     consumer). Similarly, MaybeRunConsumers peeks the min-heap (O(1)), and since the PriorityQueue is only ever accessed from
+///     the consumption thread, the peek has no concurrency overhead — no volatile reads, no memory barriers. Pin is only called
+///     when a consumer is actually due.
+///
+///   Pin/Unpin (rare — deferred consumer boundaries only):
+///     These use ConcurrentDictionary's fine-grained per-bucket locking for writes. At most a handful of entries exist at any
+///     given moment (one per in-flight deferred consumer). The only scenario where Pin or Unpin could briefly delay the production
+///     thread's IsPinned read is if they happen to hash to the same bucket — but since reads are lock-free on .NET 5+, this
+///     cannot actually occur. Pin and Unpin can only contend with each other, and since they run on different threads (consumption
+///     vs threadpool) at very low frequency, contention is negligible in practice.
 ///
 /// MULTI-OWNER DESIGN
 ///   Each sequence maps to a set of <see cref="IPinOwner"/> objects rather than a boolean flag. Currently each deferred consumer
