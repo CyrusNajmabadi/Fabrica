@@ -141,5 +141,11 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
         /// </summary>
         public void Join() =>
             _thread.Join();
+
+        /// <summary>
+        /// Blocks until the worker thread has exited or the timeout elapses.
+        /// </summary>
+        public bool Join(int millisecondsTimeout) =>
+            _thread.Join(millisecondsTimeout);
     }
 }
