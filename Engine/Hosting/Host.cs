@@ -169,6 +169,9 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
         productionThread.Join();
         consumptionThread.Join();
+
+        _productionLoop.Shutdown();
+        _consumptionLoop.Shutdown();
     }
 }
 
