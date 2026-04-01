@@ -17,7 +17,9 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
     ///        <see cref="Signal"/>.
     ///     3. The worker wakes (go signal auto-resets), calls
     ///        <see cref="IThreadExecutor{TState}.Execute"/> on its executor,
-    ///        then sets its done signal.
+    ///        then sets its done signal.  The done signal is set in a finally
+    ///        block so that cancellation or executor exceptions never leave the
+    ///        coordinator's <see cref="WaitHandle.WaitAll"/> blocked.
     ///     4. The coordinator waits on all done signals via
     ///        <see cref="WorkerGroup{TState,TExecutor}.WaitHandleBatch"/>.
     ///     5. The worker loops back to step 1.
@@ -94,12 +96,23 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
             while (true)
             {
                 _goSignal.WaitOne();
-                if (_shutdown || _cancellationToken.IsCancellationRequested)
-                    return;
 
-                _executor.Execute(in _state, _cancellationToken);
+                try
+                {
+                    if (_shutdown)
+                        return;
 
-                _doneSignal.Set();
+                    _executor.Execute(in _state, _cancellationToken);
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception)
+                {
+                    // TODO: propagate to coordinator for structured error reporting.
+                }
+                finally
+                {
+                    _doneSignal.Set();
+                }
             }
         }
 
