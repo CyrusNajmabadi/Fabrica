@@ -67,6 +67,27 @@ public sealed class WorkerGroupTests
         Assert.True(Volatile.Read(ref dispatchReturned));
     }
 
+    [Fact]
+    public void WorkerThreads_ExitAfterCancellation_WithoutExplicitShutdown()
+    {
+        using var cts = new CancellationTokenSource();
+
+        var group = new WorkerGroup<EmptyState, NoOpExecutor>(
+            workerCount: 2,
+            _ => new NoOpExecutor(),
+            "CancelExitTest");
+
+        // Dispatch once so workers have seen the token, then cancel.
+        group.Dispatch(default, cts.Token);
+        cts.Cancel();
+
+        // Workers should self-terminate because cancellation wakes them.
+        // Without the fix, they're parked on WaitOne and never wake.
+        var allExited = group.GetTestAccessor().Join(TimeoutMilliseconds);
+
+        Assert.True(allExited, "Worker threads did not exit after cancellation — they are stuck on WaitOne.");
+    }
+
     // ── Test executors ────────────────────────────────────────────────────
 
     private struct EmptyState;
