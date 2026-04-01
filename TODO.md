@@ -9,6 +9,17 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] Persistent tree structure for `WorldImage` — share unchanged subtrees across ticks so memory scales with changes-per-tick, not total world size (mentioned in `WorldImage` doc comment)
 - [ ] Actual world advance logic in `SimulationLoop.Tick` (currently a TODO)
 
+## Engine / Architecture — Bugs & Correctness
+
+- [ ] **ThreadWorker deadlock** — after `_goSignal.WaitOne()`, early-exit paths (cancel, shutdown, `Execute` exception) skip `_doneSignal.Set()`, leaving `WorkerGroup.Dispatch` blocked on `WaitAll` forever. Fix: wrap the execute path in `try/finally { _doneSignal.Set(); }` (`WorkerGroup.ThreadWorker.cs` lines 96–103)
+- [ ] **`frameStart` sampling order** — `ConsumptionLoop.RunOneIteration` samples `frameStart` (line 102) *before* reading `LatestNode` (line 107), so a publish between the two makes `frameStartNanoseconds - latest.PublishTimeNanoseconds` negative. This violates the `IConsumer` contract (lines 24–29). Fix: sample `frameStart` after reading `LatestNode`, or clamp elapsed to zero
+- [ ] **Cancellation responsiveness in tick loop** — `ProductionLoop.ProcessAvailableTicks` (lines 67–75) can run many ticks per outer iteration without checking `cancellationToken`. Fix: add `cancellationToken.ThrowIfCancellationRequested()` at the start of each tick iteration
+
+## Engine / Architecture — Robustness
+
+- [ ] **Top-level exception handling on loop threads** — neither `ProductionLoop.Run` nor `ConsumptionLoop.Run` has a `try/catch`. An unhandled exception kills one thread silently while the other keeps running. Fix: wrap each `Run` in `try/catch`, log, and coordinate shutdown of the paired thread
+- [ ] **Wire `WorkerGroup.Shutdown` from Host** — `SimulationCoordinator.Shutdown()` and `RenderCoordinator.Shutdown()` exist but are never called. Worker threads rely on `IsBackground` and process exit. Fix: call `Shutdown` from `Host` after both loop threads exit (e.g. in a `finally` block)
+
 ## Engine / Architecture — Features
 
 - [ ] **Consider `Task`/`TaskCompletionSource` for loop thread management** — `Host.Run` currently tracks exceptions manually with `Exception?` locals and re-throws after `Thread.Join`. Wrapping each thread in a `TaskCompletionSource` would let us use `Task.WhenAll`, automatic exception propagation via `AggregateException`, and standard `async` composition. We should still use dedicated `Thread` objects for the actual loop execution (control over naming, background flag, stack size), but layer the `Task` abstraction on top for lifecycle/error tracking
@@ -27,25 +38,15 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 - [ ] Consider `Directory.Build.props` for shared project settings as more projects are added
 
-## Engine / Architecture — Observability & Diagnostics
-
-- [ ] **Deferred consumer error reporting** — `DeferredConsumerScheduler.DrainCompletedTasks` silently reschedules faulted tasks (a `Debug.WriteLine` was added as a stopgap). Two things are needed: (1) real structured logging (e.g. Serilog) so errors are persisted to disk, not just debug output; (2) an end-to-end internal path that surfaces deferred consumer failures in the UI/user flow (e.g. via `EngineStatistics` or a similar observable channel) so the player or developer can see that a background operation failed, not just the log file
-- [ ] **Instrument epoch gap, throttle depth, pool high-water** — Kafka/Flink-style lag metrics catch production issues early. Wire into `EngineStatistics`
-- [ ] **Profile LOH and Gen2 collections** — as `WorldImage` grows with real state, pooled objects may cross the 85KB LOH threshold. Profile allocation patterns and GC pause impact
-- [ ] **Benchmark wake primitives** — `ManualResetEventSlim` (spin-then-block) vs `AutoResetEvent` (kernel-only) under the actual dispatch pattern; measure wake latency on both x64 and ARM64
-- [ ] **Benchmark struct-constrained interfaces** on ARM64 and x64 — validate JIT specialization and inlining assumptions with BenchmarkDotNet
-
-## Engine / Architecture — Determinism & Safety
-
-- [ ] **Formalize the memory model contract** — document the happens-before relationship between writer-thread field writes and the volatile chain publish. Consider `Volatile.Read/Write` or `Interlocked.Exchange` for auditability over raw `volatile` fields
-- [ ] **Determinism checklist** — fixed `dt`, ordered inputs, no float nondeterminism unless audited. Parallel workers inside a sim tick must join in deterministic order for reproducibility
-- [ ] **Core pinning overlap** — both sim and render worker groups pin starting from core 0; potential contention if running simultaneously. Consider offset allocation
-
 ## Documentation
 
+- [ ] **Fix `IRenderer` docs** — claims "on the very first frame, Previous is null" (`IRenderer.cs` lines 36–37); `ConsumptionLoop` never calls `Consume` until two distinct nodes exist, and `RenderFrame.Previous` is `required`. Remove the null-Previous narrative
+- [ ] **Fix `Host.cs` pool exhaustion docs** — lines 124–132 claim "full pool exhaustion blocks Tick() entirely until a slot is freed"; `ObjectPool.Rent()` actually allocates when empty. Rewrite to describe epoch-gap backpressure as the actual bounding mechanism
+- [ ] **Fix `RenderFrame.cs` Chain doc** — mentions null Previous inconsistently with the `required` property
+- [ ] **Fix `WorldImage.cs` comment** — line 12 says "LatestSnapshot" but the actual API is `LatestNode`
+- [ ] **Deferred consumer error reporting** — `DeferredConsumerScheduler.DrainCompletedTasks` silently reschedules faulted tasks (a `Debug.WriteLine` was added as a stopgap). Two things are needed: (1) real structured logging (e.g. Serilog) so errors are persisted to disk, not just debug output; (2) an end-to-end internal path that surfaces deferred consumer failures in the UI/user flow (e.g. via `EngineStatistics` or a similar observable channel) so the player or developer can see that a background operation failed, not just the log file
 - [ ] Architecture diagram (the mermaid-style flow in `Engine.cs` comments could become a standalone doc)
 - [ ] Onboarding notes for the threading model — the doc comments are thorough but scattered across files
-- [ ] **Document pinning rules** — analogous to hazard pointers / RCU grace periods; explain when Pin/Unpin must be called relative to epoch advancement
 
 ---
 
@@ -53,18 +54,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Engine / Architecture
 
-- [x] ThreadWorker deadlock — wrapped execute path in `try/finally { _doneSignal.Set(); }`; workers now cancellation-aware via `WaitHandle.WaitAny` (PRs #45, #54)
-- [x] `frameStart` sampling order — clamped `frameStart = Math.Max(frameStart, latestNode.PublishTimeNanoseconds)` to prevent negative elapsed (PR #51)
-- [x] Cancellation responsiveness in tick loop — added `ThrowIfCancellationRequested()` between ticks in `ProcessAvailableTicks` (PR #49)
-- [x] Top-level exception handling on loop threads — `Host.Run` wraps threads in try/catch with linked CTS cross-cancellation and exception propagation (PR #50)
-- [x] Unhandled OCE crash — replaced `when` filter with two-catch pattern; hardened `ConsumptionLoop.RunOneIteration` with `ThrowIfCancellationRequested` (PR #56)
-- [x] Worker shutdown — replaced explicit `Shutdown()` plumbing with cancellation-aware workers that self-terminate via `WaitHandle.WaitAny` on the cancellation token (PR #54)
-- [x] Fix IRenderer docs — removed false claim about null Previous on first frame (PR #47)
-- [x] Fix Host.cs pool exhaustion docs — rewrote to describe epoch-gap backpressure (PR #48)
-- [x] Fix RenderFrame.cs Chain doc — removed null Previous inconsistency (PR #53)
-- [x] Fix WorldImage.cs comment — `LatestSnapshot` → `LatestNode` (PR #53)
-- [x] Deferred consumer error logging — added `Debug.WriteLine` stopgap (PR #52); real solution tracked separately above
-- [x] Eliminate abbreviated variable names — codebase-wide rename of `cts`, `tcs`, `mut`, `seq`, `prev`, etc. (PR #55)
 - [x] Observe `Task.Run` results in `TaskSaveRunner` — save exceptions are now captured via `ConcurrentQueue<SaveEvent>` and surfaced through `EngineStatus` in the `RenderFrame` ([ea8ae2d](https://github.com/CyrusNajmabadi/Fabrica/commit/ea8ae2d))
 - [x] One-tick-behind interpolation — consumption loop holds two snapshots, computes interpolation timing, renderer blends between real simulation states ([d1c4c9a](https://github.com/CyrusNajmabadi/Fabrica/commit/d1c4c9a))
 - [x] Snapshot lifetime contract — renderers must not store snapshot refs beyond the Render call; documented in `IRenderer` and `RenderFrame` ([d1c4c9a](https://github.com/CyrusNajmabadi/Fabrica/commit/d1c4c9a))
