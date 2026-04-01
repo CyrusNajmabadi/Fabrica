@@ -13,7 +13,7 @@ using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 public sealed class HostTests
 {
     [Fact]
-    public void Run_PropagatesProducerException()
+    public async Task RunAsync_PropagatesProducerException()
     {
         var producer = new TestThrowingProducer(new TickCounter(), throwOnTickNumber: 2);
         var consumer = new TestNoOpConsumer();
@@ -30,18 +30,18 @@ public sealed class HostTests
         var host = new Host<WorldImage, TestThrowingProducer, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             productionLoop, consumptionLoop);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => host.Run(CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.RunAsync(CancellationToken.None));
         Assert.Equal("Deliberate producer fault.", ex.Message);
     }
 
     /// <summary>
-    /// Deterministic repro for the unhandled-OCE crash. Both loops call <c>ThrowIfCancellationRequested()</c> at the top of
-    /// <c>Run</c>. With a pre-cancelled token, both thread lambdas throw <see cref="OperationCanceledException"/>. The
-    /// <c>when</c> filter rejects OCE, leaving it unhandled and crashing the process. With the fix, OCE is caught and swallowed;
-    /// <c>Host.Run</c> returns normally (no captured exceptions to re-throw).
+    /// Deterministic repro for the unhandled-OCE crash (PR #56). With a pre-cancelled token, both loops throw
+    /// <see cref="OperationCanceledException"/> immediately. The old <c>when</c> filter rejected OCE, leaving it unhandled and
+    /// crashing the process. With the <see cref="TaskCompletionSource"/>-based design, cancellation flows through as a standard
+    /// <see cref="TaskCanceledException"/>.
     /// </summary>
     [Fact]
-    public void Run_WithPreCancelledToken_DoesNotCrash()
+    public async Task RunAsync_WithPreCancelledToken_ThrowsTaskCanceledException()
     {
         var producer = new TestThrowingProducer(new TickCounter(), throwOnTickNumber: int.MaxValue);
         var consumer = new TestNoOpConsumer();
@@ -61,7 +61,7 @@ public sealed class HostTests
         using var cancellationTokenSource = new CancellationTokenSource();
         cancellationTokenSource.Cancel();
 
-        host.Run(cancellationTokenSource.Token);
+        await Assert.ThrowsAsync<TaskCanceledException>(() => host.RunAsync(cancellationTokenSource.Token));
     }
 
     // ── Test doubles ────────────────────────────────────────────────────
