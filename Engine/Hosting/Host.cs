@@ -149,6 +149,8 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
     /// <summary>
     /// Starts both loops on dedicated threads and blocks until both exit.
+    /// After both threads complete, shuts down producer and consumer resources
+    /// (e.g. worker groups).
     /// </summary>
     public void Run(CancellationToken cancellationToken)
     {
@@ -169,6 +171,9 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
         productionThread.Join();
         consumptionThread.Join();
+
+        _productionLoop.Shutdown();
+        _consumptionLoop.Shutdown();
     }
 }
 
