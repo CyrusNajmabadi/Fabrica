@@ -51,9 +51,8 @@ internal readonly struct RenderFrame
 
     /// <summary>
     /// Returns a zero-allocation struct iterator over the snapshot chain from
-    /// <see cref="Previous"/> (or <see cref="Latest"/> when Previous is null)
-    /// through <see cref="Latest"/> inclusive.  Safely bounded — never reads
-    /// past the published frontier.
+    /// <see cref="Previous"/> through <see cref="Latest"/> inclusive.  Safely
+    /// bounded — never reads past the published frontier.
     /// </summary>
     public BaseProductionLoop<WorldImage>.ChainNode.ChainSegment Chain =>
         BaseProductionLoop<WorldImage>.ChainNode.Chain(this.Previous, this.Latest);
