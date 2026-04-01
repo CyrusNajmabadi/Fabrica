@@ -15,8 +15,8 @@ public sealed class WorkerGroupTests
     [Fact]
     public void Dispatch_WithAlreadyCancelledToken_DoesNotDeadlock()
     {
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
 
         var group = new WorkerGroup<EmptyState, NoOpExecutor>(
             workerCount: 2,
@@ -26,7 +26,7 @@ public sealed class WorkerGroupTests
         var dispatchReturned = false;
         var dispatchThread = new Thread(() =>
         {
-            group.Dispatch(default, cts.Token);
+            group.Dispatch(default, cancellationTokenSource.Token);
             Volatile.Write(ref dispatchReturned, true);
         })
         { IsBackground = true };
@@ -43,7 +43,7 @@ public sealed class WorkerGroupTests
     [Fact]
     public void Dispatch_CompletesWhenExecutorThrows_DoesNotDeadlock()
     {
-        using var cts = new CancellationTokenSource();
+        using var cancellationTokenSource = new CancellationTokenSource();
 
         var group = new WorkerGroup<EmptyState, ThrowingExecutor>(
             workerCount: 2,
@@ -53,7 +53,7 @@ public sealed class WorkerGroupTests
         var dispatchReturned = false;
         var dispatchThread = new Thread(() =>
         {
-            group.Dispatch(default, cts.Token);
+            group.Dispatch(default, cancellationTokenSource.Token);
             Volatile.Write(ref dispatchReturned, true);
         })
         { IsBackground = true };
@@ -70,7 +70,7 @@ public sealed class WorkerGroupTests
     [Fact]
     public void WorkerThreads_ExitAfterCancellation_WithoutExplicitShutdown()
     {
-        using var cts = new CancellationTokenSource();
+        using var cancellationTokenSource = new CancellationTokenSource();
 
         var group = new WorkerGroup<EmptyState, NoOpExecutor>(
             workerCount: 2,
@@ -78,8 +78,8 @@ public sealed class WorkerGroupTests
             "CancelExitTest");
 
         // Dispatch once so workers have seen the token, then cancel.
-        group.Dispatch(default, cts.Token);
-        cts.Cancel();
+        group.Dispatch(default, cancellationTokenSource.Token);
+        cancellationTokenSource.Cancel();
 
         // Workers should self-terminate because cancellation wakes them.
         // Without the fix, they're parked on WaitOne and never wake.

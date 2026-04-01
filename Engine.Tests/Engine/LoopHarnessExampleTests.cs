@@ -314,15 +314,15 @@ public sealed class LoopHarnessExampleTests
             public void AdvanceBy(long nanoseconds) => _state.NowNanoseconds += nanoseconds;
         }
 
-        public sealed class PinController(PinnedVersions pins)
+        public sealed class PinController(PinnedVersions pinnedVersions)
         {
-            private readonly PinnedVersions _pins = pins;
+            private readonly PinnedVersions _pinnedVersions = pinnedVersions;
 
-            public void Pin(int tick, IPinOwner owner) => _pins.Pin(tick, owner);
+            public void Pin(int sequenceNumber, IPinOwner owner) => _pinnedVersions.Pin(sequenceNumber, owner);
 
-            public void Unpin(int tick, IPinOwner owner) => _pins.Unpin(tick, owner);
+            public void Unpin(int sequenceNumber, IPinOwner owner) => _pinnedVersions.Unpin(sequenceNumber, owner);
 
-            public bool IsPinned(int tick) => _pins.IsPinned(tick);
+            public bool IsPinned(int sequenceNumber) => _pinnedVersions.IsPinned(sequenceNumber);
         }
 
         public sealed class DeferredConsumerController(TestDeferredConsumerState state)
@@ -337,9 +337,9 @@ public sealed class LoopHarnessExampleTests
 
             public void CompletePendingTask(long nextRunTime)
             {
-                var tcs = Assert.Single(_state.InFlightTasks);
+                var taskCompletionSource = Assert.Single(_state.InFlightTasks);
                 _state.InFlightTasks.Clear();
-                tcs.SetResult(nextRunTime);
+                taskCompletionSource.SetResult(nextRunTime);
             }
         }
 
@@ -374,9 +374,9 @@ public sealed class LoopHarnessExampleTests
             if (_state.ExceptionToThrow is { } ex)
                 throw ex;
 
-            var tcs = new TaskCompletionSource<long>();
-            _state.InFlightTasks.Add(tcs);
-            return tcs.Task;
+            var taskCompletionSource = new TaskCompletionSource<long>();
+            _state.InFlightTasks.Add(taskCompletionSource);
+            return taskCompletionSource.Task;
         }
     }
 

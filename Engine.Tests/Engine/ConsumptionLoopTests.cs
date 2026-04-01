@@ -197,9 +197,9 @@ public sealed class ConsumptionLoopTests
 
         ChainNode? capturedPrevious = null;
         ChainNode? capturedLatest = null;
-        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        test.ConsumerState.BeforeConsume = (previous, latest, _) =>
         {
-            capturedPrevious = prev;
+            capturedPrevious = previous;
             capturedLatest = latest;
         };
 
@@ -233,9 +233,9 @@ public sealed class ConsumptionLoopTests
 
         ChainNode? capturedPrevious = null;
         ChainNode? capturedLatest = null;
-        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        test.ConsumerState.BeforeConsume = (previous, latest, _) =>
         {
-            capturedPrevious = prev;
+            capturedPrevious = previous;
             capturedLatest = latest;
         };
 
@@ -261,9 +261,9 @@ public sealed class ConsumptionLoopTests
         test.CreatePublishedNode(tick: 2);
         ChainNode? capturedPrevious = null;
         ChainNode? capturedLatest = null;
-        test.ConsumerState.BeforeConsume = (prev, latest, _) =>
+        test.ConsumerState.BeforeConsume = (previous, latest, _) =>
         {
-            capturedPrevious = prev;
+            capturedPrevious = previous;
             capturedLatest = latest;
         };
         test.Accessor.RunOneIteration(CancellationToken.None);
@@ -333,8 +333,8 @@ public sealed class ConsumptionLoopTests
     [Fact]
     public void DeferredConsumer_Unpins_WhenTaskCompletes()
     {
-        var tcs = new TaskCompletionSource<long>();
-        var deferredState = new TestDeferredConsumerState { _taskToReturn = tcs.Task };
+        var taskCompletionSource = new TaskCompletionSource<long>();
+        var deferredState = new TestDeferredConsumerState { _taskToReturn = taskCompletionSource.Task };
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
@@ -347,7 +347,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
         Assert.True(test.PinnedVersions.IsPinned(3));
 
-        tcs.SetResult(long.MaxValue);
+        taskCompletionSource.SetResult(long.MaxValue);
 
         test.Accessor.RunOneIteration(CancellationToken.None);
         Assert.False(test.PinnedVersions.IsPinned(3));

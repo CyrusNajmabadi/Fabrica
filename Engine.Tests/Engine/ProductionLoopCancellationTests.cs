@@ -35,15 +35,15 @@ public sealed class ProductionLoopCancellationTests
 
         accessor.Bootstrap();
 
-        using var cts = new CancellationTokenSource();
-        producerState.CancellationTokenSource = cts;
+        using var cancellationTokenSource = new CancellationTokenSource();
+        producerState.CancellationTokenSource = cancellationTokenSource;
         producerState.CancelAfterTickCount = CancelAfterTick;
 
         long lastTime = 0;
         var accumulator = SimulationConstants.TickDurationNanoseconds * TicksQueued;
 
         Assert.Throws<OperationCanceledException>(
-            () => accessor.RunOneIteration(cts.Token, ref lastTime, ref accumulator));
+            () => accessor.RunOneIteration(cancellationTokenSource.Token, ref lastTime, ref accumulator));
 
         Assert.True(
             producerState.TickCount <= CancelAfterTick + 1,

@@ -85,6 +85,6 @@ internal sealed class PinnedVersions
 
         public bool Equals(IPinOwner? x, IPinOwner? y) => ReferenceEquals(x, y);
 
-        public int GetHashCode(IPinOwner obj) => RuntimeHelpers.GetHashCode(obj);
+        public int GetHashCode(IPinOwner pinOwner) => RuntimeHelpers.GetHashCode(pinOwner);
     }
 }

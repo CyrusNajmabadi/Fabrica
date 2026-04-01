@@ -53,14 +53,14 @@ internal abstract partial class BaseProductionLoop<TPayload>(
         var node = _nodePool.Rent();
         _currentSequence = 0;
 
-        var mut = Mutate(node);
-        mut.InitializeBase(0);
-        mut.SetPayload(payload);
+        var mutation = Mutate(node);
+        mutation.InitializeBase(0);
+        mutation.SetPayload(payload);
 
         _currentNode = node;
         _oldestNode = node;
 
-        mut.MarkPublished(publishTimeNanoseconds);
+        mutation.MarkPublished(publishTimeNanoseconds);
         return node;
     }
 
@@ -73,14 +73,14 @@ internal abstract partial class BaseProductionLoop<TPayload>(
         var node = _nodePool.Rent();
         _currentSequence++;
 
-        var mut = Mutate(node);
-        mut.InitializeBase(_currentSequence);
-        mut.SetPayload(payload);
+        var mutation = Mutate(node);
+        mutation.InitializeBase(_currentSequence);
+        mutation.SetPayload(payload);
 
         Mutate(_currentNode!).SetNext(node);
         _currentNode = node;
 
-        mut.MarkPublished(publishTimeNanoseconds);
+        mutation.MarkPublished(publishTimeNanoseconds);
         return node;
     }
 
@@ -120,9 +120,9 @@ internal abstract partial class BaseProductionLoop<TPayload>(
     private void FreeNode(ChainNode node)
     {
         this.ReleasePayloadResources(node.Payload);
-        var mut = Mutate(node);
-        mut.ClearPayload();
-        mut.Release();
+        var mutation = Mutate(node);
+        mutation.ClearPayload();
+        mutation.Release();
         Debug.Assert(node.IsUnreferenced, "Node still referenced after cleanup — refcount mismatch.");
         _nodePool.Return(node);
     }
