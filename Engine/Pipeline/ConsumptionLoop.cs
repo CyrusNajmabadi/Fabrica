@@ -36,14 +36,9 @@ namespace Engine.Pipeline;
 ///   &lt; N) and _latest (sequence &gt; N) remain alive — along with the entire chain between them.
 ///
 /// DEFERRED CONSUMER SCHEDULING
-///   Deferred consumers are stored in a flat array. A PriorityQueue maps consumer indices to their next-run wall-clock timestamp.
-///   Each frame:
-///     - Peek O(1): if nothing is due, skip entirely — no virtual calls.
-///     - Pop due entries, pin the latest node, call ConsumeAsync.
-///     - Track the in-flight Task per consumer; skip consumers whose prior
-///       task is still running.
-///     - When tasks complete, unpin, read the returned next-run-time, and
-///       re-enqueue into the heap.
+///   Deferred consumers are managed by <see cref="DeferredConsumerScheduler"/> using a min-heap keyed by next-run timestamp. The
+///   hot-path check is O(1) — a single peek determines if any consumer is due. See <see cref="PinnedVersions"/> for the full
+///   pinning protocol that prevents the production thread from reclaiming nodes held by in-flight deferred tasks.
 ///
 /// Generic constraints (all struct) eliminate interface dispatch on every call in the hot frame loop.
 /// </summary>
