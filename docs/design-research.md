@@ -1,7 +1,7 @@
 # Design Research — Prior Art and Best Practices
 
-Web research into the patterns and strategies used by the Fabrica engine,
-covering industry practice, academic literature, and runtime-specific guidance.
+Web research into the patterns and strategies used by the Fabrica engine, covering industry practice, academic literature,
+and runtime-specific guidance.
 
 ---
 
@@ -9,23 +9,20 @@ covering industry practice, academic literature, and runtime-specific guidance.
 
 ### Industry Practice
 
-Separating fixed-timestep simulation from variable-rate rendering is the standard
-approach in game engines:
+Separating fixed-timestep simulation from variable-rate rendering is the standard approach in game engines:
 
-- **Glenn Fiedler's "Fix Your Timestep"** remains the canonical reference: accumulate
-  wall time, consume in fixed `dt` steps, interpolate for rendering.
-- **Unreal Engine** uses Game Thread → Render Thread → RHI, typically one frame behind,
-  with scene proxies to avoid sharing mutable actor state.
-- **Unity** uses a Job System with safety via copies and work-stealing, plus configurable
-  render threading modes.
+- **Glenn Fiedler's "Fix Your Timestep"** remains the canonical reference: accumulate wall time, consume in fixed `dt`
+  steps, interpolate for rendering.
+- **Unreal Engine** uses Game Thread → Render Thread → RHI, typically one frame behind, with scene proxies to avoid
+  sharing mutable actor state.
+- **Unity** uses a Job System with safety via copies and work-stealing, plus configurable render threading modes.
 - **id Tech 7** uses a job-centric model with no single "main thread."
 - **Naughty Dog** uses a fiber-based system with workers pinned to cores.
 
 ### How Fabrica Compares
 
-The 40 Hz producer / ~60 Hz consumer split matches the textbook "sim slower than render"
-case. Publishing immutable snapshots via volatile pointer swap is in the same family as
-Unreal's proxy split, but closer to functional state handoff.
+The 40 Hz producer / ~60 Hz consumer split matches the textbook "sim slower than render" case. Publishing immutable
+snapshots via volatile pointer swap is in the same family as Unreal's proxy split, but closer to functional state handoff.
 
 ### Sources
 
@@ -40,13 +37,12 @@ Unreal's proxy split, but closer to functional state handoff.
 
 ### Industry Practice
 
-Networking stacks universally deal in snapshots — Valve's Source engine uses server
-snapshots at tickrate with client interpolation. Unity Netcode for Entities uses "ghost
-snapshots." Overwatch uses ECS with fixed command frames and prediction/rollback.
+Networking stacks universally deal in snapshots — Valve's Source engine uses server snapshots at tickrate with client
+interpolation. Unity Netcode for Entities uses "ghost snapshots." Overwatch uses ECS with fixed command frames and
+prediction/rollback.
 
-The "immutable forward chain" in Fabrica is closer to versioned state for local
-readers (render/save) than to wire-format network snapshots, but the memory philosophy
-(publish coherent views) is analogous.
+The "immutable forward chain" in Fabrica is closer to versioned state for local readers (render/save) than to wire-format
+network snapshots, but the memory philosophy (publish coherent views) is analogous.
 
 ### Memory Strategies
 
@@ -67,22 +63,20 @@ readers (render/save) than to wire-format network snapshots, but the memory phil
 
 ### Key Findings
 
-- C# `volatile` provides acquire/release semantics. The definitive reference is
-  "The C# Memory Model in Theory and Practice" (MSDN Magazine, Dec 2012).
-- On **ARM64** (Apple Silicon), the weak baseline ordering means barriers are essential.
-  .NET codegen emits appropriate atomics/barriers for `volatile` and `Interlocked`.
-- On **x64** (TSO), the hardware is more forgiving, but correct C# patterns must still
-  be expressed — the implementation handles the rest.
-- **SPSC** (single-producer single-consumer) is the formal name for the Fabrica pattern.
-  Lamport queues are the classic academic formalization.
-- `Interlocked` operations are for read-modify-write; `volatile` is sufficient for
-  single-word loads/stores with ordering.
+- C# `volatile` provides acquire/release semantics. The definitive reference is "The C# Memory Model in Theory and
+  Practice" (MSDN Magazine, Dec 2012).
+- On **ARM64** (Apple Silicon), the weak baseline ordering means barriers are essential. .NET codegen emits appropriate
+  atomics/barriers for `volatile` and `Interlocked`.
+- On **x64** (TSO), the hardware is more forgiving, but correct C# patterns must still be expressed — the implementation
+  handles the rest.
+- **SPSC** (single-producer single-consumer) is the formal name for the Fabrica pattern. Lamport queues are the classic
+  academic formalization.
+- `Interlocked` operations are for read-modify-write; `volatile` is sufficient for single-word loads/stores with ordering.
 
 ### Relevance
 
-Publishing a single `ChainNode` pointer with release semantics and acquiring on read is
-the standard SPSC idiom. All data written before the volatile publish is visible after
-the acquire read.
+Publishing a single `ChainNode` pointer with release semantics and acquiring on read is the standard SPSC idiom. All data
+written before the volatile publish is visible after the acquire read.
 
 ### Sources
 
@@ -96,23 +90,19 @@ the acquire read.
 
 ### Key Findings
 
-- **EBR** was popularized by Fraser and Harris's work on lock-free data structures.
-  Objects become reclaimable only after all threads have moved past an epoch.
-- **Known weakness:** A stalled thread can prevent epoch advance, causing unbounded
-  unreclaimed memory. Mitigations include interval-based reclamation (IBR), wait-free
-  eras, and hybrid schemes.
-- **Linux RCU** (Read-Copy-Update) is the most widely deployed epoch-style system,
-  with extensive documentation of ordering requirements.
-- **Hazard pointers** offer bounded stranded memory but have scan cost and scalability
-  concerns.
-- In **GC'd runtimes** like .NET, epoch-based pooling is about reuse and deterministic
-  cost, not preventing use-after-free.
+- **EBR** was popularized by Fraser and Harris's work on lock-free data structures. Objects become reclaimable only
+  after all threads have moved past an epoch.
+- **Known weakness:** A stalled thread can prevent epoch advance, causing unbounded unreclaimed memory. Mitigations include
+  interval-based reclamation (IBR), wait-free eras, and hybrid schemes.
+- **Linux RCU** (Read-Copy-Update) is the most widely deployed epoch-style system, with extensive documentation of ordering
+  requirements.
+- **Hazard pointers** offer bounded stranded memory but have scan cost and scalability concerns.
+- In **GC'd runtimes** like .NET, epoch-based pooling is about reuse and deterministic cost, not preventing use-after-free.
 
 ### Relevance
 
-Fabrica's `ConsumptionEpoch` + `PinnedVersions` maps directly to EBR + hazard-style
-pinning. The hard ceiling backpressure prevents the unbounded growth that EBR literature
-warns about.
+Fabrica's `ConsumptionEpoch` + `PinnedVersions` maps directly to EBR + hazard-style pinning. The hard ceiling backpressure
+prevents the unbounded growth that EBR literature warns about.
 
 ### Sources
 
@@ -126,19 +116,17 @@ warns about.
 
 ### Key Findings
 
-- **Single-threaded pools** are cheaper than thread-safe variants (no atomics).
-  Appropriate when ownership is exclusive — matches Fabrica's producer-owned pools.
+- **Single-threaded pools** are cheaper than thread-safe variants (no atomics). Appropriate when ownership is exclusive —
+  matches Fabrica's producer-owned pools.
 - **Stack-based (LIFO)** pools maximize recency and cache warmth.
-- **LOH threshold** (85KB+) causes expensive Gen2 collections. Pooling large objects
-  is critical for avoiding this.
-- `ArrayPool<T>` and `Microsoft.Extensions.ObjectPool` are the standard .NET APIs.
-  Custom pools are justified when you need single-threaded guarantees or specific
-  reset semantics.
+- **LOH threshold** (85KB+) causes expensive Gen2 collections. Pooling large objects is critical for avoiding this.
+- `ArrayPool<T>` and `Microsoft.Extensions.ObjectPool` are the standard .NET APIs. Custom pools are justified when you need
+  single-threaded guarantees or specific reset semantics.
 
 ### Relevance
 
-Fabrica's `ObjectPool<T, TAllocator>` is well-aligned. Profile LOH and Gen2 as
-`WorldImage` grows. Consider bounded pool sizing with trimming under memory pressure.
+Fabrica's `ObjectPool<T, TAllocator>` is well-aligned. Profile LOH and Gen2 as `WorldImage` grows. Consider bounded pool
+sizing with trimming under memory pressure.
 
 ### Sources
 
@@ -152,20 +140,18 @@ Fabrica's `ObjectPool<T, TAllocator>` is well-aligned. Profile LOH and Gen2 as
 
 ### Key Findings
 
-- **Games:** Fiedler's accumulator pattern can cause a "spiral of death" if sim
-  can't keep up — engines clamp sub-steps, drop, or slow the producer.
+- **Games:** Fiedler's accumulator pattern can cause a "spiral of death" if sim can't keep up — engines clamp sub-steps,
+  drop, or slow the producer.
 - **Frame pacing:** Consistency of present times matters more than average FPS.
-- **Streaming systems:** Reactive Streams formalized non-blocking backpressure via
-  subscription/credits. Kafka uses consumer lag metrics. Flink uses credit-based
-  network flow control.
-- **Controllers:** PID controllers, token buckets, and AIMD are common. Exponential
-  backoff is standard for contention/retry.
+- **Streaming systems:** Reactive Streams formalized non-blocking backpressure via subscription/credits. Kafka uses consumer
+  lag metrics. Flink uses credit-based network flow control.
+- **Controllers:** PID controllers, token buckets, and AIMD are common. Exponential backoff is standard for
+  contention/retry.
 
 ### Relevance
 
-Fabrica's epoch-gap → exponential delay with a hard ceiling parallels lag-based
-throttling in stream processors and acts as a circuit breaker against OOM.
-Consider a PID controller if oscillation ("hunting") becomes an issue.
+Fabrica's epoch-gap → exponential delay with a hard ceiling parallels lag-based throttling in stream processors and acts
+as a circuit breaker against OOM. Consider a PID controller if oscillation ("hunting") becomes an issue.
 
 ### Sources
 
@@ -179,8 +165,8 @@ Consider a PID controller if oscillation ("hunting") becomes an issue.
 
 ### Key Findings
 
-- Thread pinning can improve cache locality and timing stability (5–20% wins reported
-  in some cases), but can also hurt OS scheduling flexibility.
+- Thread pinning can improve cache locality and timing stability (5–20% wins reported in some cases), but can also hurt
+  OS scheduling flexibility.
 - **Naughty Dog** pinned 6 workers to cores for their fiber system.
 - **NUMA awareness** matters on servers; client single-socket is less critical.
 - Dedicated threads for latency-sensitive loops avoid ThreadPool injection delays.
@@ -188,9 +174,8 @@ Consider a PID controller if oscillation ("hunting") becomes an issue.
 
 ### Relevance
 
-Fabrica's best-effort pinning on Windows/Linux is consistent with industry practice.
-Note that both sim and render worker groups pin starting from core 0 — potential
-contention if running simultaneously.
+Fabrica's best-effort pinning on Windows/Linux is consistent with industry practice. Note that both sim and render worker
+groups pin starting from core 0 — potential contention if running simultaneously.
 
 ### Sources
 
@@ -203,18 +188,16 @@ contention if running simultaneously.
 
 ### Key Findings
 
-- `ManualResetEventSlim` is often much faster than `ManualResetEvent` / `AutoResetEvent`
-  for short waits due to spin-then-block behavior.
-- `SpinWait` is appropriate for very short critical sections; avoid burning CPU on
-  long waits.
-- `Parallel.For` with partitioning often beats naive manual pools but loses when you
-  need deterministic ordering.
+- `ManualResetEventSlim` is often much faster than `ManualResetEvent` / `AutoResetEvent` for short waits due to
+  spin-then-block behavior.
+- `SpinWait` is appropriate for very short critical sections; avoid burning CPU on long waits.
+- `Parallel.For` with partitioning often beats naive manual pools but loses when you need deterministic ordering.
 - `CancellationToken` is cooperative; `Cancel()` can be slow with many registrations.
 
 ### Relevance
 
-Fabrica uses `AutoResetEvent` for worker wake. If wake latency is hot, benchmarking
-`ManualResetEventSlim` with manual reset could help.
+Fabrica uses `AutoResetEvent` for worker wake. If wake latency is hot, benchmarking `ManualResetEventSlim` with manual
+reset could help.
 
 ### Sources
 
@@ -228,18 +211,16 @@ Fabrica uses `AutoResetEvent` for worker wake. If wake latency is hot, benchmark
 
 ### Key Findings
 
-- `where T : struct, IInterface` enables JIT devirtualization and inlining per closed
-  struct type. RyuJIT has explicit boxing removal for constrained struct interface calls.
-- Pitfalls: `readonly struct` + `in` needed to avoid defensive copies. Mutable structs
-  are error-prone.
-- Similar to C++ templates and Rust monomorphization, but relies on JIT rather than
-  compile-time specialization.
+- `where T : struct, IInterface` enables JIT devirtualization and inlining per closed struct type. RyuJIT has explicit
+  boxing removal for constrained struct interface calls.
+- Pitfalls: `readonly struct` + `in` needed to avoid defensive copies. Mutable structs are error-prone.
+- Similar to C++ templates and Rust monomorphization, but relies on JIT rather than compile-time specialization.
 - Well-known pattern in high-performance .NET (e.g., `Span<T>` ecosystem).
 
 ### Relevance
 
-Fabrica's struct-constrained hot interfaces are aligned with documented best practices.
-Validate with BenchmarkDotNet on both x64 and ARM64.
+Fabrica's struct-constrained hot interfaces are aligned with documented best practices. Validate with BenchmarkDotNet on
+both x64 and ARM64.
 
 ### Sources
 
@@ -252,19 +233,16 @@ Validate with BenchmarkDotNet on both x64 and ARM64.
 
 ### Key Findings
 
-- Fixed timestep + interpolation remains the standard. Newer work extends with
-  integer time representations.
-- Floating-point determinism across platforms is "never free" — requires explicit
-  policy regarding FMA, math libs, SSE vs scalar.
-- Parallel workers inside a sim tick must join in deterministic order for
-  reproducibility.
+- Fixed timestep + interpolation remains the standard. Newer work extends with integer time representations.
+- Floating-point determinism across platforms is "never free" — requires explicit policy regarding FMA, math libs, SSE vs
+  scalar.
+- Parallel workers inside a sim tick must join in deterministic order for reproducibility.
 - .NET GC nondeterminism in allocation timing rarely affects pure numeric simulation.
 
 ### Relevance
 
-Fabrica's 40 Hz sim determinism is orthogonal to render rate if the sim only reads
-committed inputs and uses fixed `dt`. Parallel workers need deterministic scheduling
-or single-threaded sim with parallel islands.
+Fabrica's 40 Hz sim determinism is orthogonal to render rate if the sim only reads committed inputs and uses fixed `dt`.
+Parallel workers need deterministic scheduling or single-threaded sim with parallel islands.
 
 ### Sources
 
@@ -278,32 +256,26 @@ or single-threaded sim with parallel islands.
 
 Ordered by impact:
 
-1. **Formalize the memory model contract** — document happens-before between writer
-   thread fields and volatile chain publish. Consider `Volatile.Read/Write` or
-   `Interlocked.Exchange` for auditability.
-2. **Keep backpressure coupled with epoch reclamation** — the hard ceiling prevents
-   the unbounded growth that EBR literature warns about.
-3. **Expose two snapshots for interpolation** — Fiedler-style alpha between previous
-   and current immutable states (already in place).
+1. **Formalize the memory model contract** — document happens-before between writer thread fields and volatile chain
+   publish. Consider `Volatile.Read/Write` or `Interlocked.Exchange` for auditability.
+2. **Keep backpressure coupled with epoch reclamation** — the hard ceiling prevents the unbounded growth that EBR
+   literature warns about.
+3. **Expose two snapshots for interpolation** — Fiedler-style alpha between previous and current immutable states (already
+   in place).
 4. **Profile LOH and Gen2** — `WorldImage` size distribution drives GC pause risk.
-5. **Benchmark struct-constrained interfaces** on ARM64 and x64 — validate JIT
-   specialization assumptions.
-6. **Instrument epoch gap, throttle depth, pool high-water** — Kafka/Flink-style lag
-   metrics catch production issues early.
+5. **Benchmark struct-constrained interfaces** on ARM64 and x64 — validate JIT specialization assumptions.
+6. **Instrument epoch gap, throttle depth, pool high-water** — Kafka/Flink-style lag metrics catch production issues early.
 7. **Document pinning rules** — analogous to hazard pointers / RCU grace periods.
-8. **Benchmark wake primitives** — `ManualResetEventSlim` vs `AutoResetEvent` under
-   your actual dispatch pattern.
-9. **Determinism checklist** — fixed `dt`, ordered inputs, no float nondeterminism
-   unless audited.
-10. **Consider PID-based throttling** if exponential backoff oscillation becomes an
-    issue in practice.
+8. **Benchmark wake primitives** — `ManualResetEventSlim` vs `AutoResetEvent` under your actual dispatch pattern.
+9. **Determinism checklist** — fixed `dt`, ordered inputs, no float nondeterminism unless audited.
+10. **Consider PID-based throttling** if exponential backoff oscillation becomes an issue in practice.
 
 ## Warnings
 
-- **EBR stall risk:** One misbehaving deferred consumer can block all reclamation
-  without mitigation (the hard ceiling addresses this).
-- **`volatile` alone does not fix multi-field invariants** — must publish one
-  coherent view (which the single-pointer publish already does).
+- **EBR stall risk:** One misbehaving deferred consumer can block all reclamation without mitigation (the hard ceiling
+  addresses this).
+- **`volatile` alone does not fix multi-field invariants** — must publish one coherent view (which the single-pointer
+  publish already does).
 - **Over-pinning CPU affinity** can hurt OS scheduling and throughput.
 - **Floating-point determinism across OS/CPU is never free.**
 - **Object pooling misuse:** memory leaks, stale data, forgotten returns.

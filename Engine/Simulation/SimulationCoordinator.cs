@@ -16,14 +16,15 @@ namespace Engine.Simulation;
 ///        written to each worker as a <see cref="SimulationTickState"/>.
 ///     3. SIGNAL — all workers are woken from their park state.
 ///     4. JOIN — <see cref="WorkerGroup{SimulationTickState,SimulationExecutor}.Dispatch"/> waits
-///        on every worker's done signal via <see cref="WorkerGroup{SimulationTickState,SimulationExecutor}.WaitHandleBatch"/>.
+///        on every worker's done signal via
+///        <see cref="WorkerGroup{SimulationTickState,SimulationExecutor}.WaitHandleBatch"/>.
 ///     5. REF-COUNT — the SimulationCoordinator walks each worker's created-nodes list
 ///        and performs AddRef on shared subtree nodes.  This is the only
 ///        phase that touches ref-counts, and it runs on a single thread —
 ///        no interlocked operations needed.
 ///
-///   Because the group always joins all workers before returning, the calling
-///   thread sees a fully-consistent next image with all reference counts correct.
+///   Because the group always joins all workers before returning, the calling thread sees a fully-consistent next image
+///   with all reference counts correct.
 ///
 /// CANCELLATION
 ///   The engine's <see cref="CancellationToken"/> flows through AdvanceTick
@@ -47,9 +48,8 @@ internal sealed partial class SimulationCoordinator(int workerCount)
     public int WorkerCount => _group.WorkerCount;
 
     /// <summary>
-    /// Dispatches one tick of work across all workers and blocks until
-    /// all have completed.  After join, performs deferred ref-counting
-    /// on shared subtree nodes created by workers.
+    /// Dispatches one tick of work across all workers and blocks until all have completed.  After join, performs deferred
+    /// ref-counting on shared subtree nodes created by workers.
     /// </summary>
     public void AdvanceTick(WorldImage previous, WorldImage next, CancellationToken cancellationToken)
     {
