@@ -83,7 +83,7 @@ internal sealed class PinnedVersions
 
         var owners = _pinned.GetOrAdd(
             sequenceNumber,
-            _ => new ConcurrentDictionary<IPinOwner, byte>(ReferenceOwnerComparer.Instance));
+            static _ => new ConcurrentDictionary<IPinOwner, byte>(ReferenceOwnerComparer.Instance));
 
         if (!owners.TryAdd(owner, 0))
             throw new InvalidOperationException("The same owner pinned the same sequence more than once.");

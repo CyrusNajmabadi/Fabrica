@@ -21,6 +21,7 @@ internal abstract partial class BaseProductionLoop<TPayload>(
     private readonly ObjectPool<ChainNode, ChainNode.Allocator> _nodePool = nodePool;
     private readonly PinnedVersions _pinnedVersions = pinnedVersions;
     private readonly HashSet<ChainNode> _pinnedQueue = [];
+    private readonly List<ChainNode> _drainBuffer = [];
     private int _currentSequence;
     private ChainNode? _currentNode;
     private ChainNode? _oldestNode;
@@ -105,13 +106,24 @@ internal abstract partial class BaseProductionLoop<TPayload>(
             }
         }
 
-        _pinnedQueue.RemoveWhere(node =>
+        this.DrainUnpinnedNodes();
+    }
+
+    private void DrainUnpinnedNodes()
+    {
+        if (_pinnedQueue.Count == 0)
+            return;
+
+        _drainBuffer.Clear();
+        foreach (var node in _pinnedQueue)
         {
             if (_pinnedVersions.IsPinned(node.SequenceNumber))
-                return false;
+                continue;
             this.FreeNode(node);
-            return true;
-        });
+            _drainBuffer.Add(node);
+        }
+
+        _pinnedQueue.ExceptWith(_drainBuffer);
     }
 
     private void FreeNode(ChainNode node)
