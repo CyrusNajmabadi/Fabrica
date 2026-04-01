@@ -42,18 +42,35 @@ namespace Fabrica.Pipeline;
 /// </summary>
 public sealed class SharedPipelineState<TPayload>
 {
-    // ── PinnedVersions ───────────────────────────────────────────────────────
-    // Thread-safe. Written by consumption thread and threadpool tasks. Read by production thread during cleanup.
+    /// <summary>
+    /// Thread-safe. Written by consumption thread and threadpool tasks. Read by production thread during cleanup.
+    /// </summary>
+    public readonly PinnedVersions PinnedVersions = new();
 
-    public PinnedVersions PinnedVersions { get; } = new();
-
-    // ── LatestNode ───────────────────────────────────────────────────────────
-    // Written by production thread only (release).  Read by consumption thread (acquire).
-
+    /// <summary>
+    /// Written by production thread only (release).  Read by consumption thread (acquire).
+    /// </summary>
     private BaseProductionLoop<TPayload>.ChainNode? _latestNode;
+
+    /// <summary>
+    /// Written by consumption thread only (release). Read by production thread (acquire). Production may free any node whose
+    /// sequence &lt; ConsumptionEpoch. Initial value 0: nothing eligible for freeing until consumption has processed something.
+    /// </summary>
+    private int _consumptionEpoch;
 
 #if DEBUG
     private int _latestNodeWriterThreadId = -1;
+    private int _consumptionEpochWriterThreadId = -1;
+
+    private static void AssertSingleWriter(ref int storedThreadId, string propertyName)
+    {
+        var current = Environment.CurrentManagedThreadId;
+        if (storedThreadId == -1)
+            storedThreadId = current;
+        Debug.Assert(
+            storedThreadId == current,
+            $"{propertyName} written from thread {current} but expected thread {storedThreadId}.");
+    }
 #endif
 
     public BaseProductionLoop<TPayload>.ChainNode? LatestNode
@@ -68,14 +85,7 @@ public sealed class SharedPipelineState<TPayload>
         }
     }
 
-    // ── ConsumptionEpoch ──────────────────────────────────────────────────────
-    // Written by consumption thread only (release). Read by production thread (acquire). Production may free any node whose
-    // sequence < ConsumptionEpoch. Initial value 0: nothing eligible for freeing until consumption has processed something.
-
-    private int _consumptionEpoch;
-
 #if DEBUG
-    private int _consumptionEpochWriterThreadId = -1;
 #endif
 
     public int ConsumptionEpoch
@@ -89,18 +99,4 @@ public sealed class SharedPipelineState<TPayload>
             Volatile.Write(ref _consumptionEpoch, value);
         }
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-#if DEBUG
-    private static void AssertSingleWriter(ref int storedThreadId, string propertyName)
-    {
-        var current = Environment.CurrentManagedThreadId;
-        if (storedThreadId == -1)
-            storedThreadId = current;
-        Debug.Assert(
-            storedThreadId == current,
-            $"{propertyName} written from thread {current} but expected thread {storedThreadId}.");
-    }
-#endif
 }
