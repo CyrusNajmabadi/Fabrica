@@ -45,7 +45,13 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
                 _pinnedVersions.Unpin(_pinnedSequences[i], _consumers[i]);
                 _inFlightTasks[i] = null;
 
-                // TODO: errors should be logged somewhere (structured logging / diagnostics)
+                if (task.IsFaulted)
+                {
+                    Debug.WriteLine(
+                        $"Deferred consumer {i} ({_consumers[i].GetType().Name}) faulted: " +
+                        $"{task.Exception?.InnerException?.Message ?? task.Exception?.Message}");
+                }
+
                 var nextRunTime = task.IsCompletedSuccessfully
                     ? task.Result
                     : frameStartNanoseconds + _consumers[i].ErrorRetryDelayNanoseconds;

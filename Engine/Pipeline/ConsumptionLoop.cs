@@ -99,6 +99,7 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
     /// </summary>
     private void RunOneIteration(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var frameStart = _clock.NowNanoseconds;
 
         _deferred.EnsureScheduleInitialized(frameStart);
@@ -112,6 +113,12 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
                 _previous = _latest;
                 _latest = latestNode;
             }
+
+            // Clamp: if the production thread published between our clock
+            // read and the volatile read of LatestNode, frameStart could
+            // precede the node's publish time.  Clamping to zero-elapsed
+            // prevents negative interpolation values.
+            frameStart = Math.Max(frameStart, latestNode.PublishTimeNanoseconds);
 
             if (_previous is not null)
             {

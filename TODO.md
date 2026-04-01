@@ -44,7 +44,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] **Fix `Host.cs` pool exhaustion docs** — lines 124–132 claim "full pool exhaustion blocks Tick() entirely until a slot is freed"; `ObjectPool.Rent()` actually allocates when empty. Rewrite to describe epoch-gap backpressure as the actual bounding mechanism
 - [ ] **Fix `RenderFrame.cs` Chain doc** — mentions null Previous inconsistently with the `required` property
 - [ ] **Fix `WorldImage.cs` comment** — line 12 says "LatestSnapshot" but the actual API is `LatestNode`
-- [ ] **Add deferred consumer error logging** — `DeferredConsumerScheduler.DrainCompletedTasks` silently reschedules faulted tasks (TODO at lines 48–49). Add structured logging or `Trace` output
+- [ ] **Deferred consumer error reporting** — `DeferredConsumerScheduler.DrainCompletedTasks` silently reschedules faulted tasks (a `Debug.WriteLine` was added as a stopgap). Two things are needed: (1) real structured logging (e.g. Serilog) so errors are persisted to disk, not just debug output; (2) an end-to-end internal path that surfaces deferred consumer failures in the UI/user flow (e.g. via `EngineStatistics` or a similar observable channel) so the player or developer can see that a background operation failed, not just the log file
 - [ ] Architecture diagram (the mermaid-style flow in `Engine.cs` comments could become a standalone doc)
 - [ ] Onboarding notes for the threading model — the doc comments are thorough but scattered across files
 
