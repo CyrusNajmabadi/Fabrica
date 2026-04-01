@@ -3,8 +3,8 @@ using Engine.Threading;
 namespace Engine.Pipeline;
 
 /// <summary>
-/// The consumption ("consumer") thread.  Processes the latest node at ≈60 fps
-/// and coordinates deferred consumers (e.g. periodic saves) via a min-heap schedule.
+/// The consumption ("consumer") thread. Processes the latest node at ≈60 fps and coordinates deferred consumers (e.g. periodic
+/// saves) via a min-heap schedule.
 ///
 /// FRAME LOOP  (RunOneIteration)
 ///   1. DrainCompletedDeferredTasks: unpin nodes whose deferred tasks have finished
@@ -21,30 +21,23 @@ namespace Engine.Pipeline;
 ///   7. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
 ///
 /// PREVIOUS / LATEST MODEL
-///   The loop holds two distinct node references: _previous and _latest.
-///   When LatestNode changes (new ticks published), the pair rotates:
-///   old latest becomes previous, new node becomes latest.  Between
-///   rotations the pair is stable.
+///   The loop holds two distinct node references: _previous and _latest. When LatestNode changes (new ticks published), the pair
+///   rotates: old latest becomes previous, new node becomes latest. Between rotations the pair is stable.
 ///
-///   The full forward-linked chain from _previous to _latest is guaranteed
-///   alive during the Consume call.  When production publishes multiple
-///   nodes between frames, _previous and _latest may be several sequences
-///   apart — the consumer can iterate every intermediate node via the
-///   chain, or simply work with the two endpoints.
+///   The full forward-linked chain from _previous to _latest is guaranteed alive during the Consume call. When production
+///   publishes multiple nodes between frames, _previous and _latest may be several sequences apart — the consumer can iterate
+///   every intermediate node via the chain, or simply work with the two endpoints.
 ///
-///   The loop does not call the consumer until two distinct nodes exist
-///   (_previous and _latest are both non-null and distinct).  This means
-///   the consumer always has a valid interpolation range — no null checks
-///   needed.
+///   The loop does not call the consumer until two distinct nodes exist (_previous and _latest are both non-null and distinct).
+///   This means the consumer always has a valid interpolation range — no null checks needed.
 ///
 /// EPOCH ADVANCEMENT
-///   The epoch is set to _previous.SequenceNumber.  Cleanup frees strictly
-///   below the epoch, so both _previous (sequence N, not &lt; N) and _latest
-///   (sequence &gt; N) remain alive — along with the entire chain between them.
+///   The epoch is set to _previous.SequenceNumber. Cleanup frees strictly below the epoch, so both _previous (sequence N, not
+///   &lt; N) and _latest (sequence &gt; N) remain alive — along with the entire chain between them.
 ///
 /// DEFERRED CONSUMER SCHEDULING
-///   Deferred consumers are stored in a flat array.  A PriorityQueue maps
-///   consumer indices to their next-run wall-clock timestamp.  Each frame:
+///   Deferred consumers are stored in a flat array. A PriorityQueue maps consumer indices to their next-run wall-clock timestamp.
+///   Each frame:
 ///     - Peek O(1): if nothing is due, skip entirely — no virtual calls.
 ///     - Pop due entries, pin the latest node, call ConsumeAsync.
 ///     - Track the in-flight Task per consumer; skip consumers whose prior
@@ -52,8 +45,7 @@ namespace Engine.Pipeline;
 ///     - When tasks complete, unpin, read the returned next-run-time, and
 ///       re-enqueue into the heap.
 ///
-/// Generic constraints (all struct) eliminate interface dispatch on every call
-/// in the hot frame loop.
+/// Generic constraints (all struct) eliminate interface dispatch on every call in the hot frame loop.
 /// </summary>
 internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter>(
     SharedPipelineState<TPayload> shared,
@@ -87,15 +79,13 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
     /// <summary>
     /// Single frame of the consumption loop.
     ///
-    /// Housekeeping first: finalise any deferred tasks that completed since
-    /// last frame (unpin, re-schedule), then check whether the production
-    /// thread has published a new node.  If so, rotate the previous/latest
-    /// pair so the consumer always sees the two most-recent distinct nodes.
+    /// Housekeeping first: finalise any deferred tasks that completed since last frame (unpin, re-schedule), then check whether
+    /// the production thread has published a new node. If so, rotate the previous/latest pair so the consumer always sees the two
+    /// most-recent distinct nodes.
     ///
-    /// Once we have a valid pair, dispatch due deferred consumers (O(1) peek
-    /// on the min-heap — no work when nothing is scheduled) and then hand
-    /// the pair to the fast consumer.  Finally, advance the epoch to keep
-    /// both held nodes alive and sleep for any remaining frame budget.
+    /// Once we have a valid pair, dispatch due deferred consumers (O(1) peek on the min-heap — no work when nothing is scheduled)
+    /// and then hand the pair to the fast consumer. Finally, advance the epoch to keep both held nodes alive and sleep for any
+    /// remaining frame budget.
     /// </summary>
     private void RunOneIteration(CancellationToken cancellationToken)
     {
@@ -114,10 +104,8 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
                 _latest = latestNode;
             }
 
-            // Clamp: if the production thread published between our clock
-            // read and the volatile read of LatestNode, frameStart could
-            // precede the node's publish time.  Clamping to zero-elapsed
-            // prevents negative interpolation values.
+            // Clamp: if the production thread published between our clock read and the volatile read of LatestNode, frameStart
+            // could precede the node's publish time. Clamping to zero-elapsed prevents negative interpolation values.
             frameStart = Math.Max(frameStart, latestNode.PublishTimeNanoseconds);
 
             if (_previous is not null)
@@ -130,10 +118,8 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
                     frameStart,
                     cancellationToken);
 
-                // Epoch = _previous.SequenceNumber, not _latest: cleanup frees
-                // sequence < epoch, so _previous (N) survives (N is not < N).
-                // We can't advance to _latest because _previous is reused on the
-                // next frame if no new node arrives — freeing it would be UAF.
+                // Epoch = _previous.SequenceNumber, not _latest: cleanup frees sequence
+                // < epoch, so _previous (N) survives (N is not < N). We can't advance to _latest because _previous is reused on the next frame if no new node arrives — freeing it would be UAF.
                 _shared.ConsumptionEpoch = _previous.SequenceNumber;
             }
         }

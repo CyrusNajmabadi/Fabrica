@@ -35,13 +35,10 @@ public sealed class HostTests
     }
 
     /// <summary>
-    /// Deterministic repro for the unhandled-OCE crash.  Both loops call
-    /// <c>ThrowIfCancellationRequested()</c> at the top of <c>Run</c>.
-    /// With a pre-cancelled token, both thread lambdas throw
-    /// <see cref="OperationCanceledException"/>.  The <c>when</c> filter
-    /// rejects OCE, leaving it unhandled and crashing the process.
-    /// With the fix, OCE is caught and swallowed; <c>Host.Run</c> returns
-    /// normally (no captured exceptions to re-throw).
+    /// Deterministic repro for the unhandled-OCE crash. Both loops call <c>ThrowIfCancellationRequested()</c> at the top of
+    /// <c>Run</c>. With a pre-cancelled token, both thread lambdas throw <see cref="OperationCanceledException"/>. The
+    /// <c>when</c> filter rejects OCE, leaving it unhandled and crashing the process. With the fix, OCE is caught and swallowed;
+    /// <c>Host.Run</c> returns normally (no captured exceptions to re-throw).
     /// </summary>
     [Fact]
     public void Run_WithPreCancelledToken_DoesNotCrash()

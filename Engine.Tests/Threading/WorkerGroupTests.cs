@@ -8,9 +8,8 @@ public sealed class WorkerGroupTests
     private const int TimeoutMilliseconds = 5_000;
 
     /// <summary>
-    /// Demonstrates the deadlock: when Dispatch is called with an already-cancelled
-    /// token, each worker wakes from its go signal, sees IsCancellationRequested, and
-    /// must still signal done so WaitAll can return.
+    /// Demonstrates the deadlock: when Dispatch is called with an already-cancelled token, each worker wakes from its go signal,
+    /// sees IsCancellationRequested, and must still signal done so WaitAll can return.
     /// </summary>
     [Fact]
     public void Dispatch_WithAlreadyCancelledToken_DoesNotDeadlock()
@@ -81,8 +80,8 @@ public sealed class WorkerGroupTests
         group.Dispatch(default, cancellationTokenSource.Token);
         cancellationTokenSource.Cancel();
 
-        // Workers should self-terminate because cancellation wakes them.
-        // Without the fix, they're parked on WaitOne and never wake.
+        // Workers should self-terminate because cancellation wakes them. Without the fix, they're parked on WaitOne and never
+        // wake.
         var allExited = group.GetTestAccessor().Join(TimeoutMilliseconds);
 
         Assert.True(allExited, "Worker threads did not exit after cancellation — they are stuck on WaitOne.");

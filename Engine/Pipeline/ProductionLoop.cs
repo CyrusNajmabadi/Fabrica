@@ -4,16 +4,14 @@ using Engine.Threading;
 namespace Engine.Pipeline;
 
 /// <summary>
-/// The production ("producer") thread.  Advances the chain one node at a time,
-/// delegates domain-specific payload creation to a <typeparamref name="TProducer"/>,
-/// and reclaims nodes the consumption thread has finished with.
+/// The production ("producer") thread. Advances the chain one node at a time, delegates domain-specific payload creation to a
+/// <typeparamref name="TProducer"/>, and reclaims nodes the consumption thread has finished with.
 ///
-/// Inherits chain management (node allocation, linking, cleanup, ref-counting)
-/// from <see cref="BaseProductionLoop{TPayload}"/>.  This class adds the tick
-/// loop, backpressure, and domain-specific producer/consumer coordination.
+/// Inherits chain management (node allocation, linking, cleanup, ref-counting) from <see cref="BaseProductionLoop{TPayload}"/>.
+/// This class adds the tick loop, backpressure, and domain-specific producer/consumer coordination.
 ///
-/// Generic on all type parameters (all constrained to struct) so the JIT/AOT
-/// devirtualises all calls — zero interface-dispatch overhead in the hot path.
+/// Generic on all type parameters (all constrained to struct) so the JIT/AOT devirtualises all calls — zero interface-dispatch
+/// overhead in the hot path.
 /// </summary>
 internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
     ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,

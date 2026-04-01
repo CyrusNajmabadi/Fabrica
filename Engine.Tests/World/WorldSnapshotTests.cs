@@ -6,8 +6,8 @@ using Xunit;
 namespace Engine.Tests.World;
 
 /// <summary>
-/// Tests for <see cref="BaseProductionLoop{WorldImage}.ChainNode"/> payload
-/// lifecycle — setting, clearing, and ref-count interaction with payload visibility.
+/// Tests for <see cref="BaseProductionLoop{WorldImage}.ChainNode"/> payload lifecycle — setting, clearing, and ref-count
+/// interaction with payload visibility.
 /// </summary>
 public sealed class WorldSnapshotTests
 {

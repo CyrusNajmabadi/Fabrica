@@ -13,9 +13,8 @@ using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 public sealed class ProductionLoopCancellationTests
 {
     /// <summary>
-    /// Demonstrates the bug: when many ticks are queued in the accumulator and
-    /// cancellation fires mid-batch, ProcessAvailableTicks processes all
-    /// remaining ticks instead of exiting promptly.
+    /// Demonstrates the bug: when many ticks are queued in the accumulator and cancellation fires mid-batch,
+    /// ProcessAvailableTicks processes all remaining ticks instead of exiting promptly.
     /// </summary>
     [Fact]
     public void ProcessAvailableTicks_StopsPromptly_WhenCancelledMidBatch()
@@ -54,8 +53,8 @@ public sealed class ProductionLoopCancellationTests
     // ── Test doubles ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Waiter that returns immediately without throwing, so the only
-    /// cancellation check is the one we're testing inside ProcessAvailableTicks.
+    /// Waiter that returns immediately without throwing, so the only cancellation check is the one we're testing inside
+    /// ProcessAvailableTicks.
     /// </summary>
     private readonly struct TestSilentWaiter : IWaiter
     {

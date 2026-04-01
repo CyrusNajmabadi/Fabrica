@@ -3,16 +3,14 @@ using System.Runtime.InteropServices;
 namespace Engine.Threading;
 
 /// <summary>
-/// Native interop for thread-to-core pinning.  Declared at namespace scope because
-/// <c>[LibraryImport]</c> cannot be applied inside generic types (CS7042).
-/// Called from <see cref="WorkerGroup{TState,TExecutor}.ThreadWorker"/>.
+/// Native interop for thread-to-core pinning. Declared at namespace scope because <c>[LibraryImport]</c> cannot be applied inside
+/// generic types (CS7042). Called from <see cref="WorkerGroup{TState,TExecutor}.ThreadWorker"/>.
 /// </summary>
 internal static partial class ThreadPinningNative
 {
     /// <summary>
-    /// Attempts to pin the calling thread to the specified logical core.
-    /// Returns true if the OS accepted the request, false otherwise.
-    /// Safe to call on any platform — unsupported platforms return false.
+    /// Attempts to pin the calling thread to the specified logical core. Returns true if the OS accepted the request, false
+    /// otherwise. Safe to call on any platform — unsupported platforms return false.
     /// </summary>
     public static bool TryPinCurrentThread(int coreIndex)
     {
@@ -28,8 +26,7 @@ internal static partial class ThreadPinningNative
         }
         catch
         {
-            // P/Invoke failed — permission denied, library not found,
-            // containerised environment, etc.  Thread pinning is optional.
+            // P/Invoke failed — permission denied, library not found, containerised environment, etc. Thread pinning is optional.
         }
 
         return false;

@@ -386,10 +386,8 @@ public sealed class ConsumptionLoopTests
         var node0 = test.CreatePublishedNode(tick: 0, publishTimeNanoseconds: 50);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        // Second iteration: publish node 1 with PublishTimeNanoseconds = 200,
-        // but set the clock to 100 — simulating a race where the production
-        // thread published between the clock read and the volatile read of
-        // LatestNode.
+        // Second iteration: publish node 1 with PublishTimeNanoseconds = 200, but set the clock to 100 — simulating a race where
+        // the production thread published between the clock read and the volatile read of LatestNode.
         test.ClockState.NowNanoseconds = 100;
         var node1 = test.CreatePublishedNode(tick: 1, publishTimeNanoseconds: 200);
         test.LinkNodes(node0, node1);

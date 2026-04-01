@@ -1,0 +1,17 @@
+---
+description: Comment and markdown line wrapping conventions
+alwaysApply: true
+---
+
+# Comment and Markdown Wrapping
+
+Target ~120 columns from column 0 for all comments and markdown text.
+
+## Rules
+
+- **Target width**: 120 columns measured from column 0 (includes indentation and comment prefixes like `/// `, `// `)
+- **Minimum text width**: 80 characters of actual text content, regardless of nesting depth. Even at deep indentation, never cramp text below 80 chars of content — let the line exceed 120 total if needed.
+- **Soft wrap**: if the last word pushes slightly past 120 (5-10 chars), keep it rather than creating a one-word orphan on the next line
+- **Preserve structure**: never collapse numbered lists, bulleted lists, blank separator lines between sections, or section headers into flowing paragraphs
+- **Scope**: `///` XML doc comments, `//` line comments in `.cs` files, and all `.md` files
+- **Leave alone**: code lines, `// ──`/`// ══` divider lines, `#pragma` lines, fenced code blocks, table rows, long URLs

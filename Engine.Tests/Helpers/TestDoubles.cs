@@ -28,9 +28,8 @@ internal readonly struct TestRecordingClock(TestClockState state) : IClock
 }
 
 /// <summary>
-/// Clock that always reads zero. Useful for tests that drive time via the
-/// accumulator or <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}.TestAccessor.Tick"/>
-/// rather than wall-clock deltas.
+/// Clock that always reads zero. Useful for tests that drive time via the accumulator or
+/// <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}.TestAccessor.Tick"/> rather than wall-clock deltas.
 /// </summary>
 internal readonly struct TestFakeClock : IClock
 {
@@ -38,10 +37,9 @@ internal readonly struct TestFakeClock : IClock
 }
 
 /// <summary>
-/// Mutable state shared between a test and its <see cref="TestRecordingWaiter"/>.
-/// Captures every Wait call and exposes two optional hooks:
-/// <see cref="BeforeWait"/> (parameterless, for simple cancellation triggers) and
-/// <see cref="OnWait"/> (receives the duration, for duration-aware assertions).
+/// Mutable state shared between a test and its <see cref="TestRecordingWaiter"/>. Captures every Wait call and exposes two
+/// optional hooks: <see cref="BeforeWait"/> (parameterless, for simple cancellation triggers) and <see cref="OnWait"/> (receives
+/// the duration, for duration-aware assertions).
 /// </summary>
 internal sealed class TestWaiterState
 {
@@ -52,8 +50,7 @@ internal sealed class TestWaiterState
 }
 
 /// <summary>
-/// Waiter that records every call and invokes optional hooks from
-/// <see cref="TestWaiterState"/> before checking cancellation.
+/// Waiter that records every call and invokes optional hooks from <see cref="TestWaiterState"/> before checking cancellation.
 /// </summary>
 internal readonly struct TestRecordingWaiter(TestWaiterState state) : IWaiter
 {
@@ -88,8 +85,8 @@ internal readonly struct TestNoOpConsumer : IConsumer<WorldImage>
 }
 
 /// <summary>
-/// Minimal concrete subclass of <see cref="BaseProductionLoop{TPayload}"/> for
-/// tests that need to create and mutate chain nodes outside of a full production loop.
+/// Minimal concrete subclass of <see cref="BaseProductionLoop{TPayload}"/> for tests that need to create and mutate chain nodes
+/// outside of a full production loop.
 /// </summary>
 internal sealed class TestChainHarness : BaseProductionLoop<WorldImage>
 {

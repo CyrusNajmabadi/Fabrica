@@ -3,38 +3,30 @@ using System.Diagnostics;
 namespace Engine.Pipeline;
 
 /// <summary>
-/// All mutable state shared across the production and consumption threads.
-/// Each member documents which thread(s) may write and which may read.
+/// All mutable state shared across the production and consumption threads. Each member documents which thread(s) may write and
+/// which may read.
 ///
 /// MEMORY MODEL
-///   Both cross-thread fields use <see cref="Volatile.Read"/> /
-///   <see cref="Volatile.Write"/> to make the acquire/release fences explicit
-///   at each access site rather than implicit on the field declaration.
+///   Both cross-thread fields use <see cref="Volatile.Read"/> / <see cref="Volatile.Write"/> to make the acquire/release fences
+///   explicit at each access site rather than implicit on the field declaration.
 ///
-///   A Volatile.Write is a release fence: all prior writes by the writing
-///   thread are guaranteed visible to any thread that subsequently performs
-///   the matching Volatile.Read (an acquire fence).
+///   A Volatile.Write is a release fence: all prior writes by the writing thread are guaranteed visible to any thread that
+///   subsequently performs the matching Volatile.Read (an acquire fence).
 ///
-///   Concretely for LatestNode: the production thread fully initialises the
-///   node's payload, then Volatile.Writes LatestNode.  The consumption thread
-///   Volatile.Reads LatestNode, then reads payload fields.  The release/acquire
-///   pair ensures all payload writes are visible — no additional synchronisation
-///   is needed.
+///   Concretely for LatestNode: the production thread fully initialises the node's payload, then Volatile.Writes LatestNode. The
+///   consumption thread Volatile.Reads LatestNode, then reads payload fields. The release/acquire pair ensures all payload writes
+///   are visible — no additional synchronisation is needed.
 ///
 /// CROSS-FIELD INDEPENDENCE
-///   The two fields form a feedback loop (producer publishes nodes, consumer
-///   advances the epoch to allow reclamation) but do NOT require atomic
-///   cross-field reads.  Staleness in either direction is conservative:
+///   The two fields form a feedback loop (producer publishes nodes, consumer advances the epoch to allow reclamation) but do NOT
+///   require atomic cross-field reads. Staleness in either direction is conservative:
 ///
-///   LatestNode: a stale read means the consumer re-processes the same node
-///   — correct, just redundant.
+///   LatestNode: a stale read means the consumer re-processes the same node — correct, just redundant.
 ///
-///   ConsumptionEpoch: a stale (lower) read means the producer retains a
-///   node one extra cleanup pass — never frees prematurely.
+///   ConsumptionEpoch: a stale (lower) read means the producer retains a node one extra cleanup pass — never frees prematurely.
 ///
-///   Because each field's correctness is independent of reading the other
-///   field's latest value in the same operation, no lock or combined atomic
-///   is needed.
+///   Because each field's correctness is independent of reading the other field's latest value in the same operation, no lock or
+///   combined atomic is needed.
 ///
 /// PinnedVersions
 ///   Thread-safe registry of snapshot sequences that deferred consumers are
@@ -51,8 +43,7 @@ namespace Engine.Pipeline;
 internal sealed class SharedPipelineState<TPayload>
 {
     // ── PinnedVersions ───────────────────────────────────────────────────────
-    // Thread-safe.  Written by consumption thread and threadpool tasks.
-    // Read by production thread during cleanup.
+    // Thread-safe. Written by consumption thread and threadpool tasks. Read by production thread during cleanup.
 
     public PinnedVersions PinnedVersions { get; } = new();
 
@@ -78,9 +69,8 @@ internal sealed class SharedPipelineState<TPayload>
     }
 
     // ── ConsumptionEpoch ──────────────────────────────────────────────────────
-    // Written by consumption thread only (release).  Read by production thread (acquire).
-    // Production may free any node whose sequence < ConsumptionEpoch.
-    // Initial value 0: nothing eligible for freeing until consumption has processed something.
+    // Written by consumption thread only (release). Read by production thread (acquire). Production may free any node whose
+    // sequence < ConsumptionEpoch. Initial value 0: nothing eligible for freeing until consumption has processed something.
 
     private int _consumptionEpoch;
 

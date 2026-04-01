@@ -16,9 +16,8 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
     ///             (<c>THREAD_AFFINITY_POLICY</c>) which are scheduler hints,
     ///             not hard pins.
     ///
-    /// This is a best-effort facility: callers must not depend on pinning
-    /// succeeding.  The simulation is correct regardless of whether threads
-    /// are pinned — pinning is purely a cache-affinity optimisation.
+    /// This is a best-effort facility: callers must not depend on pinning succeeding. The simulation is correct regardless of
+    /// whether threads are pinned — pinning is purely a cache-affinity optimisation.
     ///
     /// LIMITATIONS
     ///   The current implementation supports up to 64 logical cores (one

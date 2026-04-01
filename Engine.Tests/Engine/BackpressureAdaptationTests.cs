@@ -11,17 +11,15 @@ using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
 using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
 
 /// <summary>
-/// Multi-phase behavioral tests that verify the backpressure feedback loop
-/// adapts dynamically to changing simulation/consumption speed ratios.
+/// Multi-phase behavioral tests that verify the backpressure feedback loop adapts dynamically to changing simulation/consumption
+/// speed ratios.
 ///
-/// Unlike the existing LoopStressHarnessTests (which verify individual
-/// iterations), these tests run sustained phases of many iterations and
-/// assert on aggregate behavior: total pressure delay, gap bounds, and
-/// transitions between pressured and unpressured steady states.
+/// Unlike the existing LoopStressHarnessTests (which verify individual iterations), these tests run sustained phases of many
+/// iterations and assert on aggregate behavior: total pressure delay, gap bounds, and transitions between pressured and
+/// unpressured steady states.
 ///
-/// All tests are deterministic — they use a controllable clock and recording
-/// waiter, stepping both loops single-threaded with precise control over
-/// how many iterations each side runs per phase.
+/// All tests are deterministic — they use a controllable clock and recording waiter, stepping both loops single-threaded with
+/// precise control over how many iterations each side runs per phase.
 /// </summary>
 public sealed class BackpressureAdaptationTests
 {

@@ -9,8 +9,8 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
         private readonly WorkerGroup<TState, TExecutor> _group = group;
 
         /// <summary>
-        /// Waits for all worker threads to exit within the given timeout.
-        /// Returns true if all threads exited, false if the timeout elapsed.
+        /// Waits for all worker threads to exit within the given timeout. Returns true if all threads exited, false if the
+        /// timeout elapsed.
         /// </summary>
         public bool Join(int millisecondsTimeout)
         {

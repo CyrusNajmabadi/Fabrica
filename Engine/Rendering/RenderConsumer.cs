@@ -4,12 +4,10 @@ using Engine.World;
 namespace Engine.Rendering;
 
 /// <summary>
-/// Adapts the simulation-specific rendering/display logic to the generic
-/// <see cref="IConsumer{TPayload}"/> interface.
+/// Adapts the simulation-specific rendering/display logic to the generic <see cref="IConsumer{TPayload}"/> interface.
 ///
-/// Owns the <see cref="RenderCoordinator"/> that dispatches parallel render
-/// work.  Builds a <see cref="RenderFrame"/> from the generic previous/latest
-/// pair and calls the domain renderer.
+/// Owns the <see cref="RenderCoordinator"/> that dispatches parallel render work. Builds a <see cref="RenderFrame"/> from the
+/// generic previous/latest pair and calls the domain renderer.
 /// </summary>
 internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) : IConsumer<WorldImage>
     where TRenderer : struct, IRenderer
