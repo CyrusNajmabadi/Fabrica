@@ -169,7 +169,8 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
             {
                 _productionLoop.Run(linkedCancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
             {
                 productionException = ex;
                 linkedCancellationTokenSource.Cancel();
@@ -186,7 +187,8 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
             {
                 _consumptionLoop.Run(linkedCancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
             {
                 consumptionException = ex;
                 linkedCancellationTokenSource.Cancel();
