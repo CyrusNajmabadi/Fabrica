@@ -34,6 +34,39 @@ public sealed class HostTests
         Assert.Equal("Deliberate producer fault.", ex.Message);
     }
 
+    /// <summary>
+    /// Deterministic repro for the unhandled-OCE crash.  Both loops call
+    /// <c>ThrowIfCancellationRequested()</c> at the top of <c>Run</c>.
+    /// With a pre-cancelled token, both thread lambdas throw
+    /// <see cref="OperationCanceledException"/>.  The <c>when</c> filter
+    /// rejects OCE, leaving it unhandled and crashing the process.
+    /// With the fix, OCE is caught and swallowed; <c>Host.Run</c> returns
+    /// normally (no captured exceptions to re-throw).
+    /// </summary>
+    [Fact]
+    public void Run_WithPreCancelledToken_DoesNotCrash()
+    {
+        var producer = new TestThrowingProducer(new TickCounter(), throwOnTickNumber: int.MaxValue);
+        var consumer = new TestNoOpConsumer();
+        var clock = new TestAutoAdvancingClock(new AutoAdvancingClockState());
+
+        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(16);
+        var shared = new SharedPipelineState<WorldImage>();
+
+        var productionLoop = new ProductionLoop<WorldImage, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
+            nodePool, shared, producer, clock, default);
+        var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+            shared, consumer, clock, default, []);
+
+        var host = new Host<WorldImage, TestThrowingProducer, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+            productionLoop, consumptionLoop);
+
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        host.Run(cancellationTokenSource.Token);
+    }
+
     // ── Test doubles ────────────────────────────────────────────────────
 
     private readonly struct TestSilentWaiter : IWaiter
