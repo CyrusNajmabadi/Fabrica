@@ -1,15 +1,12 @@
-using Fabrica.Engine;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Fabrica.Pipeline.Threading;
-using Fabrica.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class ProductionLoopCancellationTests
 {
@@ -27,9 +24,9 @@ public sealed class ProductionLoopCancellationTests
         var producer = new CountingProducer(producerState);
 
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(TicksQueued + 4);
-        var shared = new SharedPipelineState<WorldImage>();
+        var shared = new SharedPipelineState<TestPayload>();
 
-        var loop = new ProductionLoop<WorldImage, CountingProducer, TestFakeClock, TestSilentWaiter>(
+        var loop = new ProductionLoop<TestPayload, CountingProducer, TestFakeClock, TestSilentWaiter>(
             nodePool, shared, producer, default, default, TestPipelineConfiguration.Default);
         var accessor = loop.GetTestAccessor();
 
@@ -40,7 +37,7 @@ public sealed class ProductionLoopCancellationTests
         producerState.CancelAfterTickCount = CancelAfterTick;
 
         long lastTime = 0;
-        var accumulator = SimulationConstants.TickDurationNanoseconds * TicksQueued;
+        var accumulator = TestPipelineConfiguration.TickDurationNanoseconds * TicksQueued;
 
         Assert.Throws<OperationCanceledException>(
             () => accessor.RunOneIteration(cancellationTokenSource.Token, ref lastTime, ref accumulator));
@@ -73,21 +70,21 @@ public sealed class ProductionLoopCancellationTests
         public CancellationTokenSource? CancellationTokenSource { get => _cancellationTokenSource; set => _cancellationTokenSource = value; }
     }
 
-    private readonly struct CountingProducer(CountingProducerState state) : IProducer<WorldImage>
+    private readonly struct CountingProducer(CountingProducerState state) : IProducer<TestPayload>
     {
         private readonly CountingProducerState _state = state;
 
-        public readonly WorldImage CreateInitialPayload(CancellationToken cancellationToken) =>
-            default(WorldImage.Allocator).Allocate();
+        public readonly TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
+            default(TestPayload.Allocator).Allocate();
 
-        public readonly WorldImage Produce(WorldImage current, CancellationToken cancellationToken)
+        public readonly TestPayload Produce(TestPayload current, CancellationToken cancellationToken)
         {
             _state.TickCount++;
             if (_state.TickCount >= _state.CancelAfterTickCount)
                 _state.CancellationTokenSource?.Cancel();
-            return default(WorldImage.Allocator).Allocate();
+            return default(TestPayload.Allocator).Allocate();
         }
 
-        public readonly void ReleaseResources(WorldImage payload) { }
+        public readonly void ReleaseResources(TestPayload payload) { }
     }
 }

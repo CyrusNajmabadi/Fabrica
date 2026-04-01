@@ -1,7 +1,6 @@
-using Fabrica.Pipeline;
 using Xunit;
 
-namespace Fabrica.Tests.Memory;
+namespace Fabrica.Pipeline.Tests.Memory;
 
 public sealed class PinnedVersionsTests
 {

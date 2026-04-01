@@ -1,16 +1,13 @@
-using Fabrica.Engine;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Hosting;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Fabrica.Pipeline.Threading;
-using Fabrica.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Tests.Hosting;
+namespace Fabrica.Pipeline.Tests.Hosting;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class HostTests
 {
@@ -22,14 +19,14 @@ public sealed class HostTests
         var clock = new TestAutoAdvancingClock(new AutoAdvancingClockState());
 
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(16);
-        var shared = new SharedPipelineState<WorldImage>();
+        var shared = new SharedPipelineState<TestPayload>();
 
-        var productionLoop = new ProductionLoop<WorldImage, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
+        var productionLoop = new ProductionLoop<TestPayload, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
             nodePool, shared, producer, clock, default, TestPipelineConfiguration.Default);
-        var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+        var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             shared, consumer, clock, default, [], TestPipelineConfiguration.Default);
 
-        var host = new Host<WorldImage, TestThrowingProducer, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+        var host = new Host<TestPayload, TestThrowingProducer, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             productionLoop, consumptionLoop);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.RunAsync(CancellationToken.None));
@@ -50,14 +47,14 @@ public sealed class HostTests
         var clock = new TestAutoAdvancingClock(new AutoAdvancingClockState());
 
         var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(16);
-        var shared = new SharedPipelineState<WorldImage>();
+        var shared = new SharedPipelineState<TestPayload>();
 
-        var productionLoop = new ProductionLoop<WorldImage, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
+        var productionLoop = new ProductionLoop<TestPayload, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
             nodePool, shared, producer, clock, default, TestPipelineConfiguration.Default);
-        var consumptionLoop = new ConsumptionLoop<WorldImage, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+        var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             shared, consumer, clock, default, [], TestPipelineConfiguration.Default);
 
-        var host = new Host<WorldImage, TestThrowingProducer, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
+        var host = new Host<TestPayload, TestThrowingProducer, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             productionLoop, consumptionLoop);
 
         using var cancellationTokenSource = new CancellationTokenSource();
@@ -76,7 +73,7 @@ public sealed class HostTests
     private sealed class AutoAdvancingClockState
     {
         private long _now;
-        public long Read() => Interlocked.Add(ref _now, SimulationConstants.TickDurationNanoseconds);
+        public long Read() => Interlocked.Add(ref _now, TestPipelineConfiguration.TickDurationNanoseconds);
     }
 
     private readonly struct TestAutoAdvancingClock(AutoAdvancingClockState state) : IClock
@@ -91,26 +88,22 @@ public sealed class HostTests
         public int Value { get => _value; set => _value = value; }
     }
 
-    private readonly struct TestThrowingProducer(TickCounter counter, int throwOnTickNumber) : IProducer<WorldImage>
+    private readonly struct TestThrowingProducer(TickCounter counter, int throwOnTickNumber) : IProducer<TestPayload>
     {
         private readonly TickCounter _counter = counter;
         private readonly int _throwOnTickNumber = throwOnTickNumber;
 
-        public readonly WorldImage CreateInitialPayload(CancellationToken cancellationToken) =>
-            default(WorldImage.Allocator).Allocate();
+        public readonly TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
+            default(TestPayload.Allocator).Allocate();
 
-        public readonly WorldImage Produce(WorldImage current, CancellationToken cancellationToken)
+        public readonly TestPayload Produce(TestPayload current, CancellationToken cancellationToken)
         {
             if (++_counter.Value >= _throwOnTickNumber)
                 throw new InvalidOperationException("Deliberate producer fault.");
-            return default(WorldImage.Allocator).Allocate();
+            return default(TestPayload.Allocator).Allocate();
         }
 
-        public readonly void ReleaseResources(WorldImage payload) { }
+        public readonly void ReleaseResources(TestPayload payload) { }
     }
 
-    private readonly struct TestNoOpConsumer : IConsumer<WorldImage>
-    {
-        public readonly void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
-    }
 }

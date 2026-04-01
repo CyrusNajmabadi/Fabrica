@@ -1,23 +1,21 @@
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
-using Fabrica.Tests.Helpers;
+using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Tests.World;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
 /// <summary>
-/// Tests for <see cref="BaseProductionLoop{WorldImage}.ChainNode"/> payload lifecycle — setting, clearing, and ref-count
+/// Tests for <see cref="BaseProductionLoop{TestPayload}.ChainNode"/> payload lifecycle — setting, clearing, and ref-count
 /// interaction with payload visibility.
 /// </summary>
-public sealed class WorldSnapshotTests
+public sealed class ChainNodePayloadTests
 {
     private readonly TestChainHarness _harness = new();
-    private BaseProductionLoop<WorldImage>.ChainTestAccessor Accessor => _harness.GetChainTestAccessor();
+    private BaseProductionLoop<TestPayload>.ChainTestAccessor Accessor => _harness.GetChainTestAccessor();
 
     [Fact]
     public void InitializeBase_AndPayload_SetsCorrectly()
     {
-        var image = new WorldImage();
+        var image = new TestPayload();
         var node = this.Accessor.CreateNode(5);
         this.Accessor.SetPayload(node, image);
 
@@ -28,7 +26,7 @@ public sealed class WorldSnapshotTests
     [Fact]
     public void Release_ToZero_AllowsPayloadClearing()
     {
-        var image = new WorldImage();
+        var image = new TestPayload();
         var node = this.Accessor.CreateNode(10);
         this.Accessor.SetPayload(node, image);
 
@@ -42,7 +40,7 @@ public sealed class WorldSnapshotTests
     [Fact]
     public void AddRef_PreventsRelease_PayloadStillAccessible()
     {
-        var image = new WorldImage();
+        var image = new TestPayload();
         var node = this.Accessor.CreateNode(5);
         this.Accessor.SetPayload(node, image);
 
@@ -57,7 +55,7 @@ public sealed class WorldSnapshotTests
     public void AddRef_ThenFullRelease_ReachesZero()
     {
         var node = this.Accessor.CreateNode(5);
-        this.Accessor.SetPayload(node, new WorldImage());
+        this.Accessor.SetPayload(node, new TestPayload());
 
         this.Accessor.AddRef(node);
         this.Accessor.Release(node);

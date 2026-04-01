@@ -1,10 +1,10 @@
 using Fabrica.Engine.Simulation;
+using Fabrica.Engine.Tests.Helpers;
 using Fabrica.Engine.World;
 using Fabrica.Pipeline;
-using Fabrica.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Tests.Engine;
+namespace Fabrica.Engine.Tests.Engine;
 
 using SimulationPressure = ProductionLoop<WorldImage, SimulationProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
 
