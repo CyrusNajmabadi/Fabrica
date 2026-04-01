@@ -99,6 +99,7 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
     /// </summary>
     private void RunOneIteration(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var frameStart = _clock.NowNanoseconds;
 
         _deferred.EnsureScheduleInitialized(frameStart);
