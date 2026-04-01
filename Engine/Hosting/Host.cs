@@ -38,7 +38,7 @@ namespace Engine.Hosting;
 ///
 ///  DEFERRED CONSUMERS  (threadpool — dispatched by consumption thread)
 ///  ──────────────────────────────────────────────────────────────────────────
-///    • Consumer.ConsumeAsync(payload, ct)
+///    • Consumer.ConsumeAsync(payload, cancellationToken)
 ///    • Returns Task&lt;long&gt; with next-run wall-clock nanoseconds
 ///    • Loop auto-pins before dispatch, auto-unpins on completion
 ///
@@ -151,16 +151,47 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
     /// <summary>
     /// Starts both loops on dedicated threads and blocks until both exit.
+    /// Exceptions from either loop are captured and re-thrown after both
+    /// threads have joined.  A linked <see cref="CancellationTokenSource"/>
+    /// ensures a fault in one loop cancels the other so it can exit promptly.
     /// </summary>
     public void Run(CancellationToken cancellationToken)
     {
-        var productionThread = new Thread(() => _productionLoop.Run(cancellationToken))
+        using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var linkedCancellationToken = linkedCancellationTokenSource.Token;
+
+        Exception? productionException = null;
+        Exception? consumptionException = null;
+
+        var productionThread = new Thread(() =>
+        {
+            try
+            {
+                _productionLoop.Run(linkedCancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                productionException = ex;
+                linkedCancellationTokenSource.Cancel();
+            }
+        })
         {
             Name = "Production",
             IsBackground = false,
         };
 
-        var consumptionThread = new Thread(() => _consumptionLoop.Run(cancellationToken))
+        var consumptionThread = new Thread(() =>
+        {
+            try
+            {
+                _consumptionLoop.Run(linkedCancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                consumptionException = ex;
+                linkedCancellationTokenSource.Cancel();
+            }
+        })
         {
             Name = "Consumption",
             IsBackground = false,
@@ -171,6 +202,17 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
         productionThread.Join();
         consumptionThread.Join();
+
+        var exception = (productionException, consumptionException) switch
+        {
+            (not null, not null) => new AggregateException(productionException, consumptionException),
+            (not null, null) => productionException,
+            (null, not null) => consumptionException,
+            _ => null,
+        };
+
+        if (exception is not null)
+            throw exception;
     }
 }
 
