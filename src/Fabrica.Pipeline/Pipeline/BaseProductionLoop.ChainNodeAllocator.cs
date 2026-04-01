@@ -14,7 +14,7 @@ public abstract partial class BaseProductionLoop<TPayload>
         /// Allocator for the node pool. Nested inside <see cref="ChainNode"/> so it can construct <c>PrivateChainNode</c> in
         /// DEBUG builds (the type is private to <see cref="BaseProductionLoop{TPayload}"/>).
         /// </summary>
-        public struct Allocator : IAllocator<ChainNode>
+        public readonly struct Allocator : IAllocator<ChainNode>
         {
             public readonly ChainNode Allocate() =>
 #if DEBUG
