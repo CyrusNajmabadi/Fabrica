@@ -122,14 +122,16 @@ namespace Engine.Hosting;
 ///    cleanup to reclaim the entire backlog in one pass.
 ///
 ///    Pressure builds only when the consumption thread stalls long enough
-///    for production to produce more nodes than the pool can hold.  With
-///    a 256-slot pool at 40 Hz, production can run unimpeded for ≈6.4 seconds
-///    before the pool fills.  Beyond that:
-///      • Each 1/8 capacity bucket filled adds an exponential pre-tick delay
-///        (1 ms → 2 ms → 4 ms → … → 64 ms).
-///      • Full pool exhaustion blocks Tick() entirely until a slot is freed.
-///    This ensures production never silently allocates unboundedly and
-///    instead applies explicit back-pressure that scales with the stall depth.
+///    for production to run far ahead.  The epoch gap (produced sequences
+///    minus consumption epoch) is the sole pressure signal.  With a 40 Hz
+///    tick rate:
+///      • Each 1/8 of the hard-ceiling gap adds an exponential pre-tick
+///        delay (1 ms → 2 ms → 4 ms → … → 64 ms).
+///      • At the hard ceiling the production loop busy-waits until the
+///        consumption thread advances the epoch, preventing unbounded
+///        growth of the chain.
+///    Note: ObjectPool.Rent() never blocks — it allocates when empty.
+///    Pressure is therefore based on the epoch gap, not pool occupancy.
 ///
 /// ════════════════════════════════════════════════════════════════════════════
 ///
