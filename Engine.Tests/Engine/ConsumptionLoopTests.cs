@@ -376,6 +376,36 @@ public sealed class ConsumptionLoopTests
         Assert.False(test.PinnedVersions.IsPinned(7));
     }
 
+    [Fact]
+    public void RunOneIteration_FrameStartIsNeverBeforeLatestPublishTime()
+    {
+        var test = ConsumptionLoopTestContext.Create();
+
+        // First iteration: publish node 0 so _latest is set.
+        test.ClockState.NowNanoseconds = 50;
+        var node0 = test.CreatePublishedNode(tick: 0, publishTimeNanoseconds: 50);
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        // Second iteration: publish node 1 with PublishTimeNanoseconds = 200,
+        // but set the clock to 100 — simulating a race where the production
+        // thread published between the clock read and the volatile read of
+        // LatestNode.
+        test.ClockState.NowNanoseconds = 100;
+        var node1 = test.CreatePublishedNode(tick: 1, publishTimeNanoseconds: 200);
+        test.LinkNodes(node0, node1);
+
+        long capturedFrameStart = -1;
+        test.ConsumerState.BeforeConsume = (_, latest, frameStart) =>
+            capturedFrameStart = frameStart;
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        Assert.True(
+            capturedFrameStart >= node1.PublishTimeNanoseconds,
+            $"frameStart ({capturedFrameStart}) must be >= latest.PublishTimeNanoseconds ({node1.PublishTimeNanoseconds}). " +
+            "A negative elapsed time would corrupt interpolation.");
+    }
+
     private static TimeSpan GetRenderInterval() =>
         TimeSpan.FromTicks(SimulationConstants.RenderIntervalNanoseconds / 100);
 
@@ -551,11 +581,12 @@ public sealed class ConsumptionLoopTests
 
         public TestWaiterState WaiterState { get; }
 
-        public ChainNode CreatePublishedNode(int tick)
+        public ChainNode CreatePublishedNode(int tick, long publishTimeNanoseconds = 0)
         {
             var image = _imagePool.Rent();
             var node = _chainAccessor.CreateNode(tick);
             _chainAccessor.SetPayload(node, image);
+            _chainAccessor.MarkPublished(node, publishTimeNanoseconds);
             this.Shared.LatestNode = node;
             return node;
         }
