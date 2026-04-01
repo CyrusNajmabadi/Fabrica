@@ -194,6 +194,13 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
 
         _productionLoop.Shutdown();
         _consumptionLoop.Shutdown();
+
+        if (productionException is not null && consumptionException is not null)
+            throw new AggregateException(productionException, consumptionException);
+        if (productionException is not null)
+            throw productionException;
+        if (consumptionException is not null)
+            throw consumptionException;
     }
 }
 
