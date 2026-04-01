@@ -581,7 +581,10 @@ public sealed class ConsumptionLoopTests
 
         public TestWaiterState WaiterState { get; }
 
-        public ChainNode CreatePublishedNode(int tick, long publishTimeNanoseconds = 0)
+        public ChainNode CreatePublishedNode(int tick) =>
+            this.CreatePublishedNode(tick, publishTimeNanoseconds: 0);
+
+        public ChainNode CreatePublishedNode(int tick, long publishTimeNanoseconds)
         {
             var image = _imagePool.Rent();
             var node = _chainAccessor.CreateNode(tick);
