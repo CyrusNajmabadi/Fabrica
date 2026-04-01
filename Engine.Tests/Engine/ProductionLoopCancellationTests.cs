@@ -42,7 +42,8 @@ public sealed class ProductionLoopCancellationTests
         long lastTime = 0;
         var accumulator = SimulationConstants.TickDurationNanoseconds * TicksQueued;
 
-        accessor.RunOneIteration(cts.Token, ref lastTime, ref accumulator);
+        Assert.Throws<OperationCanceledException>(
+            () => accessor.RunOneIteration(cts.Token, ref lastTime, ref accumulator));
 
         Assert.True(
             producerState.TickCount <= CancelAfterTick + 1,
@@ -88,6 +89,5 @@ public sealed class ProductionLoopCancellationTests
         }
 
         public readonly void ReleaseResources(WorldImage payload) { }
-        public readonly void Shutdown() { }
     }
 }
