@@ -1,25 +1,23 @@
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
-using Fabrica.Tests.Helpers;
+using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Tests.World;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
 
 /// <summary>
-/// Tests for <see cref="ChainNode"/> mechanics, exercised through <see cref="BaseProductionLoop{WorldImage}.ChainTestAccessor"/>
+/// Tests for <see cref="ChainNode"/> mechanics, exercised through <see cref="BaseProductionLoop{TestPayload}.ChainTestAccessor"/>
 /// .
 /// </summary>
 public sealed class ChainNodeTests
 {
     private readonly TestChainHarness _harness = new();
-    private BaseProductionLoop<WorldImage>.ChainTestAccessor Accessor => _harness.GetChainTestAccessor();
+    private BaseProductionLoop<TestPayload>.ChainTestAccessor Accessor => _harness.GetChainTestAccessor();
 
-    private ChainNode CreateNode(int sequenceNumber, WorldImage? payload = null)
+    private ChainNode CreateNode(int sequenceNumber, TestPayload? payload = null)
     {
         var node = this.Accessor.CreateNode(sequenceNumber);
-        this.Accessor.SetPayload(node, payload ?? new WorldImage());
+        this.Accessor.SetPayload(node, payload ?? new TestPayload());
         return node;
     }
 
@@ -76,7 +74,7 @@ public sealed class ChainNodeTests
         this.Accessor.Release(node);
 
         var node2 = this.Accessor.CreateNode(1);
-        this.Accessor.SetPayload(node2, new WorldImage());
+        this.Accessor.SetPayload(node2, new TestPayload());
 
         Assert.Equal(0, node2.PublishTimeNanoseconds);
     }

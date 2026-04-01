@@ -9,6 +9,7 @@
 
 	<ItemGroup>
 		<InternalsVisibleTo Include="Fabrica.Engine" />
-		<InternalsVisibleTo Include="Fabrica.Tests" />
+		<InternalsVisibleTo Include="Fabrica.Pipeline.Tests" />
+		<InternalsVisibleTo Include="Fabrica.Engine.Tests" />
 	</ItemGroup>
 </Project>

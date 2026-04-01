@@ -1,11 +1,10 @@
-using Fabrica.Engine;
 using Fabrica.Engine.Rendering;
 using Fabrica.Engine.World;
 using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
 using Fabrica.Pipeline.Threading;
 
-namespace Fabrica.Tests.Helpers;
+namespace Fabrica.Engine.Tests.Helpers;
 
 using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
 using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;

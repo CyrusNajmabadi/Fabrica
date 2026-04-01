@@ -11,10 +11,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<InternalsVisibleTo Include="Fabrica.Tests" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<ProjectReference Include="..\Fabrica.Engine\Fabrica.Engine.csproj" />
 	</ItemGroup>
 </Project>

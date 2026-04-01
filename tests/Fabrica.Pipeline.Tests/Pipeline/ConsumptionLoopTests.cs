@@ -1,15 +1,12 @@
-using Fabrica.Engine;
-using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 using Fabrica.Pipeline.Memory;
+using Fabrica.Pipeline.Tests.Helpers;
 using Fabrica.Pipeline.Threading;
-using Fabrica.Tests.Helpers;
 using Xunit;
 
-namespace Fabrica.Tests.Engine;
+namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
+using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
+using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class ConsumptionLoopTests
 {
@@ -73,7 +70,7 @@ public sealed class ConsumptionLoopTests
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Equal(
-            [TimeSpan.FromTicks((SimulationConstants.RenderIntervalNanoseconds - 5_000_000) / 100)],
+            [TimeSpan.FromTicks((TestPipelineConfiguration.RenderIntervalNanoseconds - 5_000_000) / 100)],
             test.WaiterState.WaitCalls);
     }
 
@@ -87,7 +84,7 @@ public sealed class ConsumptionLoopTests
 
         test.CreatePublishedNode(tick: 5);
         test.ConsumerState.BeforeConsume =
-            (_, _, _) => test.ClockState.NowNanoseconds = SimulationConstants.RenderIntervalNanoseconds + 1;
+            (_, _, _) => test.ClockState.NowNanoseconds = TestPipelineConfiguration.RenderIntervalNanoseconds + 1;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -406,7 +403,7 @@ public sealed class ConsumptionLoopTests
     }
 
     private static TimeSpan GetRenderInterval() =>
-        TimeSpan.FromTicks(SimulationConstants.RenderIntervalNanoseconds / 100);
+        TimeSpan.FromTicks(TestPipelineConfiguration.RenderIntervalNanoseconds / 100);
 
     // ── Test doubles ────────────────────────────────────────────────────────
 
@@ -421,7 +418,7 @@ public sealed class ConsumptionLoopTests
     private sealed class TestDeferredConsumer(
         TestDeferredConsumerState state,
         long initialDelayNanoseconds = 0L,
-        long errorRetryDelayNanoseconds = 1_000_000_000L) : IDeferredConsumer<WorldImage>
+        long errorRetryDelayNanoseconds = 1_000_000_000L) : IDeferredConsumer<TestPayload>
     {
         private readonly TestDeferredConsumerState _state = state;
 
@@ -429,7 +426,7 @@ public sealed class ConsumptionLoopTests
 
         public long ErrorRetryDelayNanoseconds { get; } = errorRetryDelayNanoseconds;
 
-        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken)
+        public Task<long> ConsumeAsync(TestPayload payload, CancellationToken cancellationToken)
         {
             _state._callCount++;
 
@@ -452,7 +449,7 @@ public sealed class ConsumptionLoopTests
         public Exception? ExceptionToThrow { get; set; }
     }
 
-    private readonly struct TestRecordingConsumer(TestConsumerState state) : IConsumer<WorldImage>
+    private readonly struct TestRecordingConsumer(TestConsumerState state) : IConsumer<TestPayload>
     {
         private readonly TestConsumerState _state = state;
 
@@ -473,7 +470,7 @@ public sealed class ConsumptionLoopTests
     private static class ConsumptionLoopTestContext
     {
         public static ConsumptionLoopTestContext<TestRecordingClock, TestRecordingWaiter> Create(
-            IDeferredConsumer<WorldImage>[]? deferredConsumers = null)
+            IDeferredConsumer<TestPayload>[]? deferredConsumers = null)
         {
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
@@ -494,7 +491,7 @@ public sealed class ConsumptionLoopTests
             TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState,
-            IDeferredConsumer<WorldImage>[]? deferredConsumers = null,
+            IDeferredConsumer<TestPayload>[]? deferredConsumers = null,
             int poolSize = 8)
             where TClock : struct, IClock
             where TWaiter : struct, IWaiter =>
@@ -513,8 +510,8 @@ public sealed class ConsumptionLoopTests
         where TWaiter : struct, IWaiter
     {
         private readonly TestChainHarness _harness;
-        private readonly ObjectPool<WorldImage, WorldImage.Allocator> _imagePool;
-        private readonly BaseProductionLoop<WorldImage>.ChainTestAccessor _chainAccessor;
+        private readonly ObjectPool<TestPayload, TestPayload.Allocator> _imagePool;
+        private readonly BaseProductionLoop<TestPayload>.ChainTestAccessor _chainAccessor;
 
         public static ConsumptionLoopTestContext<TClock, TWaiter> Create(
             TClock clock,
@@ -522,14 +519,14 @@ public sealed class ConsumptionLoopTests
             TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState,
-            IDeferredConsumer<WorldImage>[]? deferredConsumers = null,
+            IDeferredConsumer<TestPayload>[]? deferredConsumers = null,
             int poolSize = 8)
         {
             var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(poolSize);
-            var shared = new SharedPipelineState<WorldImage>();
+            var imagePool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
+            var shared = new SharedPipelineState<TestPayload>();
             var consumer = new TestRecordingConsumer(consumerState);
-            var loop = new ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter>(
+            var loop = new ConsumptionLoop<TestPayload, TestRecordingConsumer, TClock, TWaiter>(
                 shared,
                 consumer,
                 clock,
@@ -549,9 +546,9 @@ public sealed class ConsumptionLoopTests
 
         private ConsumptionLoopTestContext(
             TestChainHarness harness,
-            ObjectPool<WorldImage, WorldImage.Allocator> imagePool,
-            SharedPipelineState<WorldImage> shared,
-            ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> loop,
+            ObjectPool<TestPayload, TestPayload.Allocator> imagePool,
+            SharedPipelineState<TestPayload> shared,
+            ConsumptionLoop<TestPayload, TestRecordingConsumer, TClock, TWaiter> loop,
             TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState)
@@ -569,11 +566,11 @@ public sealed class ConsumptionLoopTests
 
         public PinnedVersions PinnedVersions => this.Shared.PinnedVersions;
 
-        public SharedPipelineState<WorldImage> Shared { get; }
+        public SharedPipelineState<TestPayload> Shared { get; }
 
-        public ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter> Loop { get; }
+        public ConsumptionLoop<TestPayload, TestRecordingConsumer, TClock, TWaiter> Loop { get; }
 
-        public ConsumptionLoop<WorldImage, TestRecordingConsumer, TClock, TWaiter>.TestAccessor Accessor { get; }
+        public ConsumptionLoop<TestPayload, TestRecordingConsumer, TClock, TWaiter>.TestAccessor Accessor { get; }
 
         public TestConsumerState ConsumerState { get; }
 
