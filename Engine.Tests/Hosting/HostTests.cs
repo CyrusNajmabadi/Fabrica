@@ -110,7 +110,6 @@ public sealed class HostTests
         public readonly void ReleaseResources(WorldImage payload) { }
     }
 
-
     private readonly struct TestNoOpConsumer : IConsumer<WorldImage>
     {
         public readonly void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken) { }
