@@ -6,23 +6,35 @@ namespace Engine.Pipeline;
 /// All mutable state shared across the production and consumption threads.
 /// Each member documents which thread(s) may write and which may read.
 ///
-/// VOLATILE MEMORY MODEL
-///   A volatile write is a release fence: all writes by the writing thread
-///   that precede it are guaranteed visible to any thread that subsequently
-///   performs the matching volatile read (an acquire fence).
+/// MEMORY MODEL
+///   Both cross-thread fields use <see cref="Volatile.Read"/> /
+///   <see cref="Volatile.Write"/> to make the acquire/release fences explicit
+///   at each access site rather than implicit on the field declaration.
 ///
-///   Concretely for LatestNode: the production thread fully initialises
-///   the node's payload, then volatile-writes LatestNode.  The consumption
-///   thread volatile-reads LatestNode, then reads payload fields.
-///   The release/acquire pair ensures all payload writes are visible — no
-///   additional synchronisation is needed to read payload data.
+///   A Volatile.Write is a release fence: all prior writes by the writing
+///   thread are guaranteed visible to any thread that subsequently performs
+///   the matching Volatile.Read (an acquire fence).
 ///
-/// CONSERVATIVE RACE DIRECTIONS
-///   LatestNode: if the consumption thread reads a slightly stale pointer
-///   it merely consumes the same node twice — correct, not stale data.
+///   Concretely for LatestNode: the production thread fully initialises the
+///   node's payload, then Volatile.Writes LatestNode.  The consumption thread
+///   Volatile.Reads LatestNode, then reads payload fields.  The release/acquire
+///   pair ensures all payload writes are visible — no additional synchronisation
+///   is needed.
 ///
-///   ConsumptionEpoch: if the production loop reads a slightly stale (lower)
-///   epoch it retains a node one extra cleanup pass — never frees prematurely.
+/// CROSS-FIELD INDEPENDENCE
+///   The two fields form a feedback loop (producer publishes nodes, consumer
+///   advances the epoch to allow reclamation) but do NOT require atomic
+///   cross-field reads.  Staleness in either direction is conservative:
+///
+///   LatestNode: a stale read means the consumer re-processes the same node
+///   — correct, just redundant.
+///
+///   ConsumptionEpoch: a stale (lower) read means the producer retains a
+///   node one extra cleanup pass — never frees prematurely.
+///
+///   Because each field's correctness is independent of reading the other
+///   field's latest value in the same operation, no lock or combined atomic
+///   is needed.
 ///
 /// PinnedVersions
 ///   Thread-safe registry of snapshot sequences that deferred consumers are
@@ -45,9 +57,9 @@ internal sealed class SharedPipelineState<TPayload>
     public PinnedVersions PinnedVersions { get; } = new();
 
     // ── LatestNode ───────────────────────────────────────────────────────────
-    // Written by production thread only.  Read by consumption thread.
+    // Written by production thread only (release).  Read by consumption thread (acquire).
 
-    private volatile BaseProductionLoop<TPayload>.ChainNode? _latestNode;
+    private BaseProductionLoop<TPayload>.ChainNode? _latestNode;
 
 #if DEBUG
     private int _latestNodeWriterThreadId = -1;
@@ -55,22 +67,22 @@ internal sealed class SharedPipelineState<TPayload>
 
     public BaseProductionLoop<TPayload>.ChainNode? LatestNode
     {
-        get => _latestNode;
+        get => Volatile.Read(ref _latestNode);
         set
         {
 #if DEBUG
             AssertSingleWriter(ref _latestNodeWriterThreadId, nameof(this.LatestNode));
 #endif
-            _latestNode = value;
+            Volatile.Write(ref _latestNode, value);
         }
     }
 
     // ── ConsumptionEpoch ──────────────────────────────────────────────────────
-    // Written by consumption thread only.  Read by production thread.
+    // Written by consumption thread only (release).  Read by production thread (acquire).
     // Production may free any node whose sequence < ConsumptionEpoch.
     // Initial value 0: nothing eligible for freeing until consumption has processed something.
 
-    private volatile int _consumptionEpoch;
+    private int _consumptionEpoch;
 
 #if DEBUG
     private int _consumptionEpochWriterThreadId = -1;
@@ -78,13 +90,13 @@ internal sealed class SharedPipelineState<TPayload>
 
     public int ConsumptionEpoch
     {
-        get => _consumptionEpoch;
+        get => Volatile.Read(ref _consumptionEpoch);
         set
         {
 #if DEBUG
             AssertSingleWriter(ref _consumptionEpochWriterThreadId, nameof(this.ConsumptionEpoch));
 #endif
-            _consumptionEpoch = value;
+            Volatile.Write(ref _consumptionEpoch, value);
         }
     }
 
