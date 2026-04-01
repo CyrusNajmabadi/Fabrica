@@ -9,8 +9,9 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
     /// THREADING MODEL
     ///   Each worker runs a dedicated background thread in a park/signal loop:
     ///
-    ///     1. Thread parks on its go signal (<see cref="AutoResetEvent"/>),
-    ///        consuming no CPU while idle.
+    ///     1. Thread parks on its go signal (<see cref="AutoResetEvent"/>)
+    ///        or the cancellation token's wait handle — whichever fires first.
+    ///        If the token fires, the worker exits immediately.
     ///     2. The coordinator sets up input data (<see cref="State"/>,
     ///        <see cref="CancellationToken"/>), prepares the executor via
     ///        <see cref="IThreadExecutor{TState}.Prepare"/>, and calls
@@ -97,11 +98,11 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
 
             while (true)
             {
-                _goSignal.WaitOne();
+                WaitHandle.WaitAny([_goSignal, _cancellationToken.WaitHandle]);
 
                 try
                 {
-                    if (_shutdown)
+                    if (_shutdown || _cancellationToken.IsCancellationRequested)
                         return;
 
                     _executor.Execute(in _state, _cancellationToken);
@@ -142,10 +143,7 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
         public void Join() =>
             _thread.Join();
 
-        /// <summary>
-        /// Blocks until the worker thread has exited or the timeout elapses.
-        /// </summary>
-        public bool Join(int millisecondsTimeout) =>
+        internal bool Join(int millisecondsTimeout) =>
             _thread.Join(millisecondsTimeout);
     }
 }

@@ -84,21 +84,6 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
         _doneBatch.WaitAll();
     }
 
-    /// <summary>
-    /// Waits for all worker threads to exit within the given timeout.
-    /// Returns true if all threads exited, false if the timeout elapsed.
-    /// </summary>
-    public bool Join(int millisecondsTimeout)
-    {
-        foreach (var worker in _workers)
-        {
-            if (!worker.Join(millisecondsTimeout))
-                return false;
-        }
-
-        return true;
-    }
-
     public void Shutdown()
     {
         foreach (var worker in _workers)

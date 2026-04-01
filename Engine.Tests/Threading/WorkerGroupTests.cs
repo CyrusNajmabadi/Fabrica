@@ -83,7 +83,7 @@ public sealed class WorkerGroupTests
 
         // Workers should self-terminate because cancellation wakes them.
         // Without the fix, they're parked on WaitOne and never wake.
-        var allExited = group.Join(TimeoutMilliseconds);
+        var allExited = group.GetTestAccessor().Join(TimeoutMilliseconds);
 
         Assert.True(allExited, "Worker threads did not exit after cancellation — they are stuck on WaitOne.");
     }
