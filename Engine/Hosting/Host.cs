@@ -149,71 +149,56 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
     private readonly ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter> _consumptionLoop = consumptionLoop;
 
     /// <summary>
-    /// Starts both loops on dedicated threads and blocks until both exit. Exceptions from either loop are captured and re-thrown
-    /// after both threads have joined. A linked <see cref="CancellationTokenSource"/> ensures a fault in one loop cancels the
-    /// other so it can exit promptly.
+    /// Starts both loops on dedicated threads and returns a task that completes when both exit. Each thread's outcome is tracked
+    /// by a <see cref="TaskCompletionSource"/> so that <see cref="Task.WhenAll"/> provides automatic join and exception
+    /// aggregation. A linked <see cref="CancellationTokenSource"/> ensures a fault in one loop cancels the other so it can exit
+    /// promptly.
+    ///
+    /// Dedicated <see cref="Thread"/> objects are still used for execution (control over naming, <see cref="Thread.IsBackground"/>,
+    /// and stack size), with <see cref="TaskCompletionSource"/> layered on top purely for lifecycle and error tracking.
     /// </summary>
-    public void Run(CancellationToken cancellationToken)
+    public async Task RunAsync(CancellationToken cancellationToken)
     {
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var linkedCancellationToken = linkedCancellationTokenSource.Token;
 
-        Exception? productionException = null;
-        Exception? consumptionException = null;
+        var productionTask = StartLoopTask(_productionLoop.Run, "Production");
+        var consumptionTask = StartLoopTask(_consumptionLoop.Run, "Consumption");
 
-        // Capturing lambdas — allocated once per Host.Run call, not on a hot path.
-        var productionThread = new Thread(() =>
+        await Task.WhenAll(productionTask, consumptionTask).ConfigureAwait(false);
+        return;
+
+        Task StartLoopTask(Action<CancellationToken> loopAction, string name)
         {
-            try
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // Capturing lambda — allocated once per thread, not on a hot path.
+            var thread = new Thread(() =>
             {
-                _productionLoop.Run(linkedCancellationToken);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
+                try
+                {
+                    loopAction(linkedCancellationToken);
+                    completion.SetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    completion.SetCanceled(linkedCancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // Signal the other loop to exit so it doesn't continue running after this one has faulted.
+                    linkedCancellationTokenSource.Cancel();
+                    completion.SetException(ex);
+                }
+            })
             {
-                productionException = ex;
-                linkedCancellationTokenSource.Cancel();
-            }
-        })
-        {
-            Name = "Production",
-            IsBackground = false,
-        };
+                Name = name,
+                IsBackground = false,
+            };
 
-        var consumptionThread = new Thread(() =>
-        {
-            try
-            {
-                _consumptionLoop.Run(linkedCancellationToken);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                consumptionException = ex;
-                linkedCancellationTokenSource.Cancel();
-            }
-        })
-        {
-            Name = "Consumption",
-            IsBackground = false,
-        };
-
-        productionThread.Start();
-        consumptionThread.Start();
-
-        productionThread.Join();
-        consumptionThread.Join();
-
-        var exception = (productionException, consumptionException) switch
-        {
-            (not null, not null) => new AggregateException(productionException, consumptionException),
-            (not null, null) => productionException,
-            (null, not null) => consumptionException,
-            _ => null,
-        };
-
-        if (exception is not null)
-            throw exception;
+            thread.Start();
+            return completion.Task;
+        }
     }
 }
 
