@@ -16,6 +16,7 @@ internal sealed class ConsoleSaveConsumer(long intervalNanoseconds) : IDeferredC
 
     public long ErrorRetryDelayNanoseconds => intervalNanoseconds;
 
+    // Capturing lambda — allocated once per save cycle (seconds-scale interval), not on a hot path.
     public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken) =>
         Task.Run(() =>
         {
