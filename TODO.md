@@ -55,13 +55,10 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Engine / Architecture — Determinism & Safety
 
-- [ ] **Formalize the memory model contract** — document the happens-before relationship between writer-thread field
-  writes and the volatile chain publish. Consider `Volatile.Read/Write` or `Interlocked.Exchange` for auditability over
-  raw `volatile` fields
-- [ ] **Determinism checklist** — fixed `dt`, ordered inputs, no float nondeterminism unless audited. Parallel workers
-  inside a sim tick must join in deterministic order for reproducibility
-- [ ] **Core pinning overlap** — both sim and render worker groups pin starting from core 0; potential contention if
-  running simultaneously. Consider offset allocation
+- [ ] **Unified thread pool with dynamic sim/render allocation** — both sim and render worker groups currently create
+  independent pools pinned from core 0, wasting cores when one side is idle. Replace with a single pool of N threads
+  (one per core) that dynamically partitions between simulation and rendering based on measured load. Full design
+  investigation and options analysis in [`docs/unified-thread-pool.md`](docs/unified-thread-pool.md)
 
 ## Documentation
 
@@ -76,6 +73,10 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Engine / Architecture
 
+- [x] Formalize the memory model contract — replaced `volatile` fields with `Volatile.Read/Write` in
+  `SharedPipelineState`; documented cross-field independence invariant (PR #58)
+- [x] Determinism checklist — documented constraints on `SimulationConstants`, `SimulationExecutor` (independent
+  partitions vs deterministic merge), and `IProducer.Produce` (canonical input ordering) (PR #59)
 - [x] ThreadWorker deadlock — wrapped execute path in `try/finally { _doneSignal.Set(); }`; workers now
   cancellation-aware via `WaitHandle.WaitAny` (PRs #45, #54)
 - [x] `frameStart` sampling order — clamped `frameStart = Math.Max(frameStart, latestNode.PublishTimeNanoseconds)` to
