@@ -68,6 +68,8 @@ internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaite
     {
         while (accumulator >= SimulationConstants.TickDurationNanoseconds)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             this.ApplyPressureDelay(cancellationToken);
             this.Tick(cancellationToken);
             this.CleanupStaleNodes(_shared.ConsumptionEpoch);
