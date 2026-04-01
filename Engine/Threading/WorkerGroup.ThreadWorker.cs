@@ -17,10 +17,14 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
     ///        <see cref="Signal"/>.
     ///     3. The worker wakes (go signal auto-resets), calls
     ///        <see cref="IThreadExecutor{TState}.Execute"/> on its executor,
-    ///        then sets its done signal.
+    ///        then sets its done signal.  The done signal is set in a finally
+    ///        block so that cancellation or executor exceptions never leave the
+    ///        coordinator's <see cref="WaitHandle.WaitAll"/> blocked.
+    ///        On success the worker loops back to step 1.  On cancellation or
+    ///        exception the worker exits its loop permanently — a faulted
+    ///        worker must not silently accept further dispatches.
     ///     4. The coordinator waits on all done signals via
     ///        <see cref="WorkerGroup{TState,TExecutor}.WaitHandleBatch"/>.
-    ///     5. The worker loops back to step 1.
     ///
     ///   Both signals are <see cref="AutoResetEvent"/>: the go signal auto-resets
     ///   when the worker wakes, and the done signals auto-reset when the
@@ -94,12 +98,24 @@ internal sealed partial class WorkerGroup<TState, TExecutor>
             while (true)
             {
                 _goSignal.WaitOne();
-                if (_shutdown || _cancellationToken.IsCancellationRequested)
+
+                try
+                {
+                    if (_shutdown)
+                        return;
+
+                    _executor.Execute(in _state, _cancellationToken);
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception)
+                {
+                    // TODO: store in a field and have Dispatch throw AggregateException.
                     return;
-
-                _executor.Execute(in _state, _cancellationToken);
-
-                _doneSignal.Set();
+                }
+                finally
+                {
+                    _doneSignal.Set();
+                }
             }
         }
 
