@@ -11,6 +11,12 @@ namespace Engine.Pipeline;
 ///
 /// The derived <see cref="ProductionLoop{TPayload,TProducer,TClock,TWaiter}"/> adds the tick loop, backpressure, and
 /// domain-specific producer/consumer coordination. It calls the protected chain helpers defined here.
+///
+/// THREADING
+///   All mutable state in this class (_currentSequence, _currentNode, _oldestNode, _pinnedQueue, _drainBuffer) is owned
+///   exclusively by the production thread. No other thread reads or writes these fields. The only cross-thread interaction is
+///   through <see cref="PinnedVersions"/> (whose IsPinned read is lock-free — see its doc) and the
+///   <see cref="SharedPipelineState{TPayload}.ConsumptionEpoch"/> value passed in by the caller.
 /// </summary>
 internal abstract partial class BaseProductionLoop<TPayload>(
     ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
@@ -114,16 +120,19 @@ internal abstract partial class BaseProductionLoop<TPayload>(
         if (_pinnedQueue.Count == 0)
             return;
 
-        _drainBuffer.Clear();
         foreach (var node in _pinnedQueue)
         {
-            if (_pinnedVersions.IsPinned(node.SequenceNumber))
-                continue;
-            this.FreeNode(node);
-            _drainBuffer.Add(node);
+            if (!_pinnedVersions.IsPinned(node.SequenceNumber))
+                _drainBuffer.Add(node);
         }
 
-        _pinnedQueue.ExceptWith(_drainBuffer);
+        foreach (var node in _drainBuffer)
+            _pinnedQueue.Remove(node);
+
+        foreach (var node in _drainBuffer)
+            this.FreeNode(node);
+
+        _drainBuffer.Clear();
     }
 
     private void FreeNode(ChainNode node)

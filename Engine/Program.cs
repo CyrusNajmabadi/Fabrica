@@ -4,6 +4,7 @@ using Engine.Hosting.ConsoleHost;
 using Engine.Threading;
 
 using var cancellationSource = new CancellationTokenSource();
+// Capturing lambda — allocated once at startup, not on a hot path.
 Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellationSource.Cancel(); };
 
 // Both simulation and render worker groups get access to all cores. When one group is idle (e.g. simulation is throttled by

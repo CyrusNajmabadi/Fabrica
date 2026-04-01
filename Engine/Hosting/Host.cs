@@ -161,6 +161,7 @@ internal sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
         Exception? productionException = null;
         Exception? consumptionException = null;
 
+        // Capturing lambdas — allocated once per Host.Run call, not on a hot path.
         var productionThread = new Thread(() =>
         {
             try

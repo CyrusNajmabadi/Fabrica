@@ -3,13 +3,17 @@ description: Lambda and delegate allocation rules for hot paths
 alwaysApply: true
 ---
 
-# Lambda and Delegate Allocations
+# Allocations on Hot Paths
+
+## Lambda / Delegate Allocations
 
 Lambdas that capture `this` or local variables allocate a delegate object on every invocation. This is unacceptable on hot paths (per-tick, per-frame).
-
-## Rules
 
 - **Hot paths** (per-tick production loop, per-frame consumption loop, worker dispatch): lambdas must be `static`. If a lambda needs instance data, refactor to a regular method or a manual loop instead.
 - **One-time startup** (thread creation in `Host.Run`, event subscriptions in `Program.cs`): non-static capturing lambdas are acceptable. Add a comment noting it's a one-time cost if the allocation isn't obvious from context.
 - **Rare paths** (deferred consumer Pin/Unpin, test setup): non-static lambdas are tolerable, but prefer `static` when the lambda doesn't actually need captures.
 - **General preference**: when in doubt, mark lambdas `static`. The compiler will error if it actually captures, which is a useful guard against accidental allocations.
+
+## IEnumerable / Interface Conversions
+
+Passing a concrete collection (e.g. `List<T>`) to a method that accepts `IEnumerable<T>` can cause a boxing allocation when the runtime enumerates via the interface. On hot paths, iterate manually with a `for` loop or `foreach` over the concrete type instead of passing to LINQ or `IEnumerable`-accepting APIs. If a hot-path method *must* accept an interface, document why the allocation is acceptable.
