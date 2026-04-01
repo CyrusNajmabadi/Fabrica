@@ -22,6 +22,7 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Engine / Architecture — Features
 
+- [ ] **Consider `Task`/`TaskCompletionSource` for loop thread management** — `Host.Run` currently tracks exceptions manually with `Exception?` locals and re-throws after `Thread.Join`. Wrapping each thread in a `TaskCompletionSource` would let us use `Task.WhenAll`, automatic exception propagation via `AggregateException`, and standard `async` composition. We should still use dedicated `Thread` objects for the actual loop execution (control over naming, background flag, stack size), but layer the `Task` abstraction on top for lifecycle/error tracking
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput (struct exists as placeholder)
 - [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationExecutor.Execute()` (generic `ThreadWorker`/`WorkerGroup` infrastructure and dispatch cycle are in place)
 - [ ] Multi-threaded rendering — wire real per-worker render computation into `RenderExecutor.Execute()` (`RenderCoordinator`/`WorkerGroup` infrastructure is in place; consumption loop dispatches through it when provided)
