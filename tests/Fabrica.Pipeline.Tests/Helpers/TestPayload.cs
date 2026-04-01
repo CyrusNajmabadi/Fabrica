@@ -8,7 +8,7 @@ namespace Fabrica.Pipeline.Tests.Helpers;
 /// </summary>
 internal sealed class TestPayload
 {
-    public struct Allocator : IAllocator<TestPayload>
+    public readonly struct Allocator : IAllocator<TestPayload>
     {
         public readonly TestPayload Allocate() => new();
 

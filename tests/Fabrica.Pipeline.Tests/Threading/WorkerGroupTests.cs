@@ -89,7 +89,7 @@ public sealed class WorkerGroupTests
 
     // ── Test executors ────────────────────────────────────────────────────
 
-    private struct EmptyState;
+    private readonly struct EmptyState;
 
     private readonly struct NoOpExecutor : IThreadExecutor<EmptyState>
     {

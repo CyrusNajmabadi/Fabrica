@@ -33,7 +33,7 @@ internal sealed class WorldImage
     /// Allocator for <see cref="WorldImage"/> instances managed by an <see cref="ObjectPool{T, TAllocator}"/>. Calls
     /// <see cref="ResetForPool"/> on return so pooled instances always start with a clean slate.
     /// </summary>
-    public struct Allocator : IAllocator<WorldImage>
+    public readonly struct Allocator : IAllocator<WorldImage>
     {
         public readonly WorldImage Allocate() => new();
 
