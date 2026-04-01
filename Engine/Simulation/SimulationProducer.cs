@@ -30,4 +30,7 @@ internal readonly struct SimulationProducer(ObjectPool<WorldImage, WorldImage.Al
 
     public void ReleaseResources(WorldImage payload) =>
         _imagePool.Return(payload);
+
+    public readonly void Shutdown() =>
+        _coordinator.Shutdown();
 }

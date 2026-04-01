@@ -120,4 +120,7 @@ internal sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaite
         if (delay > 0)
             _waiter.Wait(new TimeSpan(delay / 100), cancellationToken);
     }
+
+    public void Shutdown() =>
+        _producer.Shutdown();
 }

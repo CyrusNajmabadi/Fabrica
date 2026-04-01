@@ -143,4 +143,7 @@ internal sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWait
         if (remaining > 0)
             _waiter.Wait(new TimeSpan(remaining / 100), cancellationToken);
     }
+
+    public void Shutdown() =>
+        _consumer.Shutdown();
 }
