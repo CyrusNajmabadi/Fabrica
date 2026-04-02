@@ -157,10 +157,18 @@ public sealed partial class ProducerConsumerQueue<T>
         }
     }
 
+    // ═══════════════════════════ POSITION ACCESSORS ═════════════════════════
+
+    /// <summary>Total items appended by the producer. Volatile read — safe from any thread.</summary>
+    public long ProducerPosition => Volatile.Read(ref _producerPosition);
+
+    /// <summary>Total items the consumer has advanced past. Volatile read — safe from any thread.</summary>
+    public long ConsumerPosition => Volatile.Read(ref _consumerPosition);
+
     // ═══════════════════════════ CONSUMER THREAD ═════════════════════════════
 
     /// <summary>
-    /// Returns a segment of all items published since the last <see cref="ConsumerRelease"/> call. Returns an empty segment when
+    /// Returns a segment of all items published since the last <see cref="ConsumerAdvance"/> call. Returns an empty segment when
     /// no new items are available.
     ///
     /// Internally performs a single volatile read of the producer position (acquire fence), ensuring all item data written before
@@ -179,19 +187,23 @@ public sealed partial class ProducerConsumerQueue<T>
             _consumerSlab = _consumerSlab.Next!;
 
         var offset = (int)(consumed - _consumerSlab.LogicalStartPosition);
-        return new Segment(_consumerSlab, offset, count, _slabLength);
+        return new Segment(_consumerSlab, offset, count, _slabLength, consumed);
     }
 
     /// <summary>
-    /// Signals that the consumer has finished processing the acquired segment. Advances the consumer position via a volatile write
-    /// (release fence), making the items eligible for cleanup by the producer.
+    /// Advances the consumer position by <paramref name="count"/> items via a volatile write (release fence), making those items
+    /// eligible for cleanup by the producer.
+    ///
+    /// The consumption loop typically advances by <c>segment.Count - 1</c>, holding back the last entry so it becomes the
+    /// "previous" entry on the next <see cref="ConsumerAcquire"/> call. This keeps the payload alive (not eligible for cleanup)
+    /// across frames for interpolation.
     /// </summary>
-    public void ConsumerRelease(in Segment segment)
+    public void ConsumerAdvance(long count)
     {
-        if (segment.IsEmpty)
+        if (count <= 0)
             return;
 
-        var newPosition = _consumerPosition + segment.Count;
+        var newPosition = _consumerPosition + count;
 
         while (_consumerSlab.LogicalStartPosition + _slabLength <= newPosition
                && _consumerSlab.Next is not null)

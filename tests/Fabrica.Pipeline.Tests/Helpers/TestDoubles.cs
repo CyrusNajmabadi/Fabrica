@@ -1,10 +1,8 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 
 namespace Fabrica.Pipeline.Tests.Helpers;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 /// <summary>
 /// Pipeline timing for tests — self-contained constants that mirror a typical simulation configuration without depending on
@@ -81,8 +79,7 @@ internal readonly struct TestNoOpWaiter : IWaiter
 internal readonly struct TestNoOpConsumer : IConsumer<TestPayload>
 {
     public void Consume(
-        ChainNode previous,
-        ChainNode latest,
+        in ProducerConsumerQueue<PipelineEntry<TestPayload>>.Segment entries,
         long frameStartNanoseconds,
         CancellationToken cancellationToken)
     { }
@@ -140,30 +137,8 @@ internal readonly struct TestWorkerConsumer(int workerCount) : IConsumer<TestPay
         workerCount, static _ => new SpinWorkExecutor(), "TestConsumerWorker");
 
     public void Consume(
-        ChainNode previous,
-        ChainNode latest,
+        in ProducerConsumerQueue<PipelineEntry<TestPayload>>.Segment entries,
         long frameStartNanoseconds,
         CancellationToken cancellationToken) =>
         _workerGroup.Dispatch(default, cancellationToken);
-}
-
-/// <summary>
-/// Minimal concrete subclass of <see cref="BaseProductionLoop{TPayload}"/> for tests that need to create and mutate chain
-/// nodes outside of a full production loop.
-/// </summary>
-internal sealed class TestChainHarness : BaseProductionLoop<TestPayload>
-{
-    public TestChainHarness(int poolSize = 16)
-        : base(new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize), new PinnedVersions())
-    {
-    }
-
-    public TestChainHarness(
-        ObjectPool<ChainNode, ChainNodeAllocator> nodePool,
-        PinnedVersions pinnedVersions)
-        : base(nodePool, pinnedVersions)
-    {
-    }
-
-    protected override void ReleasePayloadResources(TestPayload payload) { }
 }

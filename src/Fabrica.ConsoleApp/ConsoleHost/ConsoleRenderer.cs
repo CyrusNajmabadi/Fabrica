@@ -8,5 +8,5 @@ namespace Fabrica.ConsoleApp.ConsoleHost;
 internal readonly struct ConsoleRenderer : IRenderer
 {
     public void Render(in RenderFrame frame) =>
-        Console.WriteLine($"[Render] tick={frame.Latest.SequenceNumber} elapsed={frame.Interpolation.ElapsedNanoseconds}ns");
+        Console.WriteLine($"[Render] elapsed={frame.Interpolation.ElapsedNanoseconds}ns");
 }

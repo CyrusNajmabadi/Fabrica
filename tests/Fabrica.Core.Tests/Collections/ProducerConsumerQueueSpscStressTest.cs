@@ -44,7 +44,7 @@ public class ProducerConsumerQueueSpscStressTest
                     totalConsumed++;
                 }
 
-                queue.ConsumerRelease(in segment);
+                queue.ConsumerAdvance(segment.Count);
             }
 
             consumerDone.Set();

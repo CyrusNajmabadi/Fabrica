@@ -1,5 +1,4 @@
 using Fabrica.Engine.World;
-using Fabrica.Pipeline;
 
 namespace Fabrica.Engine.Rendering;
 
@@ -10,40 +9,27 @@ namespace Fabrica.Engine.Rendering;
 /// never need a parade of additional parameters.
 ///
 /// SNAPSHOT LIFETIME
-///   <see cref="Previous"/> and <see cref="Latest"/> are owned by the consumption loop, which manages the epoch to keep them
-///   alive for the duration of the Render call. Implementations MUST NOT store, cache, or pass these references beyond the return
-///   of <see cref="IRenderer.Render"/>. After the call returns the consumption loop may rotate or release them.
-///
-/// CHAIN ACCESS
-///   When the simulation publishes multiple ticks between render frames, <see cref="Previous"/> and <see cref="Latest"/> may be
-///   several ticks apart. The full forward-linked chain from Previous to Latest is guaranteed alive during the Render call. Use
-///   <see cref="Chain"/> to iterate every snapshot in the range — it returns a zero-allocation struct iterator that walks the
-///   internal forward pointers and stops at Latest, so the renderer never accidentally reads past the published frontier.
+///   <see cref="Previous"/> and <see cref="Latest"/> are valid only for the duration of the <see cref="IRenderer.Render"/> call.
+///   The consumption loop advances past earlier entries immediately after, so the production thread may clean up their payloads.
+///   Implementations MUST NOT store, cache, or pass these references beyond the return of <see cref="IRenderer.Render"/>.
 ///
 /// INTERPOLATION MODEL
-///   The consumption loop holds two distinct snapshot references and rotates them when the simulation publishes new data: the old
-///   Latest becomes Previous, and the new snapshot becomes Latest. Between rotations the pair is stable, giving the renderer two
-///   real simulation endpoints to blend between — no extrapolation needed.
+///   The consumption loop holds back one entry between frames so the renderer always has two distinct simulation states to
+///   interpolate between. <see cref="Previous"/> is the held-back entry from the prior frame; <see cref="Latest"/> is the most
+///   recently published entry. Between frames the pair is stable.
 ///
-///   <see cref="Interpolation"/> provides raw integral timing data so the renderer can compute a blend factor (typically elapsed
-///   / tickDuration, clamped to [0, 1]).
+///   <see cref="Interpolation"/> provides raw integral timing data so the renderer can compute a blend factor (typically
+///   elapsed / tickDuration, clamped to [0, 1], where 0 = Previous and 1 = Latest).
 ///
-///   INVARIANT: <see cref="Previous"/> is always a different object reference from <see cref="Latest"/>. The consumption loop
-///   waits until two distinct nodes exist before reporting to the consumer, so both are always non-null.
+///   INVARIANT: <see cref="Previous"/> and <see cref="Latest"/> are always two distinct simulation states. The consumption loop
+///   waits until at least two entries are available before calling Consume, so both are always valid.
 /// </summary>
 internal readonly struct RenderFrame
 {
-    public required BaseProductionLoop<WorldImage>.ChainNode Previous { get; init; }
-    public required BaseProductionLoop<WorldImage>.ChainNode Latest { get; init; }
+    public required WorldImage Previous { get; init; }
+    public required WorldImage Latest { get; init; }
     public required InterpolationClock Interpolation { get; init; }
     public required EngineStatus EngineStatus { get; init; }
-
-    /// <summary>
-    /// Returns a zero-allocation struct iterator over the snapshot chain from <see cref="Previous"/> through <see cref="Latest"/>
-    /// inclusive. Safely bounded — never reads past the published frontier.
-    /// </summary>
-    public BaseProductionLoop<WorldImage>.ChainNode.ChainSegment Chain =>
-        BaseProductionLoop<WorldImage>.ChainNode.Chain(this.Previous, this.Latest);
 }
 
 /// <summary>

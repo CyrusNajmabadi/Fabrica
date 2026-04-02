@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections;
 using Fabrica.Engine.World;
 using Fabrica.Pipeline;
 
@@ -7,7 +8,7 @@ namespace Fabrica.Engine.Rendering;
 /// Adapts the simulation-specific rendering/display logic to the generic <see cref="IConsumer{TPayload}"/> interface.
 ///
 /// Owns the <see cref="RenderCoordinator"/> that dispatches parallel render work. Builds a <see cref="RenderFrame"/> from the
-/// generic previous/latest pair and calls the domain renderer.
+/// segment's first (previous) and last (latest) entries and calls the domain renderer.
 /// </summary>
 internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) : IConsumer<WorldImage>
     where TRenderer : struct, IRenderer
@@ -18,15 +19,17 @@ internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) :
 #pragma warning restore IDE0044
 
     public void Consume(
-        BaseProductionLoop<WorldImage>.ChainNode previous,
-        BaseProductionLoop<WorldImage>.ChainNode latest,
+        in ProducerConsumerQueue<PipelineEntry<WorldImage>>.Segment entries,
         long frameStartNanoseconds,
         CancellationToken cancellationToken)
     {
+        var previous = entries[0L];
+        var latest = entries[^1];
+
         var frame = new RenderFrame
         {
-            Previous = previous,
-            Latest = latest,
+            Previous = previous.Payload,
+            Latest = latest.Payload,
             Interpolation = new InterpolationClock
             {
                 ElapsedNanoseconds = frameStartNanoseconds - latest.PublishTimeNanoseconds,

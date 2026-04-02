@@ -1,11 +1,9 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 /// <summary>
 /// Multi-phase behavioral tests that verify the backpressure feedback loop adapts dynamically to changing
@@ -185,15 +183,15 @@ public sealed class BackpressureAdaptationTests
         for (var i = 0; i < 200; i++)
         {
             test.StepProduction();
-            if (i % 4 == 0)
+            if (i % 10 == 0)
                 test.StepConsumption();
         }
 
-        var gapTicks = test.ProductionTick - test.ConsumptionEpoch;
-        var gapNanoseconds = gapTicks * TestPipelineConfiguration.TickDurationNanoseconds;
+        var gap = test.Shared.Queue.ProducerPosition - test.Shared.Queue.ConsumerPosition;
+        var gapNanoseconds = gap * TestPipelineConfiguration.TickDurationNanoseconds;
 
         Assert.True(gapNanoseconds < TestPipelineConfiguration.PressureHardCeilingNanoseconds,
-            $"Gap ({gapTicks} ticks = {gapNanoseconds / 1_000_000}ms) should stay below " +
+            $"Gap ({gap} entries = {gapNanoseconds / 1_000_000}ms) should stay below " +
             $"hard ceiling ({TestPipelineConfiguration.PressureHardCeilingNanoseconds / 1_000_000}ms).");
         Assert.True(test.TotalPressureDelays > 0,
             "Expected soft pressure delays to keep the gap bounded.");
@@ -226,8 +224,12 @@ public sealed class BackpressureAdaptationTests
             _consumptionAccessor = consumptionAccessor;
         }
 
-        public int ProductionTick => _productionAccessor.CurrentSequence;
-        public int ConsumptionEpoch => _shared.ConsumptionEpoch;
+        public SharedPipelineState<TestPayload> Shared => _shared;
+
+        public int ProductionTick => (int)(_shared.Queue.ProducerPosition - 1);
+
+        public int ConsumptionEpoch => (int)_shared.Queue.ConsumerPosition;
+
         public int TotalPressureDelays => _totalPressureDelays;
 
         public Action<TimeSpan>? OnWait
@@ -238,16 +240,16 @@ public sealed class BackpressureAdaptationTests
 
         public static BackpressureHarness Create()
         {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(512);
+            var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
             var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(512);
-            var shared = new SharedPipelineState<TestPayload>();
+            var shared = new SharedPipelineState<TestPayload>(queue);
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);
             var producer = new TestWorkerProducer(payloadPool, 1);
 
             var productionLoop = new ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestRecordingWaiter>(
-                nodePool, shared, producer, clock, new TestRecordingWaiter(waiterState), TestPipelineConfiguration.Default);
+                shared, producer, clock, new TestRecordingWaiter(waiterState), TestPipelineConfiguration.Default);
             var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
                 shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), [], TestPipelineConfiguration.Default);
 
@@ -282,8 +284,12 @@ public sealed class BackpressureAdaptationTests
         public void StepConsumption() =>
             _consumptionAccessor.RunOneIteration(CancellationToken.None);
 
-        public void AdvanceConsumptionEpochDirectly(int epoch) =>
-            _shared.ConsumptionEpoch = epoch;
+        public void AdvanceConsumptionEpochDirectly(int epoch)
+        {
+            var current = _shared.Queue.ConsumerPosition;
+            if (epoch > current)
+                _shared.Queue.ConsumerAdvance(epoch - current);
+        }
 
         public void ResetPressureCount() => _totalPressureDelays = 0;
 

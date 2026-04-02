@@ -11,6 +11,9 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
     /// Uses a min-heap (<see cref="PriorityQueue{TElement,TPriority}"/>) keyed by the next-run wall-clock timestamp. Each frame
     /// the consumption loop calls <see cref="MaybeRunConsumers"/>; a single O(1) peek determines whether any consumer is due —
     /// no virtual calls or iteration when nothing is scheduled.
+    ///
+    /// Pins queue positions (not ChainNode sequence numbers) via <see cref="PinnedVersions"/>. The production thread's cleanup
+    /// handler checks these pins to decide whether to release or stash each payload.
     /// </summary>
     private sealed class DeferredConsumerScheduler(
         PinnedVersions pinnedVersions,
@@ -19,7 +22,7 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
         private readonly PinnedVersions _pinnedVersions = pinnedVersions;
         private readonly IDeferredConsumer<TPayload>[] _consumers = consumers;
         private readonly Task<long>?[] _inFlightTasks = new Task<long>?[consumers.Length];
-        private readonly int[] _pinnedSequences = new int[consumers.Length];
+        private readonly long[] _pinnedPositions = new long[consumers.Length];
         private readonly PriorityQueue<int, long> _schedule = new(consumers.Length);
         private bool _initialized;
 
@@ -41,7 +44,7 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
                 if (task is null || !task.IsCompleted)
                     continue;
 
-                _pinnedVersions.Unpin(_pinnedSequences[i], _consumers[i]);
+                _pinnedVersions.Unpin(_pinnedPositions[i], _consumers[i]);
                 _inFlightTasks[i] = null;
 
                 if (task.IsFaulted)
@@ -59,7 +62,8 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
         }
 
         public void MaybeRunConsumers(
-            BaseProductionLoop<TPayload>.ChainNode latest,
+            in PipelineEntry<TPayload> latestEntry,
+            long latestPosition,
             long frameStartNanoseconds,
             CancellationToken cancellationToken)
         {
@@ -74,18 +78,17 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
                     _inFlightTasks[consumerIndex] is null,
                     $"Deferred consumer {consumerIndex} is scheduled to run but already has an in-flight task.");
 
-                var sequenceNumber = latest.SequenceNumber;
-                _pinnedVersions.Pin(sequenceNumber, _consumers[consumerIndex]);
-                _pinnedSequences[consumerIndex] = sequenceNumber;
+                _pinnedVersions.Pin(latestPosition, _consumers[consumerIndex]);
+                _pinnedPositions[consumerIndex] = latestPosition;
 
                 try
                 {
                     _inFlightTasks[consumerIndex] = _consumers[consumerIndex]
-                        .ConsumeAsync(latest.Payload, cancellationToken);
+                        .ConsumeAsync(latestEntry.Payload, cancellationToken);
                 }
                 catch
                 {
-                    _pinnedVersions.Unpin(sequenceNumber, _consumers[consumerIndex]);
+                    _pinnedVersions.Unpin(latestPosition, _consumers[consumerIndex]);
                     _schedule.Enqueue(consumerIndex, frameStartNanoseconds + _consumers[consumerIndex].ErrorRetryDelayNanoseconds);
                     throw;
                 }

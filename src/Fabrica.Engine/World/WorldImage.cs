@@ -6,10 +6,10 @@ namespace Fabrica.Engine.World;
 /// The raw world state for one simulation tick.
 ///
 /// OWNERSHIP AND THREAD VISIBILITY
-///   WorldImage instances are owned by the simulation thread via the image pool. The simulation writes all fields, then
-///   volatile-writes the containing ChainNode to SharedPipelineState.LatestNode (a release fence). The consumption thread
-///   volatile-reads LatestNode (an acquire fence) and then reads image fields — the release/acquire pair guarantees all
-///   simulation writes are visible without any further synchronisation.
+///   WorldImage instances are owned by the simulation thread via the image pool. The simulation writes all fields, then appends a
+///   PipelineEntry containing the image to the ProducerConsumerQueue (volatile write of producer position — a release fence). The
+///   consumption thread acquires entries (volatile read of producer position — an acquire fence) and then reads image fields — the
+///   release/acquire pair guarantees all simulation writes are visible without any further synchronisation.
 ///
 ///   Once published, the image is treated as immutable until the simulation reclaims it. The save task may read it concurrently
 ///   while pinned, but never writes to it, so no additional protection is needed.

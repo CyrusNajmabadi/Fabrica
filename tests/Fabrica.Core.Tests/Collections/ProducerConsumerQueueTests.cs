@@ -60,16 +60,16 @@ public class ProducerConsumerQueueTests
         queue.ProducerAppend("tick-0");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var second = queue.ConsumerAcquire();
         Assert.True(second.IsEmpty);
     }
 
-    // ═══════════════════════════ ACQUIRE / RELEASE CYCLE ════════════════════
+    // ═══════════════════════════ ACQUIRE / ADVANCE CYCLE ════════════════════
 
     [Fact]
-    public void MultipleAcquireReleaseCycles_ReturnsOnlyNewItems()
+    public void MultipleAcquireAdvanceCycles_ReturnsOnlyNewItems()
     {
         var queue = new ProducerConsumerQueue<string>();
 
@@ -77,21 +77,21 @@ public class ProducerConsumerQueueTests
         queue.ProducerAppend("b");
         var seg1 = queue.ConsumerAcquire();
         Assert.Equal(2, seg1.Count);
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         queue.ProducerAppend("c");
         var seg2 = queue.ConsumerAcquire();
         Assert.Equal(1, seg2.Count);
         Assert.Equal("c", seg2[0]);
-        queue.ConsumerRelease(in seg2);
+        queue.ConsumerAdvance(seg2.Count);
     }
 
     [Fact]
-    public void ConsumerRelease_WithEmptySegment_IsNoOp()
+    public void ConsumerAdvance_WithEmptySegment_IsNoOp()
     {
         var queue = new ProducerConsumerQueue<string>();
         var empty = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in empty);
+        queue.ConsumerAdvance(empty.Count);
 
         queue.ProducerAppend("a");
         var segment = queue.ConsumerAcquire();
@@ -113,7 +113,7 @@ public class ProducerConsumerQueueTests
     }
 
     [Fact]
-    public void ConsumerPosition_AdvancesAfterRelease()
+    public void ConsumerPosition_AdvancesAfterConsumerAdvance()
     {
         var queue = new ProducerConsumerQueue<string>();
         var accessor = queue.GetTestAccessor();
@@ -123,7 +123,7 @@ public class ProducerConsumerQueueTests
 
         Assert.Equal(0, accessor.ConsumerPosition);
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
         Assert.Equal(2, accessor.ConsumerPosition);
     }
 
@@ -181,7 +181,7 @@ public class ProducerConsumerQueueTests
     }
 
     [Fact]
-    public void ConsumerRelease_AtExactSlabBoundary_ThenAcquireMore()
+    public void ConsumerAdvance_AtExactSlabBoundary_ThenAcquireMore()
     {
         var queue = new ProducerConsumerQueue<string>();
         var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
@@ -191,7 +191,7 @@ public class ProducerConsumerQueueTests
 
         var seg1 = queue.ConsumerAcquire();
         Assert.Equal(slabLength, seg1.Count);
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         for (var i = slabLength; i < slabLength + 5; i++)
             queue.ProducerAppend($"tick-{i}");
@@ -212,7 +212,7 @@ public class ProducerConsumerQueueTests
         queue.ProducerAppend("b");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -230,7 +230,7 @@ public class ProducerConsumerQueueTests
         queue.ProducerAppend("a");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -248,7 +248,7 @@ public class ProducerConsumerQueueTests
         queue.ProducerAppend("b");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         Assert.Equal(0, accessor.CleanupPosition);
         var handler = new TrackingCleanupHandler();
@@ -264,7 +264,7 @@ public class ProducerConsumerQueueTests
         queue.ProducerAppend("b");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         queue.ProducerAppend("c");
 
@@ -285,7 +285,7 @@ public class ProducerConsumerQueueTests
             queue.ProducerAppend($"tick-{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         Assert.False(accessor.HasFreeSlabs);
         var handler = new TrackingCleanupHandler();
@@ -306,7 +306,7 @@ public class ProducerConsumerQueueTests
             queue.ProducerAppend($"round1-{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -418,7 +418,7 @@ public class ProducerConsumerQueueTests
             var segment = queue.ConsumerAcquire();
             Assert.Equal(batchSize, segment.Count);
             Assert.Equal($"batch{batch}-0", segment[0]);
-            queue.ConsumerRelease(in segment);
+            queue.ConsumerAdvance(segment.Count);
 
             queue.ProducerCleanup(ref handler);
             totalCleaned += batchSize;

@@ -61,7 +61,7 @@ public class ProducerConsumerQueueSmallBatchStressTest
                     idx++;
                 }
 
-                queue.ConsumerRelease(in segment);
+                queue.ConsumerAdvance(segment.Count);
             }
 
             consumerDone.Set();

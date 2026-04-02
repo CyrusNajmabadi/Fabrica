@@ -1,34 +1,34 @@
+using Fabrica.Core.Collections;
+
 namespace Fabrica.Pipeline;
 
 /// <summary>
-/// Consumes chain nodes on the consumption thread. Constrained to struct for zero interface-dispatch overhead in the hot path.
+/// Consumes pipeline entries on the consumption thread. Constrained to struct for zero interface-dispatch overhead in the hot
+/// path.
 ///
-/// Called once per frame by the consumption loop after rotating the previous/latest pair and before advancing the epoch. The
-/// consumer receives both nodes so it can build whatever domain-specific frame representation it needs (e.g. a render frame for
-/// simulation rendering with interpolation and chain access).
+/// Called once per frame by the consumption loop when at least two entries are available (one "previous" and one or more new
+/// entries). The consumer receives the full segment so it can access any entry in the range — <c>entries[0]</c> is the previous
+/// entry (last entry from the prior frame, held back for interpolation) and <c>entries[entries.Count - 1]</c> is the latest.
 /// </summary>
 public interface IConsumer<TPayload>
 {
     /// <summary>
-    /// Process a frame using the current chain state.
+    /// Process a frame using the available pipeline entries.
     ///
-    /// <para> <paramref name="previous"/> and <paramref name="latest"/> are always distinct, non-null object references. The
-    /// consumption loop waits until two distinct nodes have been published before calling this method, so the consumer always has
-    /// a valid interpolation range. The entire forward-linked chain from <paramref name="previous"/> to <paramref name="latest"/>
-    /// is alive for the duration of this call.</para>
+    /// <para> <paramref name="entries"/> always contains at least two items. The first entry (<c>entries[0]</c>) is the previous
+    /// entry retained from the prior frame for interpolation. The last entry (<c>entries[entries.Count - 1]</c>) is the most
+    /// recently published entry. Intermediate entries are available for chain iteration when the producer published multiple ticks
+    /// between frames.</para>
     ///
     /// <para> <paramref name="frameStartNanoseconds"/> is the wall-clock timestamp (in nanoseconds) sampled at the beginning of
-    /// the current consumption frame, before any per-frame work. It is always ≥ <c>latest.PublishTimeNanoseconds</c> because the
-    /// consumption thread reads already-published nodes. The gap (<c>frameStartNanoseconds - latest.PublishTimeNanoseconds</c>)
-    /// tells the consumer how far past the latest simulation tick real time has advanced, which is useful for interpolation or
-    /// timing per-frame work.</para>
+    /// the current consumption frame. It is always ≥ the latest entry's <c>PublishTimeNanoseconds</c>. The gap tells the consumer
+    /// how far past the latest simulation tick real time has advanced, which is useful for interpolation.</para>
     ///
-    /// <para> LIFETIME: both nodes are only valid for the duration of this call. The consumption loop advances the epoch
-    /// immediately after, so the production loop may free earlier nodes.</para>
+    /// <para> LIFETIME: the segment is only valid for the duration of this call. The consumption loop advances past earlier
+    /// entries immediately after, so the production loop may clean up their payloads.</para>
     /// </summary>
     void Consume(
-        BaseProductionLoop<TPayload>.ChainNode previous,
-        BaseProductionLoop<TPayload>.ChainNode latest,
+        in ProducerConsumerQueue<PipelineEntry<TPayload>>.Segment entries,
         long frameStartNanoseconds,
         CancellationToken cancellationToken);
 }
