@@ -408,7 +408,7 @@ public sealed class ConsumptionLoopTests
         {
             _state.LastSegmentStart = entries.StartPosition;
             _state.LastSegmentCount = entries.Count;
-            var firstEntry = entries[0L];
+            var firstEntry = entries[0];
             _state.LastFirstPayload = firstEntry.Payload;
             _state.LastFirstTick = firstEntry.Tick;
             var latestEntry = entries[^1];

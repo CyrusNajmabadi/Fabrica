@@ -23,7 +23,7 @@ internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) :
         long frameStartNanoseconds,
         CancellationToken cancellationToken)
     {
-        var previous = entries[0L];
+        var previous = entries[0];
         var latest = entries[^1];
 
         var frame = new RenderFrame

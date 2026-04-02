@@ -133,7 +133,7 @@ internal static class StressTestHelpers
             long frameStartNanoseconds,
             CancellationToken cancellationToken)
         {
-            var previous = entries[0L];
+            var previous = entries[0];
             var latest = entries[^1];
             _metrics.RecordFrame(in previous, in latest);
             if (_renderDelayMilliseconds > 0)
