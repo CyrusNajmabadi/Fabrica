@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline;
+namespace Fabrica.Core.Collections;
 
 /// <summary>
 /// A contiguous array segment within a <see cref="SlabList{TPayload}"/>. Slabs form a singly-linked chain owned by the producer

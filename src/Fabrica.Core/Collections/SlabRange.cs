@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline;
+namespace Fabrica.Core.Collections;
 
 /// <summary>
 /// A lightweight view over a contiguous range of <see cref="PipelineEntry{TPayload}"/> values stored across one or more

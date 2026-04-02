@@ -1,5 +1,5 @@
+using Fabrica.Core.Threading;
 using Fabrica.Engine.World;
-using Fabrica.Pipeline.Threading;
 
 namespace Fabrica.Engine.Simulation;
 

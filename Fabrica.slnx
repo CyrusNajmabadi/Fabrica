@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="src/Fabrica.Core/Fabrica.Core.csproj" />
   <Project Path="src/Fabrica.Pipeline/Fabrica.Pipeline.csproj" />
   <Project Path="src/Fabrica.Engine/Fabrica.Engine.csproj" />
   <Project Path="src/Fabrica.ConsoleApp/Fabrica.ConsoleApp.csproj" />

@@ -1,6 +1,6 @@
+using Fabrica.Core.Memory;
 using Fabrica.Engine.World;
 using Fabrica.Pipeline;
-using Fabrica.Pipeline.Memory;
 
 namespace Fabrica.Engine.Simulation;
 

@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;

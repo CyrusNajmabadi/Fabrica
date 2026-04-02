@@ -1,10 +1,10 @@
 using System.Diagnostics;
+using Fabrica.Core.Memory;
+using Fabrica.Core.Threading;
 using Fabrica.Engine.Simulation;
 using Fabrica.Engine.Tests.Helpers;
 using Fabrica.Engine.World;
 using Fabrica.Pipeline;
-using Fabrica.Pipeline.Memory;
-using Fabrica.Pipeline.Threading;
 using Xunit;
 
 namespace Fabrica.Engine.Tests.Engine;

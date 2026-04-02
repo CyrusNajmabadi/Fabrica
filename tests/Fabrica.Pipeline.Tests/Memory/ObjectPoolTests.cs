@@ -1,4 +1,4 @@
-using Fabrica.Pipeline.Memory;
+using Fabrica.Core.Memory;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Memory;

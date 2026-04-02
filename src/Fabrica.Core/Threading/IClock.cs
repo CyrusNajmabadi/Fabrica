@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Monotonic clock abstraction. All timestamps are in nanoseconds. Implementations are constrained to struct for zero

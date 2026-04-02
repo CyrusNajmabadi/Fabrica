@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline;
+namespace Fabrica.Core.Collections;
 
 /// <summary>
 /// Lock-free single-producer / single-consumer (SPSC) append-only queue backed by a linked chain of contiguous array segments

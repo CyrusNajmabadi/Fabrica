@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Fabrica.Pipeline.Memory;
+namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Single-threaded object pool backed by a stack.

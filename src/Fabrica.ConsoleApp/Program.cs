@@ -1,7 +1,7 @@
 using Fabrica.ConsoleApp.ConsoleHost;
+using Fabrica.Core.Threading;
 using Fabrica.Engine;
 using Fabrica.Engine.Hosting;
-using Fabrica.Pipeline.Threading;
 
 using var cancellationSource = new CancellationTokenSource();
 // Capturing lambda — allocated once at startup, not on a hot path.

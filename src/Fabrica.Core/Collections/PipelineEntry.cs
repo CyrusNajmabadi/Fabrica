@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline;
+namespace Fabrica.Core.Collections;
 
 /// <summary>
 /// A single entry in the pipeline's slab-based queue. Each tick produces one entry containing the simulation payload and the

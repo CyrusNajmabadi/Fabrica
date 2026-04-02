@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Memory;
+namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Manages the lifecycle of pooled objects: allocation and pre-return cleanup. Constrained to struct for zero interface-dispatch
