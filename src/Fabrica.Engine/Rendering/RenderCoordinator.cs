@@ -1,4 +1,4 @@
-using Fabrica.Pipeline.Threading;
+using Fabrica.Core.Threading;
 
 namespace Fabrica.Engine.Rendering;
 

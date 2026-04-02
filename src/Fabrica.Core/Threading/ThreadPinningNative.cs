@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Native interop for thread-to-core pinning. Declared at namespace scope because <c>[LibraryImport]</c> cannot be applied inside

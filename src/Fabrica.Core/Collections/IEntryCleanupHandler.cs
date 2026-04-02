@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline;
+namespace Fabrica.Core.Collections;
 
 /// <summary>
 /// Callback for <see cref="SlabList{TPayload}.ProducerCleanupReleasedEntries{THandler}"/>. Called once for each entry being

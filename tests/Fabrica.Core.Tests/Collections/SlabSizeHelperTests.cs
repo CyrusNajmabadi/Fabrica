@@ -1,8 +1,9 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Collections;
 using Xunit;
 
-namespace Fabrica.Pipeline.Tests.Pipeline;
+namespace Fabrica.Core.Tests.Collections;
 
 public class SlabSizeHelperTests
 {

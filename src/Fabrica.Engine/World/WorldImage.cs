@@ -1,4 +1,4 @@
-using Fabrica.Pipeline.Memory;
+using Fabrica.Core.Memory;
 
 namespace Fabrica.Engine.World;
 

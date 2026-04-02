@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Blocking delay abstraction. Implementations are constrained to struct so the JIT/AOT can devirtualise calls — zero

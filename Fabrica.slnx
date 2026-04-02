@@ -1,7 +1,9 @@
 <Solution>
+  <Project Path="src/Fabrica.Core/Fabrica.Core.csproj" />
   <Project Path="src/Fabrica.Pipeline/Fabrica.Pipeline.csproj" />
   <Project Path="src/Fabrica.Engine/Fabrica.Engine.csproj" />
   <Project Path="src/Fabrica.ConsoleApp/Fabrica.ConsoleApp.csproj" />
+  <Project Path="tests/Fabrica.Core.Tests/Fabrica.Core.Tests.csproj" />
   <Project Path="tests/Fabrica.Pipeline.Tests/Fabrica.Pipeline.Tests.csproj" />
   <Project Path="tests/Fabrica.Engine.Tests/Fabrica.Engine.Tests.csproj" />
 </Solution>

@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 public sealed partial class WorkerGroup<TState, TExecutor>
 {

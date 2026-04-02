@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Production waiter backed by <see cref="WaitHandle.WaitOne(TimeSpan)"/> so waits remain cancellation-aware without hard-coding

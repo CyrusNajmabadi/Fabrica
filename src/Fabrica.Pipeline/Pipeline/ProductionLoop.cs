@@ -1,5 +1,5 @@
-using Fabrica.Pipeline.Memory;
-using Fabrica.Pipeline.Threading;
+using Fabrica.Core.Memory;
+using Fabrica.Core.Threading;
 
 namespace Fabrica.Pipeline;
 

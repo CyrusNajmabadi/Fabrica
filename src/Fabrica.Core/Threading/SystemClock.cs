@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Production clock backed by <see cref="Stopwatch"/>. Implemented as a <c>readonly struct</c> so that loops generic on

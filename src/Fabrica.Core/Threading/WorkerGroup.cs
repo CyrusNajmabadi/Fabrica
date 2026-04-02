@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Coordinates N <see cref="WorkerGroup{TState,TExecutor}.ThreadWorker"/> instances through a parallel dispatch cycle: prepare →

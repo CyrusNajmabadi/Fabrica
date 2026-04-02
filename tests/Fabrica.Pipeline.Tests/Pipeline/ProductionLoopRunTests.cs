@@ -1,6 +1,6 @@
-using Fabrica.Pipeline.Memory;
+using Fabrica.Core.Memory;
+using Fabrica.Core.Threading;
 using Fabrica.Pipeline.Tests.Helpers;
-using Fabrica.Pipeline.Threading;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;

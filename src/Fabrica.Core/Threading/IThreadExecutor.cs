@@ -1,4 +1,4 @@
-namespace Fabrica.Pipeline.Threading;
+namespace Fabrica.Core.Threading;
 
 /// <summary>
 /// Domain-specific work executed by a <see cref="WorkerGroup{TState,TExecutor}.ThreadWorker"/> on its dedicated thread.

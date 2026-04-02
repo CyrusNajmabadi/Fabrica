@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
-namespace Fabrica.Pipeline;
+namespace Fabrica.Core.Collections;
 
 /// <summary>
 /// Computes the optimal slab array length for <see cref="Slab{TPayload}"/>. Mirrors Roslyn's <c>SegmentedArrayHelper</c>: finds
