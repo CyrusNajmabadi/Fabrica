@@ -28,10 +28,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] Tests for production adapters (`SystemClock`, `ThreadWaiter`, `TaskSaveRunner`) if they gain non-trivial logic
 - [ ] `WorldImage` standalone tests as it gains real state
 
-## Quality / Tooling
-
-- [ ] Consider `Directory.Build.props` for shared project settings as more projects are added
-
 ## Engine / Architecture — Observability & Diagnostics
 
 - [ ] **Deferred consumer error reporting** — `DeferredConsumerScheduler.DrainCompletedTasks` silently reschedules
@@ -116,6 +112,15 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   dedicated `Thread` objects retained for execution (PR #67)
 - [x] Hot-path lambda allocation fix — replaced `CleanupStaleNodes` capturing lambda with manual `DrainUnpinnedNodes`
   using a pre-allocated drain buffer; replaced `IEnumerable` boxing in `ExceptWith` with explicit loop (PRs #65, #66)
+- [x] Replace ChainNode linked list with `ProducerConsumerQueue` — lock-free SPSC slab-based queue replaces the
+  `BaseProductionLoop` chain model; `ConsumerAdvance(count)` enables hold-back-one interpolation; `PinnedVersions`
+  adapted to `long` queue positions; `BaseProductionLoop` and all chain node types deleted (PRs #83, #84)
+- [x] Simplify `Segment` indexer — replaced three public indexers (`this[long]`, `this[int]`, `this[Index]`) with a
+  single `this[Index]` backed by a private `ItemAt(long)` method; `int` implicitly converts to `Index` so no ambiguity
+  (PR #84)
+- [x] Add simulation tick to `PipelineEntry` — zero-based monotonically increasing tick stamped by `ProductionLoop`;
+  debug invariant checking in `ProductionLoop` (tick/position lockstep), `ConsumptionLoop` (contiguous ticks, cross-frame
+  continuity), and `StressTestMetrics` (runtime monotonicity) (PR #85)
 - [x] Project structure refactor — split monolithic `Engine` project into `Fabrica.Pipeline` (generic pipeline/threading
   infrastructure), `Fabrica.Engine` (simulation/rendering), and `Fabrica.ConsoleApp` (entry point); introduced
   `PipelineConfiguration` to decouple pipeline from engine constants; no `InternalsVisibleTo` between production
@@ -136,6 +141,8 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   moved 7 pipeline test files out of Engine.Tests with `WorkerGroup`-backed test doubles (`TestWorkerProducer`,
   `TestWorkerConsumer`) so pipeline stress tests exercise the full threading infrastructure without engine
   dependencies (PR #71)
+- [x] Migrate tests from ChainNode to `ProducerConsumerQueue` — rewrote all pipeline and engine test suites; deleted
+  `ChainNodeTests` and `ChainNodePayloadTests`; stress test metrics now validate tick monotonicity (PR #83)
 
 ## Quality / Tooling
 
@@ -148,9 +155,10 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   ([7fe7d64](https://github.com/CyrusNajmabadi/Fabrica/commit/7fe7d64), [1ca02ed](https://github.com/CyrusNajmabadi/Fabrica/commit/1ca02ed))
 - [x] Comment wrapping at ~120 columns — reflowed all `.cs` and `.md` comments to ~120 column width with minimum 80
   char lines; codified in `.cursor/rules/comment-wrapping.mdc` (PRs #60, #61)
+- [x] `Directory.Build.props` for shared project settings — centralized build properties and package versions (PR #81)
 - [x] Branch protection on `master` — configured via GitHub API to require PR-based updates only
 
 ## Documentation
 
 - [x] Document pinning protocol — single authoritative location in `PinnedVersions.cs` with cross-references from
-  `IPinOwner`, `IDeferredConsumer`, `BaseProductionLoop`; performance characteristics documented (PRs #63, #64)
+  `IPinOwner`, `IDeferredConsumer`, `ProductionLoop`; performance characteristics documented (PRs #63, #64)
