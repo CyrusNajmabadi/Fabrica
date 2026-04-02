@@ -10,7 +10,8 @@ internal sealed class TestPayload
 {
     public readonly struct Allocator : IAllocator<TestPayload>
     {
-        public readonly TestPayload Allocate() => new();
+        public readonly TestPayload Allocate()
+            => new();
 
         public readonly void Reset(TestPayload item) { }
     }

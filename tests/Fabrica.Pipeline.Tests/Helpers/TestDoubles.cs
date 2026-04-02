@@ -72,8 +72,8 @@ internal readonly struct TestRecordingWaiter(TestWaiterState state) : IWaiter
 
 internal readonly struct TestNoOpWaiter : IWaiter
 {
-    public void Wait(TimeSpan duration, CancellationToken cancellationToken) =>
-        cancellationToken.ThrowIfCancellationRequested();
+    public void Wait(TimeSpan duration, CancellationToken cancellationToken)
+        => cancellationToken.ThrowIfCancellationRequested();
 }
 
 internal readonly struct TestNoOpConsumer : IConsumer<TestPayload>
@@ -97,8 +97,8 @@ internal readonly struct SpinWorkExecutor : IThreadExecutor<EmptyWorkState>
 {
     public void Prepare() { }
 
-    public void Execute(in EmptyWorkState state, CancellationToken cancellationToken) =>
-        Thread.SpinWait(10);
+    public void Execute(in EmptyWorkState state, CancellationToken cancellationToken)
+        => Thread.SpinWait(10);
 }
 
 /// <summary>
@@ -113,8 +113,8 @@ internal readonly struct TestWorkerProducer(ObjectPool<TestPayload, TestPayload.
     private readonly WorkerGroup<EmptyWorkState, SpinWorkExecutor> _workerGroup = new(
         workerCount, static _ => new SpinWorkExecutor(), "TestWorker");
 
-    public TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
-        _payloadPool.Rent();
+    public TestPayload CreateInitialPayload(CancellationToken cancellationToken)
+        => _payloadPool.Rent();
 
     public TestPayload Produce(TestPayload current, CancellationToken cancellationToken)
     {
@@ -123,17 +123,17 @@ internal readonly struct TestWorkerProducer(ObjectPool<TestPayload, TestPayload.
         return payload;
     }
 
-    public void ReleaseResources(TestPayload payload) =>
-        _payloadPool.Return(payload);
+    public void ReleaseResources(TestPayload payload)
+        => _payloadPool.Return(payload);
 }
 
 internal readonly struct TestSimpleProducer : IProducer<TestPayload>
 {
-    public TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
-        default(TestPayload.Allocator).Allocate();
+    public TestPayload CreateInitialPayload(CancellationToken cancellationToken)
+        => default(TestPayload.Allocator).Allocate();
 
-    public TestPayload Produce(TestPayload current, CancellationToken cancellationToken) =>
-        default(TestPayload.Allocator).Allocate();
+    public TestPayload Produce(TestPayload current, CancellationToken cancellationToken)
+        => default(TestPayload.Allocator).Allocate();
 
     public void ReleaseResources(TestPayload payload) { }
 }
@@ -150,6 +150,6 @@ internal readonly struct TestWorkerConsumer(int workerCount) : IConsumer<TestPay
     public void Consume(
         in ProducerConsumerQueue<PipelineEntry<TestPayload>>.Segment entries,
         long frameStartNanoseconds,
-        CancellationToken cancellationToken) =>
-        _workerGroup.Dispatch(default, cancellationToken);
+        CancellationToken cancellationToken)
+        => _workerGroup.Dispatch(default, cancellationToken);
 }

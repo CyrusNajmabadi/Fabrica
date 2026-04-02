@@ -41,6 +41,6 @@ internal sealed partial class RenderCoordinator(int workerCount)
         _group.Dispatch(state, cancellationToken);
     }
 
-    public void Shutdown() =>
-        _group.Shutdown();
+    public void Shutdown()
+        => _group.Shutdown();
 }

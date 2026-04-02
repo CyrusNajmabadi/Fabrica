@@ -12,10 +12,11 @@ public class ProducerConsumerQueueSingleThreadStressTests
     {
         public List<(long Position, string? Item)> CleanedEntries { get; }
 
-        public TrackingCleanupHandler() => this.CleanedEntries = [];
+        public TrackingCleanupHandler()
+            => this.CleanedEntries = [];
 
-        public readonly void HandleCleanup(long position, in string item) =>
-            this.CleanedEntries.Add((position, item));
+        public readonly void HandleCleanup(long position, in string item)
+            => this.CleanedEntries.Add((position, item));
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public class ProducerConsumerQueueSingleThreadStressTests
 
         public readonly long Count => _count;
 
-        public void HandleCleanup(long position, in long item) =>
-            _count++;
+        public void HandleCleanup(long position, in long item)
+            => _count++;
     }
 }

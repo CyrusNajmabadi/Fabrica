@@ -15,14 +15,14 @@ public class ProducerConsumerQueueSizingTests
     }
 
     [Fact]
-    public void SlabShift_IsLog2OfSlabLength() =>
-        Assert.Equal(
+    public void SlabShift_IsLog2OfSlabLength()
+        => Assert.Equal(
             BitOperations.Log2((uint)ProducerConsumerQueue<object>.SlabSizeHelper.SlabLength),
             ProducerConsumerQueue<object>.SlabSizeHelper.SlabShift);
 
     [Fact]
-    public void OffsetMask_IsSlabLengthMinusOne() =>
-        Assert.Equal(
+    public void OffsetMask_IsSlabLengthMinusOne()
+        => Assert.Equal(
             ProducerConsumerQueue<object>.SlabSizeHelper.SlabLength - 1,
             ProducerConsumerQueue<object>.SlabSizeHelper.OffsetMask);
 
@@ -54,8 +54,8 @@ public class ProducerConsumerQueueSizingTests
     }
 
     [Fact]
-    public void SlabLength_IsAtLeastOne() =>
-        Assert.True(ProducerConsumerQueue<LargePayload>.SlabSizeHelper.SlabLength >= 1);
+    public void SlabLength_IsAtLeastOne()
+        => Assert.True(ProducerConsumerQueue<LargePayload>.SlabSizeHelper.SlabLength >= 1);
 
     [Fact]
     public void OversizedItem_ProducesSlabLengthOfOne()

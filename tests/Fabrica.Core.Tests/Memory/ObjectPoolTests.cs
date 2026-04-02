@@ -193,7 +193,8 @@ public sealed class ObjectPoolTests
 
     private readonly struct DummyAllocator : IAllocator<Dummy>
     {
-        public Dummy Allocate() => new();
+        public Dummy Allocate()
+            => new();
 
         public void Reset(Dummy item) { }
     }

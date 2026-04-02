@@ -385,8 +385,8 @@ public sealed class ConsumptionLoopTests
             "A negative elapsed time would corrupt interpolation.");
     }
 
-    private static TimeSpan GetRenderInterval() =>
-        TimeSpan.FromTicks(TestPipelineConfiguration.RenderIntervalNanoseconds / 100);
+    private static TimeSpan GetRenderInterval()
+        => TimeSpan.FromTicks(TestPipelineConfiguration.RenderIntervalNanoseconds / 100);
 
     // ── Test doubles ────────────────────────────────────────────────────────
 
@@ -491,8 +491,8 @@ public sealed class ConsumptionLoopTests
             IDeferredConsumer<TestPayload>[]? deferredConsumers = null,
             int poolSize = 8)
             where TClock : struct, IClock
-            where TWaiter : struct, IWaiter =>
-            ConsumptionLoopTestContext<TClock, TWaiter>.Create(
+            where TWaiter : struct, IWaiter
+            => ConsumptionLoopTestContext<TClock, TWaiter>.Create(
                 clock,
                 waiter,
                 consumerState,

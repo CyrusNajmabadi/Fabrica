@@ -31,8 +31,8 @@ internal sealed partial class SimulationCoordinator
     {
         public readonly WorkerResources Resources = resources;
 
-        public void Prepare() =>
-            Resources.PrepareForTick();
+        public void Prepare()
+            => Resources.PrepareForTick();
 
         public void Execute(in SimulationTickState state, CancellationToken cancellationToken)
         {

@@ -360,14 +360,14 @@ public sealed class ProductionLoopTickTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static TimeSpan GetIdleYieldWait() =>
-        TimeSpan.FromTicks(TestPipelineConfiguration.IdleYieldNanoseconds / 100);
+    private static TimeSpan GetIdleYieldWait()
+        => TimeSpan.FromTicks(TestPipelineConfiguration.IdleYieldNanoseconds / 100);
 
-    private static TimeSpan GetHardCeilingWait() =>
-        TimeSpan.FromTicks(TestPipelineConfiguration.PressureMaxDelayNanoseconds / 100);
+    private static TimeSpan GetHardCeilingWait()
+        => TimeSpan.FromTicks(TestPipelineConfiguration.PressureMaxDelayNanoseconds / 100);
 
-    private static TimeSpan GetExpectedPressureDelay(long producerPosition, long consumerPosition) =>
-        TimeSpan.FromTicks(
+    private static TimeSpan GetExpectedPressureDelay(long producerPosition, long consumerPosition)
+        => TimeSpan.FromTicks(
             SimulationPressure.ComputeDelay(
                 gapNanoseconds: (producerPosition - consumerPosition) * TestPipelineConfiguration.TickDurationNanoseconds,
                 lowWaterMarkNanoseconds: TestPipelineConfiguration.PressureLowWaterMarkNanoseconds,
@@ -393,8 +393,8 @@ public sealed class ProductionLoopTickTests
             TestWaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
-            where TWaiter : struct, IWaiter =>
-            ProductionLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
+            where TWaiter : struct, IWaiter
+            => ProductionLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
     }
 
     private sealed class ProductionLoopTestContext<TClock, TWaiter>

@@ -14,5 +14,6 @@ public sealed partial class ProducerConsumerQueue<T>
         public bool HasFreeSlabs => queue._freeSlabs.Count > 0;
     }
 
-    internal TestAccessor GetTestAccessor() => new(this);
+    internal TestAccessor GetTestAccessor()
+        => new(this);
 }

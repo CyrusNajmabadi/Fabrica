@@ -71,8 +71,8 @@ public sealed class ProductionLoopCancellationTests
     {
         private readonly CountingProducerState _state = state;
 
-        public readonly TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
-            default(TestPayload.Allocator).Allocate();
+        public readonly TestPayload CreateInitialPayload(CancellationToken cancellationToken)
+            => default(TestPayload.Allocator).Allocate();
 
         public readonly TestPayload Produce(TestPayload current, CancellationToken cancellationToken)
         {
