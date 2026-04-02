@@ -1,4 +1,5 @@
 using Fabrica.Core.Jobs;
+using Fabrica.Core.Memory;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Jobs;
@@ -17,8 +18,18 @@ public class ThreadLocalJobPoolTests
 
         public override void Return()
         {
-            this.Value = 0;
-            this.Executed = false;
+        }
+    }
+
+    private readonly struct TestJobAllocator : IAllocator<TestJob>
+    {
+        public TestJob Allocate()
+            => new();
+
+        public void Reset(TestJob item)
+        {
+            item.Value = 0;
+            item.Executed = false;
         }
     }
 
@@ -27,7 +38,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void Rent_FromEmptyPool_AllocatesNewInstance()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         var job = pool.Rent(0);
         Assert.NotNull(job);
     }
@@ -35,7 +46,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void Return_ThenRent_ReusesSameInstance()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         var job = pool.Rent(0);
         pool.Return(0, job);
 
@@ -46,7 +57,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void Rent_MultipleFromEmptyPool_AllocatesDistinctInstances()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         var job1 = pool.Rent(0);
         var job2 = pool.Rent(0);
         Assert.NotSame(job1, job2);
@@ -55,7 +66,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void Return_MultipleThenRent_ReturnsInLifoOrder()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         var job1 = pool.Rent(0);
         var job2 = pool.Rent(0);
         var job3 = pool.Rent(0);
@@ -69,13 +80,29 @@ public class ThreadLocalJobPoolTests
         Assert.Same(job1, pool.Rent(0));
     }
 
-    // ═══════════════════════════ CROSS-THREAD SCANNING ══════════════════════
+    [Fact]
+    public void Return_ResetsFieldsViaAllocator()
+    {
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
+        var job = pool.Rent(0);
+        job.Value = 99;
+        job.Executed = true;
+
+        pool.Return(0, job);
+
+        var reused = pool.Rent(0);
+        Assert.Same(job, reused);
+        Assert.Equal(0, reused.Value);
+        Assert.False(reused.Executed);
+    }
+
+    // ═══════════════════════════ CROSS-THREAD STEALING ══════════════════════
 
     [Fact]
-    public void Rent_OwnStackEmpty_StealsFromOtherThread()
+    public void Rent_OwnDequeEmpty_StealsFromOtherThread()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
-        var job = new TestJob();
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
+        var job = pool.Rent(2);
         pool.Return(2, job);
 
         var stolen = pool.Rent(0);
@@ -83,26 +110,35 @@ public class ThreadLocalJobPoolTests
     }
 
     [Fact]
-    public void Rent_StealsFromFirstNonEmptyThread()
+    public void Rent_AllDequesEmpty_AllocatesNew()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
-
-        var job1 = new TestJob { Value = 1 };
-        var job2 = new TestJob { Value = 2 };
-        pool.Return(1, job1);
-        pool.Return(3, job2);
-
-        var stolen = pool.Rent(0);
-        Assert.Same(job1, stolen);
-    }
-
-    [Fact]
-    public void Rent_AllStacksEmpty_AllocatesNew()
-    {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         var job = pool.Rent(0);
         Assert.NotNull(job);
         Assert.Equal(0, pool.Count);
+    }
+
+    [Fact]
+    public void Rent_RoundRobin_CyclesThroughDeques()
+    {
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
+
+        var jobA = pool.Rent(1);
+        var jobB = pool.Rent(2);
+        var jobC = pool.Rent(3);
+        pool.Return(1, jobA);
+        pool.Return(2, jobB);
+        pool.Return(3, jobC);
+
+        var first = pool.Rent(0);
+        var second = pool.Rent(0);
+        var third = pool.Rent(0);
+
+        var stolen = new HashSet<TestJob> { first, second, third };
+        Assert.Equal(3, stolen.Count);
+        Assert.Contains(jobA, stolen);
+        Assert.Contains(jobB, stolen);
+        Assert.Contains(jobC, stolen);
     }
 
     // ═══════════════════════════ COUNT ═══════════════════════════════════════
@@ -110,14 +146,14 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void Count_EmptyPool_ReturnsZero()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         Assert.Equal(0, pool.Count);
     }
 
     [Fact]
     public void Count_SumsAcrossThreads()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         pool.Return(0, new TestJob());
         pool.Return(0, new TestJob());
         pool.Return(2, new TestJob());
@@ -127,7 +163,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void CountForThread_ReturnsPerThreadCount()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(4);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         pool.Return(0, new TestJob());
         pool.Return(0, new TestJob());
         pool.Return(2, new TestJob());
@@ -141,7 +177,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void ThreadCount_ReflectsConstructorArgument()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(8);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(8);
         Assert.Equal(8, pool.ThreadCount);
     }
 
@@ -150,7 +186,7 @@ public class ThreadLocalJobPoolTests
     [Fact]
     public void FullLifecycle_RentConfigureExecuteReturn()
     {
-        var pool = new ThreadLocalJobPool<TestJob>(2);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(2);
 
         var job = pool.Rent(0);
         job.Value = 42;
@@ -158,17 +194,16 @@ public class ThreadLocalJobPoolTests
         Assert.True(job.Executed);
         Assert.Equal(42, job.Value);
 
-        job.Return();
-        pool.Return(1, job);
+        pool.Return(0, job);
 
         Assert.Equal(0, job.Value);
         Assert.False(job.Executed);
 
-        var reused = pool.Rent(1);
+        var reused = pool.Rent(0);
         Assert.Same(job, reused);
     }
 
-    // ═══════════════════════════ FORK-JOIN PATTERN ══════════════════════════
+    // ═══════════════════════════ CONCURRENT SCENARIOS ═══════════════════════
 
     [Theory]
     [InlineData(1_000, 2)]
@@ -178,7 +213,7 @@ public class ThreadLocalJobPoolTests
     [Trait("Category", "Stress")]
     public void Stress_ForkJoinPattern_ItemsFlowAndStabilize(int jobsPerBatch, int threadCount)
     {
-        var pool = new ThreadLocalJobPool<TestJob>(threadCount);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(threadCount);
         const int Batches = 10;
 
         for (var batch = 0; batch < Batches; batch++)
@@ -205,7 +240,6 @@ public class ThreadLocalJobPoolTests
                     {
                         jobs[i].Value = i;
                         jobs[i].Execute();
-                        jobs[i].Return();
                         pool.Return(localIndex, jobs[i]);
                     }
                 });
@@ -227,7 +261,7 @@ public class ThreadLocalJobPoolTests
     [Trait("Category", "Stress")]
     public void Stress_PerThreadRentReturn_ZeroContention(int cyclesPerThread, int threadCount)
     {
-        var pool = new ThreadLocalJobPool<TestJob>(threadCount);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(threadCount);
         var barrier = new Barrier(threadCount);
 
         var threads = new Thread[threadCount];
@@ -244,7 +278,6 @@ public class ThreadLocalJobPoolTests
                     var job = pool.Rent(localIndex);
                     job.Value = i;
                     job.Execute();
-                    job.Return();
                     pool.Return(localIndex, job);
                 }
             });
@@ -262,16 +295,16 @@ public class ThreadLocalJobPoolTests
     [InlineData(5_000, 4)]
     [InlineData(10_000, 8)]
     [Trait("Category", "Stress")]
-    public void Stress_CoordinatorRentsFromWorkerStacks_AfterWorkersIdle(int jobsPerBatch, int workerCount)
+    public void Stress_ConcurrentStealWhileWorkersReturn(int jobsPerBatch, int workerCount)
     {
-        var pool = new ThreadLocalJobPool<TestJob>(workerCount + 1);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(workerCount + 1);
         const int CoordinatorIndex = 0;
 
         var jobs = new TestJob[jobsPerBatch];
         for (var i = 0; i < jobsPerBatch; i++)
             jobs[i] = pool.Rent(CoordinatorIndex);
 
-        var barrier = new Barrier(workerCount);
+        var workersFinished = new CountdownEvent(workerCount);
         var threads = new Thread[workerCount];
         var jobsPerWorker = jobsPerBatch / workerCount;
 
@@ -284,21 +317,19 @@ public class ThreadLocalJobPoolTests
 
             threads[localIndex] = new Thread(() =>
             {
-                barrier.SignalAndWait();
-
                 for (var i = start; i < end; i++)
                 {
                     jobs[i].Execute();
-                    jobs[i].Return();
                     pool.Return(threadSlot, jobs[i]);
                 }
+
+                workersFinished.Signal();
             });
 
             threads[localIndex].Start();
         }
 
-        foreach (var thread in threads)
-            thread.Join();
+        workersFinished.Wait(TestContext.Current.CancellationToken);
 
         Assert.Equal(0, pool.CountForThread(CoordinatorIndex));
         Assert.Equal(jobsPerBatch, pool.Count);
@@ -311,5 +342,75 @@ public class ThreadLocalJobPoolTests
 
         var uniqueJobs = new HashSet<TestJob>(rented);
         Assert.Equal(jobsPerBatch, uniqueJobs.Count);
+    }
+
+    [Theory]
+    [InlineData(5_000, 4)]
+    [InlineData(10_000, 8)]
+    [Trait("Category", "Stress")]
+    public void Stress_StealDuringActiveReturns_NoItemsLost(int jobsPerBatch, int workerCount)
+    {
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(workerCount + 1);
+        const int CoordinatorIndex = 0;
+
+        var jobs = new TestJob[jobsPerBatch];
+        for (var i = 0; i < jobsPerBatch; i++)
+            jobs[i] = pool.Rent(CoordinatorIndex);
+
+        var stolen = new TestJob[jobsPerBatch];
+        var stolenCount = 0;
+        var workersStarted = new CountdownEvent(workerCount);
+        var allDone = new ManualResetEventSlim(false);
+
+        var threads = new Thread[workerCount + 1];
+        var jobsPerWorker = jobsPerBatch / workerCount;
+
+        for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
+        {
+            var localIndex = workerIndex;
+            var threadSlot = localIndex + 1;
+            var start = localIndex * jobsPerWorker;
+            var end = (localIndex == workerCount - 1) ? jobsPerBatch : start + jobsPerWorker;
+
+            threads[localIndex] = new Thread(() =>
+            {
+                workersStarted.Signal();
+
+                for (var i = start; i < end; i++)
+                {
+                    jobs[i].Execute();
+                    pool.Return(threadSlot, jobs[i]);
+                }
+            });
+
+            threads[localIndex].Start();
+        }
+
+        threads[workerCount] = new Thread(() =>
+        {
+            workersStarted.Wait(TestContext.Current.CancellationToken);
+
+            while (!allDone.IsSet || pool.Count > 0)
+            {
+                var job = pool.Rent(CoordinatorIndex);
+                if (job is not null)
+                {
+                    var index = Interlocked.Increment(ref stolenCount) - 1;
+                    if (index < jobsPerBatch)
+                        stolen[index] = job;
+                }
+            }
+        });
+
+        threads[workerCount].Start();
+
+        for (var i = 0; i < workerCount; i++)
+            threads[i].Join();
+
+        allDone.Set();
+        threads[workerCount].Join();
+
+        Assert.True(stolenCount >= jobsPerBatch,
+            $"Should have stolen at least {jobsPerBatch} items but only got {stolenCount}");
     }
 }

@@ -1,122 +1,118 @@
-using System.Diagnostics;
+using Fabrica.Core.Collections;
+using Fabrica.Core.Memory;
 
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
-/// Per-thread object pool for <see cref="Job"/> instances. Each thread owns a private <see cref="Stack{T}"/> that it
-/// pushes to and pops from without any synchronization — no locks, no CAS, no kernel transitions on the hot path.
+/// Per-thread object pool for <see cref="Job"/> instances backed by <see cref="WorkStealingDeque{T}"/>. Each thread
+/// owns a deque that it pushes to (Return) and pops from (Rent) as owner-only operations — no CAS, no locks on the
+/// hot path. Cross-thread rents use the deque's lock-free <see cref="WorkStealingDeque{T}.TrySteal"/> operation, which
+/// is safe to call concurrently with the owner's push and pop.
 ///
 /// THREAD MODEL
-///   <see cref="Return"/> pushes to the caller's own stack. <see cref="Rent"/> pops from the caller's own stack first.
-///   Both are single-threaded per slot and require no synchronization.
+///   <see cref="Return"/> calls <see cref="WorkStealingDeque{T}.Push"/> on the caller's deque (owner operation — a
+///   store + volatile write, no CAS).
 ///
-///   When a thread's own stack is empty, <see cref="Rent"/> scans other threads' stacks. This cross-thread access is
-///   only safe when the target threads are idle — specifically, between fork-join phases when all workers have parked
-///   after completing their batch. In DEBUG builds, thread-ownership assertions catch accidental concurrent access.
+///   <see cref="Rent"/> first calls <see cref="WorkStealingDeque{T}.TryPop"/> on the caller's deque (owner operation —
+///   typically no CAS). If the deque is empty, it round-robin steals from other threads' deques via
+///   <see cref="WorkStealingDeque{T}.TrySteal"/> (lock-free, safe to call concurrently at any time).
+///
+///   No fork/join phase restrictions — any thread can steal from any other thread's deque at any time.
 ///
 /// DESIGN
-///   The pool is per-type: each concrete <typeparamref name="T"/> (e.g., <c>SimulateChunkJob</c>) has its own
-///   <see cref="ThreadLocalJobPool{T}"/> instance. Callers pass their thread index to each operation.
+///   The pool is per-type: each concrete <typeparamref name="TJob"/> (e.g., <c>SimulateChunkJob</c>) has its own
+///   <see cref="ThreadLocalJobPool{TJob, TAllocator}"/> instance. Callers pass their thread index to each operation.
 ///
-///   Unlike <see cref="JobPool{T}"/>, this design uses standard <see cref="Stack{T}"/> instead of an intrusive linked
-///   list, so the <see cref="Job"/> base class does not need a next-pointer field.
+///   The <typeparamref name="TAllocator"/> is constrained to struct so the JIT specialises every call, eliminating all
+///   interface dispatch in the hot path. The allocator's <see cref="IAllocator{T}.Reset"/> is called on
+///   <see cref="Return"/> before pushing to the deque.
+///
+/// ROUND-ROBIN STEALING
+///   When a thread's own deque is empty, <see cref="Rent"/> scans other deques starting from a rotating index. This
+///   distributes steal pressure evenly across all threads instead of always draining lower-indexed deques first.
 ///
 /// LIFECYCLE
-///   In a fork-join loop, items naturally flow: coordinator rents from its stack (or steals from idle worker stacks),
-///   workers execute and return to their own stacks. After steady-state warmup, allocations drop to zero because each
-///   worker's stack holds enough items for its share of the batch.
-///
-/// SAFETY INVARIANT
-///   Cross-thread scanning in <see cref="Rent"/> is only safe when the scanned threads are idle. In the fork-join
-///   model this is naturally satisfied: the coordinator rents jobs before submitting them, at which point all workers
-///   are parked waiting for work.
+///   In a fork-join loop, items naturally flow: coordinator rents from its deque (or steals from worker deques),
+///   workers execute and return to their own deques. After steady-state warmup, allocations drop to zero because each
+///   worker's deque holds enough items for its share of the batch.
 /// </summary>
-public sealed class ThreadLocalJobPool<T> where T : Job, new()
+public sealed class ThreadLocalJobPool<TJob, TAllocator>
+    where TJob : Job
+    where TAllocator : struct, IAllocator<TJob>
 {
-    private readonly Stack<T>[] _stacks;
+    private readonly WorkStealingDeque<TJob>[] _deques;
 
-#if DEBUG
-    private readonly int[] _ownerThreadIds;
+    /// <summary>
+    /// Rotating index for round-robin steal scanning. Not volatile — it's a hint for fairness, not a correctness
+    /// mechanism. A stale read just means scanning starts from a slightly different position.
+    /// </summary>
+    private int _nextStealIndex;
 
-    private void AssertOwnerThread(int threadIndex)
-    {
-        var current = Environment.CurrentManagedThreadId;
-        if (_ownerThreadIds[threadIndex] == -1)
-            _ownerThreadIds[threadIndex] = current;
-        else
-            Debug.Assert(
-                _ownerThreadIds[threadIndex] == current,
-                $"ThreadLocalJobPool<{typeof(T).Name}> slot {threadIndex} accessed from thread {current} " +
-                $"but owner is thread {_ownerThreadIds[threadIndex]}. Each slot is single-threaded.");
-    }
-#endif
-
-    /// <summary>Creates a pool with the specified number of per-thread stacks.</summary>
+    /// <summary>Creates a pool with the specified number of per-thread deques.</summary>
     public ThreadLocalJobPool(int threadCount)
     {
-        _stacks = new Stack<T>[threadCount];
+        _deques = new WorkStealingDeque<TJob>[threadCount];
         for (var i = 0; i < threadCount; i++)
-            _stacks[i] = new Stack<T>();
-
-#if DEBUG
-        _ownerThreadIds = new int[threadCount];
-        Array.Fill(_ownerThreadIds, -1);
-#endif
+            _deques[i] = new WorkStealingDeque<TJob>();
     }
 
     /// <summary>The number of per-thread slots in this pool.</summary>
-    public int ThreadCount => _stacks.Length;
+    public int ThreadCount => _deques.Length;
 
     /// <summary>
-    /// Returns a pooled instance if available, or allocates a new one. Checks the caller's own stack first (zero
-    /// contention), then scans other threads' stacks if empty.
-    ///
-    /// SAFETY: Cross-thread scanning is only safe when the target threads are idle (e.g., between fork-join phases).
-    /// The caller must ensure this.
+    /// Returns a pooled instance if available, or allocates a new one via the <typeparamref name="TAllocator"/>.
+    /// Checks the caller's own deque first (owner TryPop — no CAS typically), then round-robin steals from other
+    /// deques (lock-free TrySteal), then allocates if all deques are empty.
     /// </summary>
-    public T Rent(int threadIndex)
+    public TJob Rent(int threadIndex)
     {
-        if (_stacks[threadIndex].Count > 0)
-            return _stacks[threadIndex].Pop();
+        if (_deques[threadIndex].TryPop(out var job))
+            return job;
 
-        for (var i = 0; i < _stacks.Length; i++)
+        var startIndex = _nextStealIndex;
+        for (var offset = 0; offset < _deques.Length; offset++)
         {
-            if (i != threadIndex && _stacks[i].Count > 0)
-                return _stacks[i].Pop();
+            var stealIndex = (startIndex + offset) % _deques.Length;
+            if (stealIndex == threadIndex)
+                continue;
+
+            if (_deques[stealIndex].TrySteal(out job))
+            {
+                _nextStealIndex = (stealIndex + 1) % _deques.Length;
+                return job;
+            }
         }
 
-        return new T();
+        return default(TAllocator).Allocate();
     }
 
     /// <summary>
-    /// Returns a job to the specified thread's stack. No synchronization — the caller must be the owning thread for
-    /// this slot.
+    /// Resets the job via <see cref="IAllocator{T}.Reset"/> and pushes it onto the specified thread's deque. The
+    /// caller must be the owning thread for this slot (enforced by debug assertions in the deque).
     /// </summary>
-    public void Return(int threadIndex, T item)
+    public void Return(int threadIndex, TJob item)
     {
-#if DEBUG
-        this.AssertOwnerThread(threadIndex);
-#endif
-        _stacks[threadIndex].Push(item);
+        default(TAllocator).Reset(item);
+        _deques[threadIndex].Push(item);
     }
 
     /// <summary>
-    /// Total number of pooled items across all per-thread stacks. Not linearizable when threads are actively
-    /// returning — intended for diagnostics and testing only when threads are idle.
+    /// Total number of pooled items across all per-thread deques. Not linearizable — intended for diagnostics and
+    /// testing only.
     /// </summary>
     public int Count
     {
         get
         {
-            var count = 0;
-            foreach (var stack in _stacks)
-                count += stack.Count;
+            var count = 0L;
+            foreach (var deque in _deques)
+                count += deque.Count;
 
-            return count;
+            return (int)count;
         }
     }
 
-    /// <summary>Number of pooled items in a specific thread's stack.</summary>
+    /// <summary>Number of pooled items in a specific thread's deque. Not linearizable.</summary>
     public int CountForThread(int threadIndex)
-        => _stacks[threadIndex].Count;
+        => (int)_deques[threadIndex].Count;
 }
