@@ -378,6 +378,227 @@ public class ThreadLocalJobPoolTests
         Assert.Equal(0, stolen.Value);
     }
 
+    // ═══════════════════════════ DEBUG — DEQUE-LEVEL RACE INJECTION ════════
+    //
+    // These tests use DebugBeforePopCas / DebugBeforeStealCas on the underlying WorkStealingDeque
+    // to inject deterministic interleavings. Thread ownership is respected: only the thread that
+    // first called Push/TryPop on a deque calls those operations on it; TrySteal has no ownership
+    // constraint and can run from any thread.
+
+#if DEBUG
+    [Fact]
+    public void Debug_PopRacesWithSteal_OnLastItem_OneWins()
+    {
+        // Owner thread does Push + TryPop on deque0; thief thread does TrySteal from deque0.
+        // Callback inside TryPop starts the thief just before the CAS, so both race on the last item.
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(2);
+        var accessor = pool.GetTestAccessor();
+        var deque0 = accessor.GetDeque(0);
+
+        TestJob? popResult = null;
+        TestJob? stealResult = null;
+        var popDone = new ManualResetEventSlim();
+
+        var ownerThread = new Thread(() =>
+        {
+            var job = new TestJob { Value = 1 };
+            pool.Return(0, job);
+
+            var stealDone = new ManualResetEventSlim();
+
+            deque0.DebugBeforePopCas = () =>
+            {
+                deque0.DebugBeforePopCas = null;
+                var thiefThread = new Thread(() =>
+                {
+                    // TrySteal from deque0 — no ownership constraint.
+                    stealResult = pool.Rent(1);
+                    stealDone.Set();
+                });
+                thiefThread.Start();
+                stealDone.Wait();
+            };
+
+            popResult = pool.Rent(0);
+            popDone.Set();
+        });
+
+        ownerThread.Start();
+        popDone.Wait(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(popResult);
+        Assert.NotNull(stealResult);
+
+        // Exactly one should get the original; the other allocates fresh.
+        Assert.NotSame(popResult, stealResult);
+    }
+
+    [Fact]
+    public void Debug_StealRacesWithPop_OnLastItem_OneWins()
+    {
+        // Owner thread does Push, then waits for signal, then TryPop.
+        // Thief thread does TrySteal with a callback that signals the owner to Pop.
+        // Both race on the last item from their respective ends.
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(2);
+        var accessor = pool.GetTestAccessor();
+        var deque0 = accessor.GetDeque(0);
+
+        TestJob? popResult = null;
+        TestJob? stealResult = null;
+        var ownerReady = new ManualResetEventSlim();
+        var popNow = new ManualResetEventSlim();
+        var ownerDone = new ManualResetEventSlim();
+
+        var ownerThread = new Thread(() =>
+        {
+            var job = new TestJob { Value = 1 };
+            pool.Return(0, job);
+            ownerReady.Set();
+
+            popNow.Wait();
+            popResult = pool.Rent(0);
+            ownerDone.Set();
+        });
+
+        ownerThread.Start();
+        ownerReady.Wait(TestContext.Current.CancellationToken);
+
+        deque0.DebugBeforeStealCas = () =>
+        {
+            deque0.DebugBeforeStealCas = null;
+            popNow.Set();
+            ownerDone.Wait();
+        };
+
+        // Test thread steals from deque0; thief has no ownership constraint.
+        stealResult = pool.Rent(1);
+
+        Assert.NotNull(popResult);
+        Assert.NotNull(stealResult);
+        Assert.NotSame(popResult, stealResult);
+    }
+
+    [Fact]
+    public void Debug_TwoThievesRaceOnSameDeque_OneGetsItem_OtherAllocates()
+    {
+        // Owner thread pushes one item, then two separate thieves both TrySteal from the same deque.
+        // Callback on first thief's CAS starts the second thief.
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(3);
+        var accessor = pool.GetTestAccessor();
+        var deque0 = accessor.GetDeque(0);
+
+        TestJob? thief1Result = null;
+        TestJob? thief2Result = null;
+        var thief1Done = new ManualResetEventSlim();
+
+        var ownerThread = new Thread(() =>
+        {
+            var job = new TestJob { Value = 1 };
+            pool.Return(0, job);
+        });
+        ownerThread.Start();
+        ownerThread.Join();
+
+        deque0.DebugBeforeStealCas = () =>
+        {
+            deque0.DebugBeforeStealCas = null;
+            var thief2Thread = new Thread(() =>
+            {
+                thief2Result = pool.Rent(2);
+            });
+            thief2Thread.Start();
+            thief2Thread.Join();
+        };
+
+        thief1Result = pool.Rent(1);
+
+        Assert.NotNull(thief1Result);
+        Assert.NotNull(thief2Result);
+        Assert.NotSame(thief1Result, thief2Result);
+    }
+
+    [Fact]
+    public void Debug_StealRacesWithPush_StealSeesOldItem()
+    {
+        // Owner pushes an item. Thief steals; in the steal callback (before CAS), owner pushes a
+        // second item. The steal CAS still succeeds on the old bottom item. Owner pops the new item.
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(2);
+        var accessor = pool.GetTestAccessor();
+        var deque0 = accessor.GetDeque(0);
+
+        TestJob? stealResult = null;
+        TestJob? ownerPopResult = null;
+        var ownerReady = new ManualResetEventSlim();
+        var pushNow = new ManualResetEventSlim();
+        var pushDone = new ManualResetEventSlim();
+        var stealDone = new ManualResetEventSlim();
+        var ownerFinished = new ManualResetEventSlim();
+
+        var ownerThread = new Thread(() =>
+        {
+            var job1 = new TestJob { Value = 1 };
+            pool.Return(0, job1);
+            ownerReady.Set();
+
+            pushNow.Wait();
+            var job2 = new TestJob { Value = 2 };
+            pool.Return(0, job2);
+            pushDone.Set();
+
+            stealDone.Wait();
+            ownerPopResult = pool.Rent(0);
+            ownerFinished.Set();
+        });
+
+        ownerThread.Start();
+        ownerReady.Wait(TestContext.Current.CancellationToken);
+
+        deque0.DebugBeforeStealCas = () =>
+        {
+            deque0.DebugBeforeStealCas = null;
+            pushNow.Set();
+            pushDone.Wait();
+        };
+
+        stealResult = pool.Rent(1);
+        stealDone.Set();
+        ownerFinished.Wait(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(stealResult);
+        Assert.Equal(0, stealResult.Value);
+
+        Assert.NotNull(ownerPopResult);
+        Assert.Equal(0, ownerPopResult.Value);
+
+        ownerThread.Join();
+    }
+
+    [Fact]
+    public void Debug_RoundRobinIndex_AdvancesCorrectly_AfterSteal()
+    {
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
+        var accessor = pool.GetTestAccessor();
+
+        var t1 = new Thread(() => pool.Return(1, new TestJob()));
+        var t2 = new Thread(() => pool.Return(2, new TestJob()));
+        t1.Start(); t2.Start();
+        t1.Join(); t2.Join();
+
+        pool.Rent(0);
+        var nextIndex = accessor.NextStealIndex;
+        Assert.True(nextIndex is >= 0 and < 4);
+
+        var t1b = new Thread(() => pool.Return(1, new TestJob()));
+        var t2b = new Thread(() => pool.Return(2, new TestJob()));
+        t1b.Start(); t2b.Start();
+        t1b.Join(); t2b.Join();
+
+        pool.Rent(0);
+        var nextIndex2 = accessor.NextStealIndex;
+        Assert.NotEqual(nextIndex, nextIndex2);
+    }
+#endif
+
     // ═══════════════════════════ STRESS — PER-THREAD ════════════════════════
 
     [Theory]

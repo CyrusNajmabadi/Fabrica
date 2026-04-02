@@ -115,4 +115,20 @@ public sealed class ThreadLocalJobPool<TJob, TAllocator>
     /// <summary>Number of pooled items in a specific thread's deque. Not linearizable.</summary>
     public int CountForThread(int threadIndex)
         => (int)_deques[threadIndex].Count;
+
+    // ═══════════════════════════ TEST ACCESSOR ═══════════════════════════════
+
+    internal TestAccessor GetTestAccessor()
+        => new(this);
+
+    /// <summary>Provides internal access to the pool's deques for testing.</summary>
+    internal struct TestAccessor(ThreadLocalJobPool<TJob, TAllocator> pool)
+    {
+        /// <summary>Access the underlying deque for a specific thread slot.</summary>
+        public readonly WorkStealingDeque<TJob> GetDeque(int threadIndex)
+            => pool._deques[threadIndex];
+
+        /// <summary>The current round-robin steal start index.</summary>
+        public readonly int NextStealIndex => pool._nextStealIndex;
+    }
 }
