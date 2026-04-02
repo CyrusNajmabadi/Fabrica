@@ -1,26 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.5.2" />
-    <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Fabrica.Pipeline\Fabrica.Pipeline.csproj" />
-    <ProjectReference Include="..\..\src\Fabrica.Engine\Fabrica.Engine.csproj" />
-  </ItemGroup>
-
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Fabrica.Pipeline\Fabrica.Pipeline.csproj" />
+		<ProjectReference Include="..\..\src\Fabrica.Engine\Fabrica.Engine.csproj" />
+	</ItemGroup>
 </Project>
