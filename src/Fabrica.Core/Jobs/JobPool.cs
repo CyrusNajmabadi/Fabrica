@@ -39,6 +39,20 @@ public sealed class JobPool<TJob, TAllocator>
     /// <summary>Head of the intrusive linked-list stack. Null when the pool is empty.</summary>
     private TJob? _head;
 
+    // ── Debug injection points for deterministic interleaving tests ──────────
+
+#if DEBUG
+    /// <summary>Called in <see cref="Rent"/> after reading head and next but before the CAS that pops head. Tests can
+    /// inject a concurrent rent or return here to force the CAS-lost retry path.</summary>
+    internal Action? DebugBeforeRentCas { get; set; }
+
+    /// <summary>Called in <see cref="Return"/> after reading head and setting <c>_poolNext</c> but before the CAS that
+    /// pushes the item. Tests can inject a concurrent return here to force the CAS-lost retry path.</summary>
+    internal Action? DebugBeforeReturnCas { get; set; }
+#endif
+
+    // ═══════════════════════════ OPERATIONS ══════════════════════════════════
+
     /// <summary>
     /// Returns a pooled instance if available, or allocates a new one via the <typeparamref name="TAllocator"/>. The
     /// returned job's fields are in a clean state (reset by the allocator on the previous return) — the caller must
@@ -55,6 +69,11 @@ public sealed class JobPool<TJob, TAllocator>
                 return default(TAllocator).Allocate();
 
             var next = (TJob?)head._poolNext;
+
+#if DEBUG
+            this.DebugBeforeRentCas?.Invoke();
+#endif
+
             if (Interlocked.CompareExchange(ref _head, next, head) == head)
             {
                 head._poolNext = null;
@@ -80,12 +99,18 @@ public sealed class JobPool<TJob, TAllocator>
             var head = Volatile.Read(ref _head);
             item._poolNext = head;
 
+#if DEBUG
+            this.DebugBeforeReturnCas?.Invoke();
+#endif
+
             if (Interlocked.CompareExchange(ref _head, item, head) == head)
                 return;
 
             spinner.SpinOnce();
         }
     }
+
+    // ═══════════════════════════ DIAGNOSTICS ═════════════════════════════════
 
     /// <summary>
     /// Approximate number of pooled items. Not linearizable — a concurrent Rent or Return can change the stack between
@@ -105,5 +130,17 @@ public sealed class JobPool<TJob, TAllocator>
 
             return count;
         }
+    }
+
+    // ═══════════════════════════ TEST ACCESSOR ═══════════════════════════════
+
+    internal TestAccessor GetTestAccessor()
+        => new(this);
+
+    /// <summary>Provides internal access to the pool's state for testing.</summary>
+    internal struct TestAccessor(JobPool<TJob, TAllocator> pool)
+    {
+        /// <summary>The current head of the stack, or null if empty.</summary>
+        public readonly TJob? Head => Volatile.Read(ref pool._head);
     }
 }
