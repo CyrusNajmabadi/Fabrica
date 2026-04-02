@@ -186,7 +186,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     // ═══════════════════════════ PARTIAL CONSUME THEN ACQUIRE ACROSS SLABS ═══
 
     [Fact]
-    public void ConsumerReleasesPartialSlab_ThenAcquiresAcrossSlabBoundary()
+    public void ConsumerAdvancesPartialSlab_ThenAcquiresAcrossSlabBoundary()
     {
         var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
 
@@ -195,7 +195,7 @@ public class ProducerConsumerQueueEdgeCaseTests
 
         var seg1 = queue.ConsumerAcquire();
         Assert.Equal(2, seg1.Count);
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         for (var i = 0; i < SmallSlabLength; i++)
             queue.ProducerAppend($"batch2-{i}");
@@ -207,7 +207,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     }
 
     [Fact]
-    public void ConsumerReleasesAtSlabBoundary_NextAcquireStartsOnNewSlab()
+    public void ConsumerAdvancesAtSlabBoundary_NextAcquireStartsOnNewSlab()
     {
         var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
 
@@ -215,7 +215,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"first-{i}");
 
         var seg1 = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         for (var i = 0; i < 3; i++)
             queue.ProducerAppend($"second-{i}");
@@ -238,7 +238,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -258,7 +258,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -279,7 +279,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -298,7 +298,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var seg1 = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -310,7 +310,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var seg2 = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in seg2);
+        queue.ConsumerAdvance(seg2.Count);
 
         queue.ProducerCleanup(ref handler);
 
@@ -329,7 +329,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"r1-{i}");
 
         var seg1 = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -367,7 +367,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             var segment = queue.ConsumerAcquire();
             Assert.Equal(batchSize, segment.Count);
             Assert.Equal($"b{batch}-0", segment[0]);
-            queue.ConsumerRelease(in segment);
+            queue.ConsumerAdvance(segment.Count);
 
             queue.ProducerCleanup(ref handler);
         }
@@ -391,7 +391,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             var segment = queue.ConsumerAcquire();
             Assert.Equal(1, segment.Count);
             Assert.Equal($"e{i}", segment[0]);
-            queue.ConsumerRelease(in segment);
+            queue.ConsumerAdvance(segment.Count);
         }
 
         var empty = queue.ConsumerAcquire();
@@ -409,7 +409,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         for (var i = 0; i < (SmallSlabLength * 2) + 1; i++)
             queue.ProducerAppend($"read-{i}");
@@ -436,7 +436,7 @@ public class ProducerConsumerQueueEdgeCaseTests
 
         queue.ProducerAppend("skip");
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         var count = (SmallSlabLength * 3) + 2;
         for (var i = 0; i < count; i++)
@@ -463,7 +463,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         for (var i = 0; i < 3; i++)
             queue.ProducerAppend($"read-{i}");
@@ -488,7 +488,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         var count = (SmallSlabLength * 3) + 2;
         for (var i = 0; i < count; i++)
@@ -517,7 +517,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         var count = SmallSlabLength + 1;
         for (var i = 0; i < count; i++)
@@ -539,7 +539,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         queue.ProducerAppend("only");
 
@@ -559,7 +559,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         var count = (SmallSlabLength * 3) + 1;
         for (var i = 0; i < count; i++)
@@ -588,7 +588,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"skip-{i}");
 
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         var count = (SmallSlabLength * 2) + 3;
         for (var i = 0; i < count; i++)
@@ -627,7 +627,7 @@ public class ProducerConsumerQueueEdgeCaseTests
 
         queue.ProducerAppend("skip");
         var skip = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in skip);
+        queue.ConsumerAdvance(skip.Count);
 
         for (var i = 0; i < SmallSlabLength; i++)
             queue.ProducerAppend($"e{i}");
@@ -658,10 +658,10 @@ public class ProducerConsumerQueueEdgeCaseTests
         Assert.Null(accessor.TailSlab.Next);
     }
 
-    // ═══════════════════════════ RELEASE AT EXACT SLAB BOUNDARY ══════════════
+    // ═══════════════════════════ ADVANCE AT EXACT SLAB BOUNDARY ══════════════
 
     [Fact]
-    public void ReleaseAtExactSlabBoundary_WithNextSlab()
+    public void AdvanceAtExactSlabBoundary_WithNextSlab()
     {
         var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
@@ -670,7 +670,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         Assert.Equal(SmallSlabLength + 1, accessor.ConsumerPosition);
 
@@ -679,7 +679,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     }
 
     [Fact]
-    public void ReleaseAtExactSlabBoundary_WithoutNextSlab()
+    public void AdvanceAtExactSlabBoundary_WithoutNextSlab()
     {
         var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
@@ -688,7 +688,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         Assert.Equal(SmallSlabLength, accessor.ConsumerPosition);
         Assert.Same(accessor.HeadSlab, accessor.TailSlab);
@@ -716,7 +716,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         if (consumeFirst > 0)
         {
             var skip = queue.ConsumerAcquire();
-            queue.ConsumerRelease(in skip);
+            queue.ConsumerAdvance(skip.Count);
         }
 
         var count = (SmallSlabLength * 4) + 1;
@@ -745,7 +745,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         if (consumeFirst > 0)
         {
             var skip = queue.ConsumerAcquire();
-            queue.ConsumerRelease(in skip);
+            queue.ConsumerAdvance(skip.Count);
         }
 
         var count = (SmallSlabLength * 4) + 1;
@@ -782,7 +782,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         if (consumeFirst > 0)
         {
             var skip = queue.ConsumerAcquire();
-            queue.ConsumerRelease(in skip);
+            queue.ConsumerAdvance(skip.Count);
         }
 
         for (var i = 0; i < produceCount; i++)
@@ -812,7 +812,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var originalHead = accessor.HeadSlab;
         var handler = new TrackingCleanupHandler();
@@ -832,7 +832,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var originalHead = accessor.HeadSlab;
         var handler = new TrackingCleanupHandler();
@@ -853,7 +853,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -875,7 +875,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"r1-{i}");
 
         var seg1 = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
         queue.ProducerCleanup(ref handler);
 
         Assert.Equal(3, accessor.FreeSlabCount);
@@ -890,7 +890,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         Assert.Equal(r2Count, seg2.Count);
         for (var i = 0; i < r2Count; i++)
             Assert.Equal($"r2-{i}", seg2[i]);
-        queue.ConsumerRelease(in seg2);
+        queue.ConsumerAdvance(seg2.Count);
         queue.ProducerCleanup(ref handler);
 
         Assert.True(accessor.FreeSlabCount >= 2);
@@ -919,7 +919,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue2.ProducerAppend($"e{i}");
 
         var segment = queue2.ConsumerAcquire();
-        queue2.ConsumerRelease(in segment);
+        queue2.ConsumerAdvance(segment.Count);
 
         queue2.ProducerAppend("extra");
         Assert.NotSame(accessor2.HeadSlab, accessor2.TailSlab);
@@ -933,7 +933,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         var seg2 = queue2.ConsumerAcquire();
         Assert.Equal(1, seg2.Count);
         Assert.Equal("extra", seg2[0]);
-        queue2.ConsumerRelease(in seg2);
+        queue2.ConsumerAdvance(seg2.Count);
 
         queue2.ProducerCleanup(ref handler);
         Assert.Equal(1, accessor2.FreeSlabCount);
@@ -956,7 +956,7 @@ public class ProducerConsumerQueueEdgeCaseTests
 
         queue.ProducerAppend("a");
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -978,7 +978,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         var originalHead = accessor.HeadSlab;
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -1006,7 +1006,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         for (var i = 0; i < total; i++)
             Assert.Equal($"e{i}", segment[i]);
 
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var empty = queue.ConsumerAcquire();
         Assert.True(empty.IsEmpty);
@@ -1023,7 +1023,7 @@ public class ProducerConsumerQueueEdgeCaseTests
 
         var seg1 = queue.ConsumerAcquire();
         Assert.Equal(total, seg1.Count);
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         for (var i = total; i < total + SmallSlabLength; i++)
             queue.ProducerAppend($"e{i}");
@@ -1036,7 +1036,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     // ═══════════════════════════ INTERLEAVING PATTERNS ═══════════════════════
 
     [Fact]
-    public void ProduceAcquireProduceMore_ThenRelease_ThenAcquireAgain()
+    public void ProduceAcquireProduceMore_ThenAdvance_ThenAcquireAgain()
     {
         var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
 
@@ -1049,7 +1049,7 @@ public class ProducerConsumerQueueEdgeCaseTests
         for (var i = 0; i < SmallSlabLength; i++)
             queue.ProducerAppend($"batch2-{i}");
 
-        queue.ConsumerRelease(in seg1);
+        queue.ConsumerAdvance(seg1.Count);
 
         var seg2 = queue.ConsumerAcquire();
         Assert.Equal(SmallSlabLength, seg2.Count);
@@ -1068,7 +1068,7 @@ public class ProducerConsumerQueueEdgeCaseTests
             queue.ProducerAppend($"e{i}");
 
         var segment = queue.ConsumerAcquire();
-        queue.ConsumerRelease(in segment);
+        queue.ConsumerAdvance(segment.Count);
 
         var handler = new TrackingCleanupHandler();
         queue.ProducerCleanup(ref handler);
@@ -1089,7 +1089,7 @@ public class ProducerConsumerQueueEdgeCaseTests
                 queue.ProducerAppend($"r{round}-{i}");
 
             var segment = queue.ConsumerAcquire();
-            queue.ConsumerRelease(in segment);
+            queue.ConsumerAdvance(segment.Count);
         }
 
         Assert.Equal(0, accessor.CleanupPosition);

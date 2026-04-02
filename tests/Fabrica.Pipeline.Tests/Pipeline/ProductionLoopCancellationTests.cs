@@ -1,12 +1,9 @@
-using Fabrica.Core.Memory;
+using Fabrica.Core.Collections;
 using Fabrica.Core.Threading;
 using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class ProductionLoopCancellationTests
 {
@@ -23,11 +20,11 @@ public sealed class ProductionLoopCancellationTests
         var producerState = new CountingProducerState();
         var producer = new CountingProducer(producerState);
 
-        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(TicksQueued + 4);
-        var shared = new SharedPipelineState<TestPayload>();
+        var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
+        var shared = new SharedPipelineState<TestPayload>(queue);
 
         var loop = new ProductionLoop<TestPayload, CountingProducer, TestFakeClock, TestSilentWaiter>(
-            nodePool, shared, producer, default, default, TestPipelineConfiguration.Default);
+            shared, producer, default, default, TestPipelineConfiguration.Default);
         var accessor = loop.GetTestAccessor();
 
         accessor.Bootstrap();

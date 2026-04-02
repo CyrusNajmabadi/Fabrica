@@ -1,11 +1,9 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class PipelineHarnessTests
 {
@@ -15,16 +13,15 @@ public sealed class PipelineHarnessTests
         var test = LoopHarness.Create();
 
         test.ProductionLoop.Bootstrap();
-        test.ConsumptionLoop.RunIteration(); // pick up T0
+        test.ConsumptionLoop.RunIteration(); // pick up T0 (pos 0), count=1, skip
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // T1
-        var tick1Node = test.ProductionLoop.CurrentNode!;
+        test.ProductionLoop.RunIteration(); // publish pos 1
 
-        test.ConsumptionLoop.RunIteration(); // previous=T0, latest=T1; deferred dispatched for T1
+        test.ConsumptionLoop.RunIteration(); // [0,1], deferred for latest (pos 1)
         Assert.True(test.Pins.IsPinned(1));
         Assert.Equal(1, test.DeferredConsumer.InFlightCount);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
 
         for (var i = 0; i < 3; i++)
         {
@@ -34,7 +31,7 @@ public sealed class PipelineHarnessTests
         }
 
         Assert.True(test.Pins.IsPinned(1));
-        Assert.False(tick1Node.IsUnreferenced);
+        Assert.NotEqual(0, test.ProductionLoop.PinnedPayloadCount);
 
         test.DeferredConsumer.CompletePendingTask(long.MaxValue);
         Assert.Equal(0, test.DeferredConsumer.InFlightCount);
@@ -45,8 +42,7 @@ public sealed class PipelineHarnessTests
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
         test.ProductionLoop.RunIteration();
 
-        Assert.True(tick1Node.IsUnreferenced);
-        Assert.Equal(0, test.ProductionLoop.PinnedQueueCount);
+        Assert.Equal(0, test.ProductionLoop.PinnedPayloadCount);
     }
 
     [Fact]
@@ -59,10 +55,9 @@ public sealed class PipelineHarnessTests
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // T1
-        var tick1Node = test.ProductionLoop.CurrentNode!;
+        test.ProductionLoop.RunIteration(); // pos 1
 
-        test.ConsumptionLoop.RunIteration(); // deferred dispatched for T1
+        test.ConsumptionLoop.RunIteration(); // deferred dispatched for pos 1
         test.Pins.Pin(1, externalOwner);
 
         for (var i = 0; i < 3; i++)
@@ -73,13 +68,13 @@ public sealed class PipelineHarnessTests
         }
 
         Assert.True(test.Pins.IsPinned(1));
-        Assert.False(tick1Node.IsUnreferenced);
+        Assert.NotEqual(0, test.ProductionLoop.PinnedPayloadCount);
 
         test.DeferredConsumer.CompletePendingTask(long.MaxValue);
         test.ConsumptionLoop.RunIteration();
 
         Assert.True(test.Pins.IsPinned(1));
-        Assert.False(tick1Node.IsUnreferenced);
+        Assert.NotEqual(0, test.ProductionLoop.PinnedPayloadCount);
 
         test.Pins.Unpin(1, externalOwner);
 
@@ -87,8 +82,7 @@ public sealed class PipelineHarnessTests
         test.ProductionLoop.RunIteration();
 
         Assert.False(test.Pins.IsPinned(1));
-        Assert.True(tick1Node.IsUnreferenced);
-        Assert.Equal(0, test.ProductionLoop.PinnedQueueCount);
+        Assert.Equal(0, test.ProductionLoop.PinnedPayloadCount);
     }
 
     [Fact]
@@ -100,22 +94,22 @@ public sealed class PipelineHarnessTests
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // publish tick 1
+        test.ProductionLoop.RunIteration(); // publish pos 1
 
-        test.ConsumptionLoop.RunIteration(); // previous=T0, latest=T1, consume tick 1
-        Assert.Equal([1], test.Renderer.RenderedTicks);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        test.ConsumptionLoop.RunIteration(); // [0,1], consume, latest position 1
+        Assert.Equal([1L], test.Renderer.RenderedPositions);
+        Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
 
-        test.ConsumptionLoop.RunIteration(); // still consume tick 1
-        Assert.Equal([1, 1], test.Renderer.RenderedTicks);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        test.ConsumptionLoop.RunIteration(); // [1], count=1, skip — no re-render
+        Assert.Equal([1L], test.Renderer.RenderedPositions);
+        Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // publish tick 2
+        test.ProductionLoop.RunIteration(); // publish pos 2
 
-        test.ConsumptionLoop.RunIteration(); // previous=T1, latest=T2, consume tick 2
-        Assert.Equal([1, 1, 2], test.Renderer.RenderedTicks);
-        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+        test.ConsumptionLoop.RunIteration(); // [1,2], latest position 2
+        Assert.Equal([1L, 2L], test.Renderer.RenderedPositions);
+        Assert.Equal(2, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
@@ -127,10 +121,9 @@ public sealed class PipelineHarnessTests
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // T1
-        var tick1Node = test.ProductionLoop.CurrentNode!;
+        test.ProductionLoop.RunIteration(); // pos 1
 
-        test.ConsumptionLoop.RunIteration(); // consume T1, epoch=0
+        test.ConsumptionLoop.RunIteration(); // consume through pos 1
 
         for (var i = 0; i < 3; i++)
         {
@@ -139,8 +132,7 @@ public sealed class PipelineHarnessTests
             test.ConsumptionLoop.RunIteration();
         }
 
-        Assert.True(tick1Node.IsUnreferenced);
-        Assert.Equal(0, test.ProductionLoop.PinnedQueueCount);
+        Assert.Equal(0, test.ProductionLoop.PinnedPayloadCount);
     }
 
     [Fact]
@@ -152,14 +144,14 @@ public sealed class PipelineHarnessTests
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // tick 1
+        test.ProductionLoop.RunIteration(); // pos 1
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // tick 2
+        test.ProductionLoop.RunIteration(); // pos 2
 
-        test.ConsumptionLoop.RunIteration(); // previous=T0, latest=T2
+        test.ConsumptionLoop.RunIteration(); // [0,1,2], latest position 2
 
-        Assert.Equal([2], test.Renderer.RenderedTicks);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Equal([2L], test.Renderer.RenderedPositions);
+        Assert.Equal(2, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
@@ -171,7 +163,7 @@ public sealed class PipelineHarnessTests
         test.ConsumptionLoop.RunIteration(); // pick up T0
 
         test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
-        test.ProductionLoop.RunIteration(); // tick 1
+        test.ProductionLoop.RunIteration(); // pos 1
 
         test.DeferredConsumer.FailDispatchWith(new InvalidOperationException("dispatch failed"));
 
@@ -180,21 +172,20 @@ public sealed class PipelineHarnessTests
 
         Assert.Equal("dispatch failed", exception.Message);
         Assert.False(test.Pins.IsPinned(1));
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
-        Assert.Empty(test.Renderer.RenderedTicks);
+        Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
+        Assert.Empty(test.Renderer.RenderedPositions);
 
         test.DeferredConsumer.ClearDispatchFailure();
         test.Clock.AdvanceBy(1_000_000_000L); // past ErrorRetryDelayNanoseconds so deferred consumer is due again
         test.ConsumptionLoop.RunIteration();
 
-        Assert.Equal([1], test.Renderer.RenderedTicks);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Equal([1L], test.Renderer.RenderedPositions);
+        Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
         Assert.True(test.Pins.IsPinned(1));
     }
 
     private sealed class LoopHarness
     {
-        private readonly ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _productionAccessor;
         private long _productionLastTime;
         private long _productionAccumulator;
 
@@ -213,8 +204,6 @@ public sealed class PipelineHarnessTests
             this.ConsumptionLoop = new ConsumptionLoopController(consumptionLoop.GetTestAccessor());
             this.ProductionLoop = new ProductionLoopController(this, productionLoop.GetTestAccessor());
             this.Renderer = new RendererController(rendererState);
-
-            _productionAccessor = productionLoop.GetTestAccessor();
         }
 
         public SharedPipelineState<TestPayload> Shared { get; }
@@ -245,9 +234,9 @@ public sealed class PipelineHarnessTests
             IDeferredConsumer<TestPayload>[] deferredConsumers,
             TestDeferredConsumerState deferredState)
         {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
+            var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
             var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
-            var shared = new SharedPipelineState<TestPayload>();
+            var shared = new SharedPipelineState<TestPayload>(queue);
             var clockState = new TestClockState();
             var rendererState = new TestRendererState();
             var clock = new TestRecordingClock(clockState);
@@ -256,7 +245,7 @@ public sealed class PipelineHarnessTests
             var consumer = new TestRecordingConsumer(rendererState);
 
             var productionLoop = new ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>(
-                nodePool, shared, producer, clock, waiter, TestPipelineConfiguration.Default);
+                shared, producer, clock, waiter, TestPipelineConfiguration.Default);
             var consumptionLoop = new ConsumptionLoop<TestPayload, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>(
                 shared, consumer, clock, waiter, deferredConsumers, TestPipelineConfiguration.Default);
 
@@ -276,9 +265,7 @@ public sealed class PipelineHarnessTests
             private readonly LoopHarness _owner = owner;
             private readonly ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
-            public ChainNode? CurrentNode => _accessor.CurrentNode;
-
-            public int PinnedQueueCount => _accessor.PinnedQueueCount;
+            public int PinnedPayloadCount => _accessor.PinnedPayloadCount;
 
             public void Bootstrap()
             {
@@ -291,7 +278,6 @@ public sealed class PipelineHarnessTests
                     CancellationToken.None,
                     ref _owner._productionLastTime,
                     ref _owner._productionAccumulator);
-
         }
 
         public sealed class ConsumptionLoopController(
@@ -315,11 +301,11 @@ public sealed class PipelineHarnessTests
         {
             private readonly PinnedVersions _pinnedVersions = pinnedVersions;
 
-            public void Pin(int sequenceNumber, IPinOwner owner) => _pinnedVersions.Pin(sequenceNumber, owner);
+            public void Pin(long position, IPinOwner owner) => _pinnedVersions.Pin(position, owner);
 
-            public void Unpin(int sequenceNumber, IPinOwner owner) => _pinnedVersions.Unpin(sequenceNumber, owner);
+            public void Unpin(long position, IPinOwner owner) => _pinnedVersions.Unpin(position, owner);
 
-            public bool IsPinned(int sequenceNumber) => _pinnedVersions.IsPinned(sequenceNumber);
+            public bool IsPinned(long position) => _pinnedVersions.IsPinned(position);
         }
 
         public sealed class DeferredConsumerController(TestDeferredConsumerState state)
@@ -344,7 +330,7 @@ public sealed class PipelineHarnessTests
         {
             private readonly TestRendererState _state = state;
 
-            public IReadOnlyList<int> RenderedTicks => _state.RenderedTicks;
+            public IReadOnlyList<long> RenderedPositions => _state.RenderedPositions;
 
             public void FailWith(Exception exception) => _state.ExceptionToThrow = exception;
 
@@ -379,7 +365,7 @@ public sealed class PipelineHarnessTests
 
     private sealed class TestRendererState
     {
-        public readonly List<int> RenderedTicks = [];
+        public readonly List<long> RenderedPositions = [];
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -388,11 +374,14 @@ public sealed class PipelineHarnessTests
     {
         private readonly TestRendererState _state = state;
 
-        public void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
+        public void Consume(
+            in ProducerConsumerQueue<PipelineEntry<TestPayload>>.Segment entries,
+            long frameStartNanoseconds,
+            CancellationToken cancellationToken)
         {
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.RenderedTicks.Add(latest.SequenceNumber);
+            _state.RenderedPositions.Add(entries.StartPosition + entries.Count - 1);
         }
     }
 

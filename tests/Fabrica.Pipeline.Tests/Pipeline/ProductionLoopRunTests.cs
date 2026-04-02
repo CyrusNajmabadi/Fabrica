@@ -1,12 +1,10 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class ProductionLoopRunTests
 {
@@ -29,7 +27,7 @@ public sealed class ProductionLoopRunTests
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
         Assert.Equal(300, lastTime);
-        Assert.Equal(1, test.Accessor.CurrentSequence);
+        Assert.Equal(2, test.Shared.Queue.ProducerPosition);
         Assert.Equal(0, accumulator);
         Assert.Equal(
             [TimeSpan.FromMilliseconds(1)],
@@ -59,7 +57,7 @@ public sealed class ProductionLoopRunTests
 
         Assert.Equal(250, lastTime);
         Assert.Equal(150, accumulator);
-        Assert.Equal(0, test.Accessor.CurrentSequence);
+        Assert.Equal(1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
             [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
@@ -84,7 +82,7 @@ public sealed class ProductionLoopRunTests
 
         Assert.Equal(50, lastTime);
         Assert.Equal(123, accumulator);
-        Assert.Equal(0, test.Accessor.CurrentSequence);
+        Assert.Equal(1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
             [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
@@ -105,11 +103,8 @@ public sealed class ProductionLoopRunTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        var node = test.Accessor.CurrentNode!;
-        Assert.Equal(0, test.Accessor.CurrentSequence);
-        Assert.Same(node, test.Accessor.OldestNode);
-        Assert.Same(node, test.Shared.LatestNode);
-        Assert.Equal(0, node.SequenceNumber);
+        Assert.NotNull(test.Accessor.CurrentPayload);
+        Assert.Equal(1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
             [TimeSpan.FromMilliseconds(1)],
             test.WaiterState.WaitCalls);
@@ -130,10 +125,8 @@ public sealed class ProductionLoopRunTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        Assert.Null(test.Accessor.CurrentNode);
-        Assert.Null(test.Accessor.OldestNode);
-        Assert.Null(test.Shared.LatestNode);
-        Assert.Equal(0, test.Accessor.CurrentSequence);
+        Assert.Null(test.Accessor.CurrentPayload);
+        Assert.Equal(0, test.Shared.Queue.ProducerPosition);
         Assert.Empty(test.WaiterState.WaitCalls);
     }
 
@@ -159,12 +152,12 @@ public sealed class ProductionLoopRunTests
             TestWaiterState waiterState,
             int poolSize = 8)
         {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
+            var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
             var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
-            var shared = new SharedPipelineState<TestPayload>();
+            var shared = new SharedPipelineState<TestPayload>(queue);
             var producer = new TestWorkerProducer(payloadPool, 1);
             var loop = new ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter>(
-                nodePool, shared, producer, clock, waiter, TestPipelineConfiguration.Default);
+                shared, producer, clock, waiter, TestPipelineConfiguration.Default);
             return new ProductionLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
         }
 

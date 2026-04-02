@@ -45,7 +45,7 @@ public class ProducerConsumerQueueSingleThreadStressTests
             }
 
             Assert.Equal(batchSize, idx);
-            queue.ConsumerRelease(in segment);
+            queue.ConsumerAdvance(segment.Count);
             queue.ProducerCleanup(ref handler);
         }
 
@@ -80,7 +80,7 @@ public class ProducerConsumerQueueSingleThreadStressTests
                 Assert.Equal(totalConsumed + i, segment[i]);
 
             totalConsumed += segment.Count;
-            queue.ConsumerRelease(in segment);
+            queue.ConsumerAdvance(segment.Count);
             queue.ProducerCleanup(ref handler);
         }
 

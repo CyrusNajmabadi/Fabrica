@@ -66,6 +66,12 @@ public sealed partial class ProducerConsumerQueue<T>
             }
         }
 
+        /// <summary>
+        /// Disambiguates <c>segment[n]</c> when <c>n</c> is an <see cref="int"/>; otherwise <c>int</c> is implicitly convertible to
+        /// both <see cref="long"/> and <see cref="Index"/>.
+        /// </summary>
+        public ref readonly T this[int index] => ref this[(long)index];
+
         public ref readonly T this[Index index] => ref this[(long)index.GetOffset((int)_count)];
 
         public Enumerator GetEnumerator() => new(_startSlab, _startOffset, _count, _slabLength);

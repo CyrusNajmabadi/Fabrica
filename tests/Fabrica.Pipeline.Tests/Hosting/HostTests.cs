@@ -1,13 +1,10 @@
-using Fabrica.Core.Memory;
+using Fabrica.Core.Collections;
 using Fabrica.Core.Threading;
 using Fabrica.Pipeline.Hosting;
 using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Hosting;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class HostTests
 {
@@ -18,11 +15,11 @@ public sealed class HostTests
         var consumer = new TestNoOpConsumer();
         var clock = new TestAutoAdvancingClock(new AutoAdvancingClockState());
 
-        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(16);
-        var shared = new SharedPipelineState<TestPayload>();
+        var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
+        var shared = new SharedPipelineState<TestPayload>(queue);
 
         var productionLoop = new ProductionLoop<TestPayload, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
-            nodePool, shared, producer, clock, default, TestPipelineConfiguration.Default);
+            shared, producer, clock, default, TestPipelineConfiguration.Default);
         var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             shared, consumer, clock, default, [], TestPipelineConfiguration.Default);
 
@@ -46,11 +43,11 @@ public sealed class HostTests
         var consumer = new TestNoOpConsumer();
         var clock = new TestAutoAdvancingClock(new AutoAdvancingClockState());
 
-        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(16);
-        var shared = new SharedPipelineState<TestPayload>();
+        var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
+        var shared = new SharedPipelineState<TestPayload>(queue);
 
         var productionLoop = new ProductionLoop<TestPayload, TestThrowingProducer, TestAutoAdvancingClock, TestSilentWaiter>(
-            nodePool, shared, producer, clock, default, TestPipelineConfiguration.Default);
+            shared, producer, clock, default, TestPipelineConfiguration.Default);
         var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestAutoAdvancingClock, TestSilentWaiter>(
             shared, consumer, clock, default, [], TestPipelineConfiguration.Default);
 
@@ -105,5 +102,4 @@ public sealed class HostTests
 
         public readonly void ReleaseResources(TestPayload payload) { }
     }
-
 }

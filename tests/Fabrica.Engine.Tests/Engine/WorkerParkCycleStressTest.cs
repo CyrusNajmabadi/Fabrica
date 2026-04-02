@@ -15,8 +15,8 @@ public sealed class WorkerParkCycleStressTest
 
         StressTestHelpers.RunEngine(metrics, workerCount, cancellationSource.Token, renderDelayMilliseconds: 0);
 
-        Assert.True(metrics.MaxTickObserved > 100,
-            $"Expected many ticks with {workerCount} workers, but only observed {metrics.MaxTickObserved}.");
+        Assert.True(metrics.FramesRendered > 100,
+            $"Expected many frames with {workerCount} workers, but only observed {metrics.FramesRendered}.");
         Assert.Null(metrics.InvariantViolation);
     }
 }

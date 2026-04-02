@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Pipeline.Tests.Helpers;
@@ -5,13 +6,10 @@ using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
-
 public sealed class ConsumptionLoopTests
 {
     [Fact]
-    public void RunOneIteration_WithNoSnapshot_OnlyThrottles()
+    public void RunOneIteration_WithNoEntries_OnlyThrottles()
     {
         var test = ConsumptionLoopTestContext.Create();
 
@@ -20,52 +18,50 @@ public sealed class ConsumptionLoopTests
         Assert.Equal(
             [GetRenderInterval()],
             test.WaiterState.WaitCalls);
-        Assert.Empty(test.ConsumerState.ConsumedTicks);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Empty(test.ConsumerState.ConsumedLatestPositions);
+        Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
-    public void RunOneIteration_DoesNotConsumeUntilTwoDistinctNodesExist()
+    public void RunOneIteration_DoesNotConsumeUntilTwoEntriesExist()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 12);
+        test.AppendEntry();
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Empty(test.ConsumerState.ConsumedTicks);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Empty(test.ConsumerState.ConsumedLatestPositions);
+        Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
-    public void RunOneIteration_RendersSnapshot_ThenAdvancesConsumptionEpoch()
+    public void RunOneIteration_ConsumesAndAdvancesConsumerPosition()
     {
         var test = ConsumptionLoopTestContext.Create();
-        var first = test.CreatePublishedNode(tick: 11);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        var second = test.CreatePublishedNode(tick: 12);
-        var epochAtConsume = -1;
-        test.ConsumerState.BeforeConsume = (_, _, _) => epochAtConsume = test.Shared.ConsumptionEpoch;
+        test.AppendEntry();
+        test.ConsumerState.BeforeConsume = _ =>
+            Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal([12], test.ConsumerState.ConsumedTicks);
-        Assert.Equal(0, epochAtConsume);
-        Assert.Equal(11, test.Shared.ConsumptionEpoch);
-        Assert.Same(second, test.Shared.LatestNode);
+        Assert.Equal([1], test.ConsumerState.ConsumedLatestPositions);
+        Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
     public void RunOneIteration_ThrottlesOnlyTheRemainingFrameBudget()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 4);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
         test.WaiterState.WaitCalls.Clear();
 
-        test.CreatePublishedNode(tick: 5);
+        test.AppendEntry();
         test.ClockState.NowNanoseconds = 0;
-        test.ConsumerState.BeforeConsume = (_, _, _) => test.ClockState.NowNanoseconds = 5_000_000;
+        test.ConsumerState.BeforeConsume = _ => test.ClockState.NowNanoseconds = 5_000_000;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -78,13 +74,13 @@ public sealed class ConsumptionLoopTests
     public void RunOneIteration_DoesNotThrottleWhenFrameAlreadyExceededBudget()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 4);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
         test.WaiterState.WaitCalls.Clear();
 
-        test.CreatePublishedNode(tick: 5);
+        test.AppendEntry();
         test.ConsumerState.BeforeConsume =
-            (_, _, _) => test.ClockState.NowNanoseconds = TestPipelineConfiguration.RenderIntervalNanoseconds + 1;
+            _ => test.ClockState.NowNanoseconds = TestPipelineConfiguration.RenderIntervalNanoseconds + 1;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
@@ -108,11 +104,11 @@ public sealed class ConsumptionLoopTests
     public void RunOneIteration_ThrowsWhenCancelledDuringThrottleWait()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 4);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
         test.WaiterState.WaitCalls.Clear();
 
-        test.CreatePublishedNode(tick: 5);
+        test.AppendEntry();
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = cancellationSource.Cancel;
 
@@ -128,7 +124,7 @@ public sealed class ConsumptionLoopTests
     public void Run_ThrowsWhenCancelledDuringThrottleWait()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 4);
+        test.AppendEntry();
         var callCount = 0;
         using var cancellationSource = new CancellationTokenSource();
         test.WaiterState.BeforeWait = () =>
@@ -136,7 +132,7 @@ public sealed class ConsumptionLoopTests
             callCount++;
             if (callCount == 1)
             {
-                test.CreatePublishedNode(tick: 5);
+                test.AppendEntry();
             }
             else
             {
@@ -146,147 +142,93 @@ public sealed class ConsumptionLoopTests
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        Assert.Equal([5], test.ConsumerState.ConsumedTicks);
+        Assert.Equal([1], test.ConsumerState.ConsumedLatestPositions);
     }
 
     [Fact]
     public void Run_WhenAlreadyCancelled_DoesNothing()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 4);
-        test.CreatePublishedNode(tick: 5);
+        test.AppendEntry();
+        test.AppendEntry();
 
         using var cancellationSource = new CancellationTokenSource();
         cancellationSource.Cancel();
 
         Assert.Throws<OperationCanceledException>(() => test.Loop.Run(cancellationSource.Token));
 
-        Assert.Empty(test.ConsumerState.ConsumedTicks);
+        Assert.Empty(test.ConsumerState.ConsumedLatestPositions);
         Assert.Empty(test.WaiterState.WaitCalls);
-        Assert.Equal(0, test.Shared.ConsumptionEpoch);
+        Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
-    public void RepeatedIterations_RenderTheSameLatestSnapshotUntilSimulationPublishesANewerOne()
+    public void RunOneIteration_DoesNotReconsumeWithoutNewEntries()
     {
         var test = ConsumptionLoopTestContext.Create();
-        test.CreatePublishedNode(tick: 4);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        test.CreatePublishedNode(tick: 5);
+        test.AppendEntry();
 
         test.Accessor.RunOneIteration(CancellationToken.None);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal([5, 5], test.ConsumerState.ConsumedTicks);
-        Assert.Equal(4, test.Shared.ConsumptionEpoch);
+        Assert.Equal([1], test.ConsumerState.ConsumedLatestPositions);
+        Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
-    public void RunOneIteration_WhenSimulationPublishesMultipleTicks_ConsumerReceivesFullChain()
+    public void RunOneIteration_WhenSimulationPublishesMultipleEntries_ConsumerReceivesFullSegment()
     {
         var test = ConsumptionLoopTestContext.Create();
 
-        var tick1 = test.CreatePublishedNode(tick: 1);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        var chain = test.CreatePublishedChain(startTick: 2, endTick: 6);
-        test.LinkNodes(tick1, chain[0]);
-
-        ChainNode? capturedPrevious = null;
-        ChainNode? capturedLatest = null;
-        test.ConsumerState.BeforeConsume = (previous, latest, _) =>
-        {
-            capturedPrevious = previous;
-            capturedLatest = latest;
-        };
+        for (var i = 0; i < 5; i++)
+            test.AppendEntry();
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(capturedLatest);
-        Assert.NotNull(capturedPrevious);
-        Assert.Equal(1, capturedPrevious.SequenceNumber);
-        Assert.Equal(6, capturedLatest.SequenceNumber);
-
-        var ticks = new List<int>();
-        foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest))
-            ticks.Add(node.SequenceNumber);
-
-        Assert.Equal([1, 2, 3, 4, 5, 6], ticks);
+        Assert.Equal(0, test.ConsumerState.LastSegmentStart);
+        Assert.Equal(6, test.ConsumerState.LastSegmentCount);
+        Assert.Equal([5], test.ConsumerState.ConsumedLatestPositions);
     }
 
     [Fact]
-    public void RunOneIteration_ChainIteratorStopsAtLatest_EvenWhenFurtherNodesExist()
+    public void RunOneIteration_FirstAndLastEntriesAreAlwaysDistinct()
     {
         var test = ConsumptionLoopTestContext.Create();
 
-        var tick0 = test.CreatePublishedNode(tick: 0);
+        test.AppendEntry();
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        Assert.Empty(test.ConsumerState.ConsumedLatestPositions);
+
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        var chain = test.CreatePublishedChain(startTick: 1, endTick: 3);
-        test.LinkNodes(tick0, chain[0]);
-
-        var beyondLatest = test.CreateUnpublishedNode(tick: 4);
-        test.LinkNodes(chain[^1], beyondLatest);
-
-        ChainNode? capturedPrevious = null;
-        ChainNode? capturedLatest = null;
-        test.ConsumerState.BeforeConsume = (previous, latest, _) =>
-        {
-            capturedPrevious = previous;
-            capturedLatest = latest;
-        };
-
-        test.Accessor.RunOneIteration(CancellationToken.None);
-
-        Assert.NotNull(capturedLatest);
-        var ticks = new List<int>();
-        foreach (var node in ChainNode.Chain(capturedPrevious, capturedLatest))
-            ticks.Add(node.SequenceNumber);
-
-        Assert.Equal([0, 1, 2, 3], ticks);
+        Assert.NotNull(test.ConsumerState.LastLatestPayload);
+        Assert.NotNull(test.ConsumerState.LastFirstPayload);
+        Assert.NotSame(test.ConsumerState.LastFirstPayload, test.ConsumerState.LastLatestPayload);
+        Assert.Equal(0, test.ConsumerState.LastSegmentStart);
+        Assert.Equal(2, test.ConsumerState.LastSegmentCount);
     }
 
     [Fact]
-    public void RunOneIteration_PreviousAndLatestAreAlwaysDistinctReferences()
+    public void RunOneIteration_ConsumerAdvancesCorrectlyAfterMultipleEntries()
     {
         var test = ConsumptionLoopTestContext.Create();
 
-        test.CreatePublishedNode(tick: 1);
-        test.Accessor.RunOneIteration(CancellationToken.None);
-        Assert.Empty(test.ConsumerState.ConsumedTicks);
-
-        test.CreatePublishedNode(tick: 2);
-        ChainNode? capturedPrevious = null;
-        ChainNode? capturedLatest = null;
-        test.ConsumerState.BeforeConsume = (previous, latest, _) =>
-        {
-            capturedPrevious = previous;
-            capturedLatest = latest;
-        };
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.NotNull(capturedLatest);
-        Assert.NotNull(capturedPrevious);
-        Assert.NotSame(capturedPrevious, capturedLatest);
-        Assert.Equal(1, capturedPrevious.SequenceNumber);
-        Assert.Equal(2, capturedLatest.SequenceNumber);
-    }
-
-    [Fact]
-    public void RunOneIteration_EpochProtectsEntireChainFromPreviousToLatest()
-    {
-        var test = ConsumptionLoopTestContext.Create();
-
-        var tick1 = test.CreatePublishedNode(tick: 1);
-        test.Accessor.RunOneIteration(CancellationToken.None);
-
-        var chain = test.CreatePublishedChain(startTick: 2, endTick: 10);
-        test.LinkNodes(tick1, chain[0]);
+        for (var i = 0; i < 9; i++)
+            test.AppendEntry();
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal(1, test.Shared.ConsumptionEpoch);
+        Assert.Equal(9, test.Shared.Queue.ConsumerPosition);
     }
 
     // ── Deferred consumer tests ─────────────────────────────────────────────
@@ -298,10 +240,10 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState, initialDelayNanoseconds: 1_000_000_000L)]);
 
-        test.CreatePublishedNode(tick: 0);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        test.CreatePublishedNode(tick: 1);
+        test.AppendEntry();
         test.ClockState.NowNanoseconds = 500_000_000L;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
@@ -310,22 +252,22 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
-    public void DeferredConsumer_IsCalledWhenDue_AndPinsNode()
+    public void DeferredConsumer_IsCalledWhenDue_AndPinsPosition()
     {
         var deferredState = new TestDeferredConsumerState { _nextRunTime = long.MaxValue };
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
-        test.CreatePublishedNode(tick: 4);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        test.CreatePublishedNode(tick: 5);
+        test.AppendEntry();
         test.ClockState.NowNanoseconds = 200L;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.Equal(1, deferredState._callCount);
-        Assert.True(test.PinnedVersions.IsPinned(5));
+        Assert.True(test.PinnedVersions.IsPinned(1));
     }
 
     [Fact]
@@ -336,19 +278,19 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
-        test.CreatePublishedNode(tick: 2);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        test.CreatePublishedNode(tick: 3);
+        test.AppendEntry();
         test.ClockState.NowNanoseconds = 100L;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
-        Assert.True(test.PinnedVersions.IsPinned(3));
+        Assert.True(test.PinnedVersions.IsPinned(1));
 
         taskCompletionSource.SetResult(long.MaxValue);
 
         test.Accessor.RunOneIteration(CancellationToken.None);
-        Assert.False(test.PinnedVersions.IsPinned(3));
+        Assert.False(test.PinnedVersions.IsPinned(1));
     }
 
     [Fact]
@@ -361,17 +303,17 @@ public sealed class ConsumptionLoopTests
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
-        test.CreatePublishedNode(tick: 6);
+        test.AppendEntry();
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        test.CreatePublishedNode(tick: 7);
+        test.AppendEntry();
         test.ClockState.NowNanoseconds = 100L;
 
         var ex = Assert.Throws<InvalidOperationException>(
             () => test.Accessor.RunOneIteration(CancellationToken.None));
 
         Assert.Equal("dispatch failed", ex.Message);
-        Assert.False(test.PinnedVersions.IsPinned(7));
+        Assert.False(test.PinnedVersions.IsPinned(1));
     }
 
     [Fact]
@@ -379,26 +321,22 @@ public sealed class ConsumptionLoopTests
     {
         var test = ConsumptionLoopTestContext.Create();
 
-        // First iteration: publish node 0 so _latest is set.
         test.ClockState.NowNanoseconds = 50;
-        var node0 = test.CreatePublishedNode(tick: 0, publishTimeNanoseconds: 50);
+        test.AppendEntry(publishTimeNanoseconds: 50);
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        // Second iteration: publish node 1 with PublishTimeNanoseconds = 200, but set the clock to 100 — simulating a race where
-        // the production thread published between the clock read and the volatile read of LatestNode.
         test.ClockState.NowNanoseconds = 100;
-        var node1 = test.CreatePublishedNode(tick: 1, publishTimeNanoseconds: 200);
-        test.LinkNodes(node0, node1);
+        test.AppendEntry(publishTimeNanoseconds: 200);
 
         long capturedFrameStart = -1;
-        test.ConsumerState.BeforeConsume = (_, latest, frameStart) =>
+        test.ConsumerState.BeforeConsume = frameStart =>
             capturedFrameStart = frameStart;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
         Assert.True(
-            capturedFrameStart >= node1.PublishTimeNanoseconds,
-            $"frameStart ({capturedFrameStart}) must be >= latest.PublishTimeNanoseconds ({node1.PublishTimeNanoseconds}). " +
+            capturedFrameStart >= 200,
+            $"frameStart ({capturedFrameStart}) must be >= latest PublishTimeNanoseconds (200). " +
             "A negative elapsed time would corrupt interpolation.");
     }
 
@@ -441,10 +379,14 @@ public sealed class ConsumptionLoopTests
 
     private sealed class TestConsumerState
     {
-        public readonly List<int> ConsumedTicks = [];
-        public readonly List<(ChainNode Previous, ChainNode Latest)> ConsumedPairs = [];
+        public readonly List<long> ConsumedLatestPositions = [];
+        public long LastSegmentStart { get; set; }
+        public long LastSegmentCount { get; set; }
+        public TestPayload? LastFirstPayload { get; set; }
+        public TestPayload? LastLatestPayload { get; set; }
+        public long LastLatestPublishTimeNanoseconds { get; set; }
 
-        public Action<ChainNode, ChainNode, long>? BeforeConsume { get; set; }
+        public Action<long>? BeforeConsume { get; set; }
 
         public Exception? ExceptionToThrow { get; set; }
     }
@@ -454,16 +396,21 @@ public sealed class ConsumptionLoopTests
         private readonly TestConsumerState _state = state;
 
         public void Consume(
-            ChainNode previous,
-            ChainNode latest,
+            in ProducerConsumerQueue<PipelineEntry<TestPayload>>.Segment entries,
             long frameStartNanoseconds,
             CancellationToken cancellationToken)
         {
-            _state.BeforeConsume?.Invoke(previous, latest, frameStartNanoseconds);
+            _state.LastSegmentStart = entries.StartPosition;
+            _state.LastSegmentCount = entries.Count;
+            _state.LastFirstPayload = entries[0L].Payload;
+            var latestEntry = entries[^1];
+            _state.LastLatestPayload = latestEntry.Payload;
+            _state.LastLatestPublishTimeNanoseconds = latestEntry.PublishTimeNanoseconds;
+
+            _state.BeforeConsume?.Invoke(frameStartNanoseconds);
             if (_state.ExceptionToThrow is Exception exception)
                 throw exception;
-            _state.ConsumedTicks.Add(latest.SequenceNumber);
-            _state.ConsumedPairs.Add((previous, latest));
+            _state.ConsumedLatestPositions.Add(entries.StartPosition + entries.Count - 1);
         }
     }
 
@@ -509,9 +456,7 @@ public sealed class ConsumptionLoopTests
         where TClock : struct, IClock
         where TWaiter : struct, IWaiter
     {
-        private readonly TestChainHarness _harness;
-        private readonly ObjectPool<TestPayload, TestPayload.Allocator> _imagePool;
-        private readonly BaseProductionLoop<TestPayload>.ChainTestAccessor _chainAccessor;
+        private readonly ObjectPool<TestPayload, TestPayload.Allocator> _payloadPool;
 
         public static ConsumptionLoopTestContext<TClock, TWaiter> Create(
             TClock clock,
@@ -522,9 +467,9 @@ public sealed class ConsumptionLoopTests
             IDeferredConsumer<TestPayload>[]? deferredConsumers = null,
             int poolSize = 8)
         {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
-            var imagePool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
-            var shared = new SharedPipelineState<TestPayload>();
+            var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
+            var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
+            var shared = new SharedPipelineState<TestPayload>(queue);
             var consumer = new TestRecordingConsumer(consumerState);
             var loop = new ConsumptionLoop<TestPayload, TestRecordingConsumer, TClock, TWaiter>(
                 shared,
@@ -533,10 +478,8 @@ public sealed class ConsumptionLoopTests
                 waiter,
                 deferredConsumers ?? [],
                 TestPipelineConfiguration.Default);
-            var harness = new TestChainHarness(nodePool, shared.PinnedVersions);
             return new ConsumptionLoopTestContext<TClock, TWaiter>(
-                harness,
-                imagePool,
+                payloadPool,
                 shared,
                 loop,
                 consumerState,
@@ -545,17 +488,14 @@ public sealed class ConsumptionLoopTests
         }
 
         private ConsumptionLoopTestContext(
-            TestChainHarness harness,
-            ObjectPool<TestPayload, TestPayload.Allocator> imagePool,
+            ObjectPool<TestPayload, TestPayload.Allocator> payloadPool,
             SharedPipelineState<TestPayload> shared,
             ConsumptionLoop<TestPayload, TestRecordingConsumer, TClock, TWaiter> loop,
             TestConsumerState consumerState,
             TestClockState clockState,
             TestWaiterState waiterState)
         {
-            _harness = harness;
-            _imagePool = imagePool;
-            _chainAccessor = harness.GetChainTestAccessor();
+            _payloadPool = payloadPool;
             this.Shared = shared;
             this.Loop = loop;
             this.Accessor = loop.GetTestAccessor();
@@ -578,46 +518,14 @@ public sealed class ConsumptionLoopTests
 
         public TestWaiterState WaiterState { get; }
 
-        public ChainNode CreatePublishedNode(int tick) =>
-            this.CreatePublishedNode(tick, publishTimeNanoseconds: 0);
-
-        public ChainNode CreatePublishedNode(int tick, long publishTimeNanoseconds)
+        public void AppendEntry(long publishTimeNanoseconds = 0)
         {
-            var image = _imagePool.Rent();
-            var node = _chainAccessor.CreateNode(tick);
-            _chainAccessor.SetPayload(node, image);
-            _chainAccessor.MarkPublished(node, publishTimeNanoseconds);
-            this.Shared.LatestNode = node;
-            return node;
-        }
-
-        public ChainNode CreateUnpublishedNode(int tick)
-        {
-            var image = _imagePool.Rent();
-            var node = _chainAccessor.CreateNode(tick);
-            _chainAccessor.SetPayload(node, image);
-            return node;
-        }
-
-        public ChainNode[] CreatePublishedChain(int startTick, int endTick)
-        {
-            var count = endTick - startTick + 1;
-            var chain = new ChainNode[count];
-            for (var i = 0; i < count; i++)
+            var payload = _payloadPool.Rent();
+            this.Shared.Queue.ProducerAppend(new PipelineEntry<TestPayload>
             {
-                var image = _imagePool.Rent();
-                var node = _chainAccessor.CreateNode(startTick + i);
-                _chainAccessor.SetPayload(node, image);
-                if (i > 0)
-                    _chainAccessor.LinkNodes(chain[i - 1], node);
-                chain[i] = node;
-            }
-
-            this.Shared.LatestNode = chain[^1];
-            return chain;
+                Payload = payload,
+                PublishTimeNanoseconds = publishTimeNanoseconds,
+            });
         }
-
-        public void LinkNodes(ChainNode current, ChainNode next) =>
-            _chainAccessor.LinkNodes(current, next);
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Engine.Simulation;
@@ -8,9 +9,6 @@ using Xunit;
 
 namespace Fabrica.Engine.Tests.Helpers;
 
-using ChainNode = BaseProductionLoop<WorldImage>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<WorldImage>.ChainNode.Allocator;
-
 internal static class StressTestHelpers
 {
     public static void RunEngine(
@@ -19,15 +17,15 @@ internal static class StressTestHelpers
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
+        var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedPipelineState<WorldImage>();
+        var shared = new SharedPipelineState<WorldImage>(queue);
         var producer = new SimulationProducer(imagePool, workerCount);
         var consumer = new InvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new StressClock();
 
         var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, StressClock, ThreadWaiter>(
-            nodePool, shared, producer, clock, new ThreadWaiter(), TestPipelineConfiguration.Default);
+            shared, producer, clock, new ThreadWaiter(), TestPipelineConfiguration.Default);
         var consumptionLoop = new ConsumptionLoop<WorldImage, InvariantCheckingConsumer, StressClock, ThreadWaiter>(
             shared, consumer, clock, new ThreadWaiter(), [], TestPipelineConfiguration.Default);
 
@@ -40,9 +38,9 @@ internal static class StressTestHelpers
         int workerCount,
         CancellationToken cancellationToken)
     {
-        var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(SimulationConstants.SnapshotPoolSize);
+        var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedPipelineState<WorldImage>();
+        var shared = new SharedPipelineState<WorldImage>(queue);
         var producer = new SimulationProducer(imagePool, workerCount);
         var consumer = new InvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new StressClock();
@@ -51,7 +49,7 @@ internal static class StressTestHelpers
         var deferredConsumers = new IDeferredConsumer<WorldImage>[] { saveConsumer };
 
         var productionLoop = new ProductionLoop<WorldImage, SimulationProducer, StressClock, ThreadWaiter>(
-            nodePool, shared, producer, clock, new ThreadWaiter(), TestPipelineConfiguration.Default);
+            shared, producer, clock, new ThreadWaiter(), TestPipelineConfiguration.Default);
         var consumptionLoop = new ConsumptionLoop<WorldImage, InvariantCheckingConsumer, StressClock, ThreadWaiter>(
             shared, consumer, clock, new ThreadWaiter(), deferredConsumers, TestPipelineConfiguration.Default);
 
@@ -130,9 +128,14 @@ internal static class StressTestHelpers
         private readonly StressTestMetrics _metrics = metrics;
         private readonly int _renderDelayMilliseconds = renderDelayMilliseconds;
 
-        public void Consume(ChainNode previous, ChainNode latest, long frameStartNanoseconds, CancellationToken cancellationToken)
+        public void Consume(
+            in ProducerConsumerQueue<PipelineEntry<WorldImage>>.Segment entries,
+            long frameStartNanoseconds,
+            CancellationToken cancellationToken)
         {
-            _metrics.RecordFrame(previous, latest);
+            var previous = entries[0L];
+            var latest = entries[^1];
+            _metrics.RecordFrame(in previous, in latest);
             if (_renderDelayMilliseconds > 0)
                 Thread.Sleep(_renderDelayMilliseconds);
         }
@@ -172,45 +175,32 @@ internal static class StressTestHelpers
 internal sealed class StressTestMetrics
 {
     private long _framesRendered;
-    private int _maxTickObserved;
-    private int _lastLatestTick = -1;
+    private long _lastLatestPublishTime;
     private volatile string? _invariantViolation;
 
     public long FramesRendered => Volatile.Read(ref _framesRendered);
-    public int MaxTickObserved => Volatile.Read(ref _maxTickObserved);
     public string? InvariantViolation => _invariantViolation;
 
-    public void RecordFrame(ChainNode? previous, ChainNode latest)
+    public void RecordFrame(in PipelineEntry<WorldImage> previous, in PipelineEntry<WorldImage> latest)
     {
         Interlocked.Increment(ref _framesRendered);
 
-        var latestTick = latest.SequenceNumber;
-
-        var previousLatestTick = _lastLatestTick;
-        if (latestTick < previousLatestTick)
+        var latestPublishTime = latest.PublishTimeNanoseconds;
+        var previousLatestPublishTime = Volatile.Read(ref _lastLatestPublishTime);
+        if (latestPublishTime < previousLatestPublishTime)
         {
-            _invariantViolation ??= $"Latest tick went backwards: {latestTick} < {previousLatestTick}";
+            _invariantViolation ??=
+                $"Latest publish time went backwards: {latestPublishTime} < {previousLatestPublishTime}";
             return;
         }
-        _lastLatestTick = latestTick;
+        Volatile.Write(ref _lastLatestPublishTime, latestPublishTime);
 
-        if (previous is not null && previous.SequenceNumber > latestTick)
+        if (previous.PublishTimeNanoseconds > latestPublishTime)
         {
-            _invariantViolation ??= $"Previous tick ({previous.SequenceNumber}) > latest tick ({latestTick})";
+            _invariantViolation ??=
+                $"Previous publish time ({previous.PublishTimeNanoseconds}) > latest ({latestPublishTime})";
             return;
         }
-
-        UpdateMax(ref _maxTickObserved, latestTick);
-    }
-
-    private static void UpdateMax(ref int location, int value)
-    {
-        int current;
-        do
-        {
-            current = Volatile.Read(ref location);
-            if (value <= current) return;
-        } while (Interlocked.CompareExchange(ref location, value, current) != current);
     }
 }
 

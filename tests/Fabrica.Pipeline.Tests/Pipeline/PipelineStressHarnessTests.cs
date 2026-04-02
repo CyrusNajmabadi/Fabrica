@@ -1,11 +1,9 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Pipeline.Tests.Helpers;
 using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
-
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 
 public sealed class PipelineStressHarnessTests
 {
@@ -87,8 +85,8 @@ public sealed class PipelineStressHarnessTests
             .ToList();
         Assert.NotEmpty(pressureWaitsBeforeConsumption);
 
-        // Advance epoch by producing new ticks and letting consumption catch up. Each consumption iteration advances the
-        // epoch to _previous.SequenceNumber, and _previous only changes when a new LatestNode appears.
+        // Advance consumer position by producing new ticks and letting consumption catch up each time, shrinking the
+        // producer/consumer gap so simulation pressure drops back to idle-yield-only waits.
         for (var i = 0; i < LowWaterMarkTicks + 3; i++)
         {
             test.Clock.AdvanceBy(TestPipelineConfiguration.TickDurationNanoseconds);
@@ -139,16 +137,16 @@ public sealed class PipelineStressHarnessTests
 
         public static LoopStressHarness Create(int poolSize = 64)
         {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
+            var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
             var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
-            var shared = new SharedPipelineState<TestPayload>();
+            var shared = new SharedPipelineState<TestPayload>(queue);
             var clockState = new TestClockState();
             var waiterState = new TestWaiterState();
             var clock = new TestRecordingClock(clockState);
             var producer = new TestWorkerProducer(payloadPool, 1);
 
             var productionLoop = new ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestRecordingWaiter>(
-                nodePool, shared, producer, clock, new TestRecordingWaiter(waiterState), TestPipelineConfiguration.Default);
+                shared, producer, clock, new TestRecordingWaiter(waiterState), TestPipelineConfiguration.Default);
             var consumptionLoop = new ConsumptionLoop<TestPayload, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>(
                 shared, new TestNoOpConsumer(), clock, new TestNoOpWaiter(), [], TestPipelineConfiguration.Default);
 
@@ -189,11 +187,8 @@ public sealed class PipelineStressHarnessTests
             private readonly LoopStressHarness _owner = owner;
             private readonly ProductionLoop<TestPayload, TestWorkerProducer, TestRecordingClock, TestRecordingWaiter>.TestAccessor _accessor = accessor;
 
-            public int CurrentSequence => _accessor.CurrentSequence;
-
-            public ChainNode? CurrentNode => _accessor.CurrentNode;
-
-            public ChainNode? OldestNode => _accessor.OldestNode;
+            // Matches legacy "sequence number": ProducerPosition counts published entries (bootstrap → 1).
+            public int CurrentSequence => (int)(_owner.Shared.Queue.ProducerPosition - 1);
 
             public void Bootstrap()
             {

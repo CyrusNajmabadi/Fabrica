@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Pipeline.Tests.Helpers;
@@ -5,8 +6,6 @@ using Xunit;
 
 namespace Fabrica.Pipeline.Tests.Pipeline;
 
-using ChainNode = BaseProductionLoop<TestPayload>.ChainNode;
-using ChainNodeAllocator = BaseProductionLoop<TestPayload>.ChainNode.Allocator;
 using SimulationPressure = ProductionLoop<TestPayload, TestWorkerProducer, TestFakeClock, TestRecordingWaiter>.SimulationPressure;
 
 public sealed class ProductionLoopTickTests
@@ -18,40 +17,33 @@ public sealed class ProductionLoopTickTests
         (int)(TestPipelineConfiguration.PressureHardCeilingNanoseconds / TestPipelineConfiguration.TickDurationNanoseconds);
 
     [Fact]
-    public void Bootstrap_PublishesTickZeroSnapshot_AsCurrentAndOldest()
+    public void Bootstrap_PublishesInitialEntry()
     {
         var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
 
-        var node = test.Accessor.CurrentNode!;
-
-        Assert.Equal(0, test.Accessor.CurrentSequence);
-        Assert.Same(node, test.Accessor.OldestNode);
-        Assert.Same(node, test.Shared.LatestNode);
-        Assert.Equal(0, node.SequenceNumber);
-        Assert.Null(test.Accessor.GetNext(node));
+        Assert.NotNull(test.Accessor.CurrentPayload);
+        Assert.Equal(1, test.Shared.Queue.ProducerPosition);
+        Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
     }
 
     [Fact]
-    public void Tick_PublishesNextSnapshot()
+    public void Tick_PublishesNextEntry()
     {
         var test = ProductionLoopTestContext.Create();
 
         test.Accessor.Bootstrap();
-        var initial = test.Accessor.CurrentNode!;
+        var initialPayload = test.Accessor.CurrentPayload;
 
         test.Accessor.Tick();
 
-        Assert.Equal(1, test.Accessor.CurrentSequence);
-        Assert.NotSame(initial, test.Accessor.CurrentNode);
-        Assert.Same(test.Accessor.CurrentNode, test.Shared.LatestNode);
-        Assert.Equal(1, test.Accessor.CurrentNode!.SequenceNumber);
-        Assert.Same(test.Accessor.CurrentNode, test.Accessor.GetNext(initial));
+        Assert.Equal(2, test.Shared.Queue.ProducerPosition);
+        Assert.NotSame(initialPayload, test.Accessor.CurrentPayload);
     }
 
     [Fact]
-    public void Cleanup_FreesUnpinnedSnapshotsOlderThanConsumptionEpoch()
+    public void Cleanup_FreesUnpinnedEntriesPassedByConsumer()
     {
         var test = ProductionLoopTestContext.Create();
 
@@ -59,20 +51,15 @@ public sealed class ProductionLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var secondNode = test.Accessor.CurrentNode;
-        var firstNode = test.Accessor.OldestNode;
+        test.Shared.Queue.ConsumerAdvance(2);
 
-        test.Shared.ConsumptionEpoch = 2;
+        test.Accessor.Cleanup();
 
-        test.Accessor.CleanupStaleNodes();
-
-        Assert.NotSame(firstNode, test.Accessor.OldestNode);
-        Assert.Same(secondNode, test.Accessor.CurrentNode);
-        Assert.Equal(0, test.Accessor.PinnedQueueCount);
+        Assert.Equal(0, test.Accessor.PinnedPayloadCount);
     }
 
     [Fact]
-    public void Cleanup_ResetsFreedImageBeforeItCanBeReused()
+    public void Cleanup_WithNoConsumerAdvance_DoesNothing()
     {
         var test = ProductionLoopTestContext.Create();
 
@@ -80,35 +67,14 @@ public sealed class ProductionLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstNode = test.Accessor.OldestNode!;
+        test.Accessor.Cleanup();
 
-        test.Shared.ConsumptionEpoch = 2;
-
-        test.Accessor.CleanupStaleNodes();
-
-        Assert.True(firstNode.IsUnreferenced);
+        Assert.Equal(0, test.Accessor.PinnedPayloadCount);
+        Assert.NotNull(test.Accessor.CurrentPayload);
     }
 
     [Fact]
-    public void Cleanup_DoesNotFreeTheCurrentSnapshot_EvenWhenConsumptionEpochIsPastIt()
-    {
-        var test = ProductionLoopTestContext.Create();
-
-        test.Accessor.Bootstrap();
-        var currentNode = test.Accessor.CurrentNode;
-
-        test.Shared.ConsumptionEpoch = 100;
-
-        test.Accessor.CleanupStaleNodes();
-
-        Assert.Same(currentNode, test.Accessor.CurrentNode);
-        Assert.Same(currentNode, test.Accessor.OldestNode);
-        Assert.Same(currentNode, test.Shared.LatestNode);
-        Assert.Equal(0, test.Accessor.PinnedQueueCount);
-    }
-
-    [Fact]
-    public void Cleanup_DoesNotFreeSnapshot_AtConsumptionEpochBoundary()
+    public void Cleanup_AtConsumerBoundary_FreesOnlyPassedEntries()
     {
         var test = ProductionLoopTestContext.Create();
 
@@ -116,17 +82,15 @@ public sealed class ProductionLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        test.Shared.ConsumptionEpoch = 1;
+        test.Shared.Queue.ConsumerAdvance(1);
 
-        test.Accessor.CleanupStaleNodes();
+        test.Accessor.Cleanup();
 
-        Assert.Equal(1, test.Accessor.OldestNode!.SequenceNumber);
-        Assert.Equal(2, test.Accessor.CurrentNode!.SequenceNumber);
-        Assert.Equal(0, test.Accessor.PinnedQueueCount);
+        Assert.Equal(0, test.Accessor.PinnedPayloadCount);
     }
 
     [Fact]
-    public void Cleanup_DetachesPinnedSnapshotsUntilTheyAreUnpinned()
+    public void Cleanup_StashesPinnedPayloadsUntilTheyAreUnpinned()
     {
         var test = ProductionLoopTestContext.Create();
         var pinOwner = new TestPinOwner();
@@ -135,57 +99,42 @@ public sealed class ProductionLoopTickTests
         test.Accessor.Tick();
         test.Accessor.Tick();
 
-        var firstNode = test.Accessor.OldestNode!;
-        var latestNode = test.Accessor.CurrentNode!;
+        test.PinnedVersions.Pin(0, pinOwner);
+        test.Shared.Queue.ConsumerAdvance(2);
 
-        test.PinnedVersions.Pin(firstNode.SequenceNumber, pinOwner);
-        test.Shared.ConsumptionEpoch = 2;
+        test.Accessor.Cleanup();
 
-        test.Accessor.CleanupStaleNodes();
+        Assert.Equal(1, test.Accessor.PinnedPayloadCount);
 
-        Assert.NotSame(firstNode, test.Accessor.OldestNode);
-        Assert.Same(latestNode, test.Accessor.CurrentNode);
-        Assert.Equal(1, test.Accessor.PinnedQueueCount);
+        test.PinnedVersions.Unpin(0, pinOwner);
 
-        test.PinnedVersions.Unpin(firstNode.SequenceNumber, pinOwner);
+        test.Accessor.Cleanup();
 
-        test.Accessor.CleanupStaleNodes();
-
-        Assert.Equal(0, test.Accessor.PinnedQueueCount);
+        Assert.Equal(0, test.Accessor.PinnedPayloadCount);
     }
 
     [Fact]
-    public void Cleanup_PinnedMiddleSnapshot_DoesNotBlockLaterSnapshotsFromBeingFreed()
+    public void Cleanup_PinnedMiddleEntry_DoesNotBlockLaterEntriesFromBeingFreed()
     {
         var test = ProductionLoopTestContext.Create();
         var pinOwner = new TestPinOwner();
 
         test.Accessor.Bootstrap();
-        test.Accessor.Tick(); // tick 1
-        test.Accessor.Tick(); // tick 2
-        test.Accessor.Tick(); // tick 3
+        test.Accessor.Tick();
+        test.Accessor.Tick();
+        test.Accessor.Tick();
 
-        var tick0 = test.Accessor.OldestNode!;
-        var tick1 = test.Accessor.GetNext(tick0)!;
-        var tick2 = test.Accessor.GetNext(tick1)!;
-        var tick3 = test.Accessor.CurrentNode!;
+        test.PinnedVersions.Pin(1, pinOwner);
+        test.Shared.Queue.ConsumerAdvance(3);
 
-        test.PinnedVersions.Pin(tick1.SequenceNumber, pinOwner);
-        test.Shared.ConsumptionEpoch = 3;
+        test.Accessor.Cleanup();
 
-        test.Accessor.CleanupStaleNodes();
+        Assert.Equal(1, test.Accessor.PinnedPayloadCount);
 
-        Assert.Same(tick3, test.Accessor.CurrentNode);
-        Assert.Same(tick3, test.Accessor.OldestNode);
-        Assert.Equal(1, test.Accessor.PinnedQueueCount);
-        Assert.Null(test.Accessor.GetNext(tick1));
-        Assert.Equal(1, tick1.SequenceNumber);
-        Assert.Equal(3, tick3.SequenceNumber);
+        test.PinnedVersions.Unpin(1, pinOwner);
+        test.Accessor.Cleanup();
 
-        test.PinnedVersions.Unpin(tick1.SequenceNumber, pinOwner);
-        test.Accessor.CleanupStaleNodes();
-
-        Assert.Equal(0, test.Accessor.PinnedQueueCount);
+        Assert.Equal(0, test.Accessor.PinnedPayloadCount);
     }
 
     // ── RunOneIteration — basic ──────────────────────────────────────────────
@@ -202,7 +151,7 @@ public sealed class ProductionLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(0, test.Accessor.CurrentSequence);
+        Assert.Equal(1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(TestPipelineConfiguration.TickDurationNanoseconds - 1, accumulator);
         Assert.Equal(
             [GetIdleYieldWait()],
@@ -221,7 +170,7 @@ public sealed class ProductionLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(1, test.Accessor.CurrentSequence);
+        Assert.Equal(2, test.Shared.Queue.ProducerPosition);
         Assert.Equal(0, accumulator);
         Assert.Equal(
             [GetIdleYieldWait()],
@@ -244,7 +193,7 @@ public sealed class ProductionLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(0, test.Accessor.CurrentSequence);
+        Assert.Equal(1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
             [GetIdleYieldWait()],
             test.WaiterState.WaitCalls);
@@ -262,7 +211,7 @@ public sealed class ProductionLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(2, test.Accessor.CurrentSequence);
+        Assert.Equal(3, test.Shared.Queue.ProducerPosition);
         Assert.Equal(123, accumulator);
         Assert.Equal(
             [GetIdleYieldWait()],
@@ -272,7 +221,7 @@ public sealed class ProductionLoopTickTests
     // ── RunOneIteration — soft pressure ──────────────────────────────────────
 
     [Fact]
-    public void RunOneIteration_AppliesPressureDelay_WhenTickEpochGapExceedsLowWaterMark()
+    public void RunOneIteration_AppliesPressureDelay_WhenGapExceedsLowWaterMark()
     {
         var test = ProductionLoopTestContext.Create();
 
@@ -284,14 +233,14 @@ public sealed class ProductionLoopTickTests
 
         long lastTime = 0;
         var accumulator = TestPipelineConfiguration.TickDurationNanoseconds;
+        var positionsBeforeTick = test.Shared.Queue.ProducerPosition;
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        var tickBefore = LowWaterMarkTicks + 1;
-        Assert.Equal(tickBefore + 1, test.Accessor.CurrentSequence);
+        Assert.Equal(positionsBeforeTick + 1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
             [
-                GetExpectedPressureDelay(outstandingTicks: tickBefore),
+                GetExpectedPressureDelay(positionsBeforeTick, test.Shared.Queue.ConsumerPosition),
                 GetIdleYieldWait(),
             ],
             test.WaiterState.WaitCalls);
@@ -306,7 +255,7 @@ public sealed class ProductionLoopTickTests
         for (var i = 0; i < LowWaterMarkTicks + 1; i++)
             test.Accessor.Tick();
 
-        var tickBefore = test.Accessor.CurrentSequence;
+        var positionBefore = test.Shared.Queue.ProducerPosition;
         test.WaiterState.WaitCalls.Clear();
 
         long lastTime = 0;
@@ -318,9 +267,9 @@ public sealed class ProductionLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(tickBefore, test.Accessor.CurrentSequence);
+        Assert.Equal(positionBefore, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
-            [GetExpectedPressureDelay(outstandingTicks: tickBefore)],
+            [GetExpectedPressureDelay(positionBefore, test.Shared.Queue.ConsumerPosition)],
             test.WaiterState.WaitCalls);
         Assert.Equal(TestPipelineConfiguration.TickDurationNanoseconds, accumulator);
     }
@@ -343,7 +292,7 @@ public sealed class ProductionLoopTickTests
         {
             waitCount++;
             if (waitCount == 1)
-                test.Shared.ConsumptionEpoch = 1;
+                test.Shared.Queue.ConsumerAdvance(2);
         };
 
         long lastTime = 0;
@@ -351,7 +300,7 @@ public sealed class ProductionLoopTickTests
 
         test.Accessor.RunOneIteration(CancellationToken.None, ref lastTime, ref accumulator);
 
-        Assert.Equal(HardCeilingTicks + 1, test.Accessor.CurrentSequence);
+        Assert.Equal(HardCeilingTicks + 2, test.Shared.Queue.ProducerPosition);
 
         var hardCeilingWait = GetHardCeilingWait();
         Assert.Equal(hardCeilingWait, test.WaiterState.WaitCalls[0]);
@@ -369,7 +318,7 @@ public sealed class ProductionLoopTickTests
         for (var i = 0; i < HardCeilingTicks; i++)
             test.Accessor.Tick();
 
-        var tickBefore = test.Accessor.CurrentSequence;
+        var positionBefore = test.Shared.Queue.ProducerPosition;
         test.WaiterState.WaitCalls.Clear();
 
         using var cancellationSource = new CancellationTokenSource();
@@ -381,7 +330,7 @@ public sealed class ProductionLoopTickTests
         Assert.Throws<OperationCanceledException>(
             () => test.Accessor.RunOneIteration(cancellationSource.Token, ref lastTime, ref accumulator));
 
-        Assert.Equal(tickBefore, test.Accessor.CurrentSequence);
+        Assert.Equal(positionBefore, test.Shared.Queue.ProducerPosition);
         Assert.Equal(
             [GetHardCeilingWait()],
             test.WaiterState.WaitCalls);
@@ -395,10 +344,10 @@ public sealed class ProductionLoopTickTests
     private static TimeSpan GetHardCeilingWait() =>
         TimeSpan.FromTicks(TestPipelineConfiguration.PressureMaxDelayNanoseconds / 100);
 
-    private static TimeSpan GetExpectedPressureDelay(int outstandingTicks) =>
+    private static TimeSpan GetExpectedPressureDelay(long producerPosition, long consumerPosition) =>
         TimeSpan.FromTicks(
             SimulationPressure.ComputeDelay(
-                gapNanoseconds: outstandingTicks * TestPipelineConfiguration.TickDurationNanoseconds,
+                gapNanoseconds: (producerPosition - consumerPosition) * TestPipelineConfiguration.TickDurationNanoseconds,
                 lowWaterMarkNanoseconds: TestPipelineConfiguration.PressureLowWaterMarkNanoseconds,
                 bucketWidthNanoseconds: TestPipelineConfiguration.TickDurationNanoseconds,
                 bucketCount: TestPipelineConfiguration.PressureBucketCount,
@@ -436,12 +385,12 @@ public sealed class ProductionLoopTickTests
             TestWaiterState waiterState,
             int poolSize = 8)
         {
-            var nodePool = new ObjectPool<ChainNode, ChainNodeAllocator>(poolSize);
+            var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
             var payloadPool = new ObjectPool<TestPayload, TestPayload.Allocator>(poolSize);
-            var shared = new SharedPipelineState<TestPayload>();
+            var shared = new SharedPipelineState<TestPayload>(queue);
             var producer = new TestWorkerProducer(payloadPool, 1);
             var loop = new ProductionLoop<TestPayload, TestWorkerProducer, TClock, TWaiter>(
-                nodePool, shared, producer, clock, waiter, TestPipelineConfiguration.Default);
+                shared, producer, clock, waiter, TestPipelineConfiguration.Default);
             return new ProductionLoopTestContext<TClock, TWaiter>(shared, waiterState, loop);
         }
 
