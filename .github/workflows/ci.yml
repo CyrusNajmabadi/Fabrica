@@ -53,6 +53,10 @@ jobs:
 
       - run: dotnet test -c ${{ matrix.configuration }} --results-directory ./test-results --coverage --coverage-output-format cobertura --report-junit
 
+      - name: Make coverage paths relative
+        if: always()
+        run: sed -i "s|filename=\"$GITHUB_WORKSPACE/|filename=\"|g" ./test-results/*.cobertura.xml
+
       - name: Coverage summary
         if: always()
         run: |
@@ -65,7 +69,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./test-results
+          files: ./test-results/*.cobertura.xml
           fail_ci_if_error: false
 
       - name: Upload test results to Codecov
