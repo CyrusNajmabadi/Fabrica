@@ -130,6 +130,32 @@ public sealed class ProductionLoopRunTests
         Assert.Empty(test.WaiterState.WaitCalls);
     }
 
+    [Fact]
+    public void Run_ExitsNormally_WhenWaiterCancelsWithoutThrowing()
+    {
+        using var cts = new CancellationTokenSource();
+
+        var queue = new ProducerConsumerQueue<PipelineEntry<TestPayload>>();
+        var shared = new SharedPipelineState<TestPayload>(queue);
+
+        var loop = new ProductionLoop<TestPayload, TestSimpleProducer, TestFakeClock, CancelWithoutThrowWaiter>(
+            shared, new TestSimpleProducer(), default, new CancelWithoutThrowWaiter(cts), TestPipelineConfiguration.Default);
+
+        loop.Run(cts.Token);
+
+        Assert.True(shared.Queue.ProducerPosition >= 1, "Bootstrap should have appended at least one entry.");
+    }
+
+    // ── Waiter that cancels the CTS but does not throw, so Run exits via the while condition ──
+
+    private readonly struct CancelWithoutThrowWaiter(CancellationTokenSource cts) : IWaiter
+    {
+        private readonly CancellationTokenSource _cts = cts;
+
+        public void Wait(TimeSpan duration, CancellationToken cancellationToken) =>
+            _cts.Cancel();
+    }
+
     private static class ProductionLoopTestContext
     {
         public static ProductionLoopTestContext<TClock, TWaiter> Create<TClock, TWaiter>(

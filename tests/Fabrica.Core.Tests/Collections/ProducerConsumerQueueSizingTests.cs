@@ -57,6 +57,17 @@ public class ProducerConsumerQueueSizingTests
     public void SlabLength_IsAtLeastOne() =>
         Assert.True(ProducerConsumerQueue<LargePayload>.SlabSizeHelper.SlabLength >= 1);
 
+    [Fact]
+    public void OversizedItem_ProducesSlabLengthOfOne()
+    {
+        Assert.Equal(1, ProducerConsumerQueue<OversizedPayload>.SlabSizeHelper.SlabLength);
+        Assert.Equal(0, ProducerConsumerQueue<OversizedPayload>.SlabSizeHelper.SlabShift);
+        Assert.Equal(0, ProducerConsumerQueue<OversizedPayload>.SlabSizeHelper.OffsetMask);
+    }
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Size = 4096)]
     private struct LargePayload;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Size = 90_000)]
+    private struct OversizedPayload;
 }
