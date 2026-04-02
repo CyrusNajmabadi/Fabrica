@@ -76,7 +76,7 @@ public class ProducerConsumerQueueSingleThreadStressTests
             var segment = queue.ConsumerAcquire();
             Assert.Equal(totalProduced - totalConsumed, segment.Count);
 
-            for (var i = 0L; i < segment.Count; i++)
+            for (var i = 0; i < (int)segment.Count; i++)
                 Assert.Equal(totalConsumed + i, segment[i]);
 
             totalConsumed += segment.Count;
