@@ -4,32 +4,47 @@ public sealed partial class ProducerConsumerQueue<T>
 {
     /// <summary>
     /// A lightweight view over a contiguous range of items stored across one or more slabs. Returned by
-    /// <see cref="ConsumerAcquire"/> and passed back to <see cref="ConsumerRelease"/>.
+    /// <see cref="ConsumerAcquire"/>.
     ///
-    /// The consumer always acquires all available items and releases the entire segment when done. This acquire/release model is
-    /// intentionally whole-range: the consumer processes everything the producer has published since the last release.
+    /// The consumer acquires all available items, processes them, then calls <see cref="ConsumerAdvance"/> with the number of
+    /// items to release. Typically the consumer advances by <c>Count - 1</c>, holding back the last entry as the "previous"
+    /// for the next frame's interpolation range.
     ///
     /// Declared as <c>ref struct</c> so the indexer can return <c>ref readonly</c> items without copies. The struct is stack-only
     /// and cannot outlive the frame in which it was acquired.
     /// </summary>
     public readonly ref struct Segment
     {
+        /// <summary>First slab in the range. Null only for a default (empty) segment.</summary>
         private readonly Slab? _startSlab;
+
+        /// <summary>Index within <see cref="_startSlab"/> where the first item lives.</summary>
         private readonly int _startOffset;
+
+        /// <summary>Total number of items in this segment.</summary>
         private readonly long _count;
+
+        /// <summary>Number of items per slab — used to compute slab boundaries when indexing across multiple slabs.</summary>
         private readonly int _slabLength;
 
-        internal Segment(Slab startSlab, int startOffset, long count, int slabLength)
+        /// <summary>Absolute queue position of <c>this[0]</c>. Used by the consumption loop to compute positions for pinning.</summary>
+        private readonly long _startPosition;
+
+        internal Segment(Slab startSlab, int startOffset, long count, int slabLength, long startPosition)
         {
             _startSlab = startSlab;
             _startOffset = startOffset;
             _count = count;
             _slabLength = slabLength;
+            _startPosition = startPosition;
         }
 
         public long Count => _count;
 
         public bool IsEmpty => _count == 0;
+
+        /// <summary>The absolute queue position of the first item in this segment.</summary>
+        public long StartPosition => _startPosition;
 
         public ref readonly T this[long index]
         {
@@ -50,6 +65,8 @@ public sealed partial class ProducerConsumerQueue<T>
                 return ref slab.Entries[(int)localPosition];
             }
         }
+
+        public ref readonly T this[Index index] => ref this[(long)index.GetOffset((int)_count)];
 
         public Enumerator GetEnumerator() => new(_startSlab, _startOffset, _count, _slabLength);
 

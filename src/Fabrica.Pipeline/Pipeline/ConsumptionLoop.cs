@@ -3,42 +3,33 @@ using Fabrica.Core.Threading;
 namespace Fabrica.Pipeline;
 
 /// <summary>
-/// The consumption ("consumer") thread. Processes the latest node at ≈60 fps and coordinates deferred consumers (e.g. periodic
-/// saves) via a min-heap schedule.
+/// The consumption ("consumer") thread. Processes pipeline entries from the <see cref="Core.Collections.ProducerConsumerQueue{T}"/>
+/// at ≈60 fps and coordinates deferred consumers (e.g. periodic saves) via a min-heap schedule.
 ///
 /// FRAME LOOP  (RunOneIteration)
-///   1. DrainCompletedDeferredTasks: unpin nodes whose deferred tasks have finished
-///      and re-insert the consumer into the schedule with its next run time.
-///   2. Volatile-read LatestNode (acquire fence: all payload writes by the
-///      production thread are now visible).
-///   3. Rotate the node pair if a new node has arrived (see below).
-///   4. MaybeRunDeferredConsumers: peek the schedule heap — if the head entry's
-///      time ≤ now, pop, pin, and dispatch.  O(1) when nothing is due.
-///   5. Consume: the consumer processes the previous/latest pair for the
-///      duration of the call only — it must not store them.
-///   6. ConsumptionEpoch = _previous.SequenceNumber (or _latest's if no
-///      previous exists yet).  This keeps both held nodes alive.
-///   7. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
+///   1. DrainCompletedDeferredTasks: release pins for deferred tasks that have finished and re-insert the consumer into the
+///      schedule with its next run time.
+///   2. ConsumerAcquire: volatile-read the producer position (acquire fence) and return a segment of all entries published since
+///      the last advance.
+///   3. If the segment has ≥ 2 entries (previous + at least one new), process the frame:
+///      a. MaybeRunDeferredConsumers: peek the schedule heap — if the head entry's time ≤ now, pop, pin, and dispatch.
+///      b. Consume: hand the full segment to the consumer. entries[0] is the previous entry (held back from last frame) and
+///         entries[count-1] is the latest.
+///      c. ConsumerAdvance(count - 1): advance past all entries except the last, which becomes the "previous" for the next frame.
+///   4. ThrottleToFrameRate: sleep for any remaining frame budget (≈16.67 ms).
 ///
-/// PREVIOUS / LATEST MODEL
-///   The loop holds two distinct node references: _previous and _latest. When LatestNode changes (new ticks published), the pair
-///   rotates: old latest becomes previous, new node becomes latest. Between rotations the pair is stable.
+/// HOLD-BACK MODEL
+///   The loop always holds back the last entry in the segment by advancing only <c>count - 1</c> positions. This keeps the last
+///   entry's payload alive (not eligible for cleanup) so it can serve as the interpolation baseline for the next frame. On the
+///   next acquire, that held-back entry appears as the first item in the new segment.
 ///
-///   The full forward-linked chain from _previous to _latest is guaranteed alive during the Consume call. When production
-///   publishes multiple nodes between frames, _previous and _latest may be several sequences apart — the consumer can iterate
-///   every intermediate node via the chain, or simply work with the two endpoints.
-///
-///   The loop does not call the consumer until two distinct nodes exist (_previous and _latest are both non-null and distinct).
-///   This means the consumer always has a valid interpolation range — no null checks needed.
-///
-/// EPOCH ADVANCEMENT
-///   The epoch is set to _previous.SequenceNumber. Cleanup frees strictly below the epoch, so both _previous (sequence N, not
-///   &lt; N) and _latest (sequence &gt; N) remain alive — along with the entire chain between them.
+///   • count == 1: no new entries since last frame → skip consume (only the held-back entry from last frame).
+///   • count ≥ 2: new entries arrived → consume, then advance past all but the last.
 ///
 /// DEFERRED CONSUMER SCHEDULING
 ///   Deferred consumers are managed by <see cref="DeferredConsumerScheduler"/> using a min-heap keyed by next-run timestamp. The
 ///   hot-path check is O(1) — a single peek determines if any consumer is due. See <see cref="PinnedVersions"/> for the full
-///   pinning protocol that prevents the production thread from reclaiming nodes held by in-flight deferred tasks.
+///   pinning protocol that prevents the production thread from reclaiming payloads held by in-flight deferred tasks.
 ///
 /// Generic constraints (all struct) eliminate interface dispatch on every call in the hot frame loop.
 /// </summary>
@@ -62,9 +53,6 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
     private TConsumer _consumer = consumer;
 #pragma warning restore IDE0044
 
-    private BaseProductionLoop<TPayload>.ChainNode? _previous;
-    private BaseProductionLoop<TPayload>.ChainNode? _latest;
-
     public void Run(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -76,13 +64,10 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
     /// <summary>
     /// Single frame of the consumption loop.
     ///
-    /// Housekeeping first: finalise any deferred tasks that completed since last frame (unpin, re-schedule), then check whether
-    /// the production thread has published a new node. If so, rotate the previous/latest pair so the consumer always sees the two
-    /// most-recent distinct nodes.
-    ///
-    /// Once we have a valid pair, dispatch due deferred consumers (O(1) peek on the min-heap — no work when nothing is scheduled)
-    /// and then hand the pair to the fast consumer. Finally, advance the epoch to keep both held nodes alive and sleep for any
-    /// remaining frame budget.
+    /// Housekeeping first: finalise any deferred tasks that completed since last frame (release pins, re-schedule). Then acquire
+    /// all entries the producer has published since the last advance. If at least two entries are available (the held-back previous
+    /// plus one or more new), dispatch due deferred consumers, hand the segment to the fast consumer, and advance past all but the
+    /// last entry. Finally, sleep for any remaining frame budget.
     /// </summary>
     private void RunOneIteration(CancellationToken cancellationToken)
     {
@@ -92,33 +77,23 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
         _deferred.EnsureScheduleInitialized(frameStart);
         _deferred.DrainCompletedTasks(frameStart);
 
-        var latestNode = _shared.LatestNode;
-        if (latestNode is not null)
+        var segment = _shared.Queue.ConsumerAcquire();
+        if (segment.Count >= 2)
         {
-            if (!ReferenceEquals(latestNode, _latest))
-            {
-                _previous = _latest;
-                _latest = latestNode;
-            }
+            var latestEntry = segment[^1];
 
-            // Clamp: if the production thread published between our clock read and the volatile read of LatestNode, frameStart
-            // could precede the node's publish time. Clamping to zero-elapsed prevents negative interpolation values.
-            frameStart = Math.Max(frameStart, latestNode.PublishTimeNanoseconds);
+            // Clamp: if the production thread published between our clock read and the acquire, frameStart could precede the
+            // entry's publish time. Clamping to zero-elapsed prevents negative interpolation values.
+            frameStart = Math.Max(frameStart, latestEntry.PublishTimeNanoseconds);
 
-            if (_previous is not null)
-            {
-                _deferred.MaybeRunConsumers(latestNode, frameStart, cancellationToken);
+            var latestPosition = segment.StartPosition + segment.Count - 1;
+            _deferred.MaybeRunConsumers(in latestEntry, latestPosition, frameStart, cancellationToken);
 
-                _consumer.Consume(
-                    _previous,
-                    latestNode,
-                    frameStart,
-                    cancellationToken);
+            _consumer.Consume(in segment, frameStart, cancellationToken);
 
-                // Epoch = _previous.SequenceNumber, not _latest: cleanup frees sequence
-                // < epoch, so _previous (N) survives (N is not < N). We can't advance to _latest because _previous is reused on the next frame if no new node arrives — freeing it would be UAF.
-                _shared.ConsumptionEpoch = _previous.SequenceNumber;
-            }
+            // Advance past all but the last entry. The last entry stays in the queue as the "previous" for next frame's
+            // interpolation range.
+            _shared.Queue.ConsumerAdvance(segment.Count - 1);
         }
 
         this.ThrottleToFrameRate(frameStart, cancellationToken);

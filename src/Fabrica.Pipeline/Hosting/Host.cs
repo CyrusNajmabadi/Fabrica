@@ -9,25 +9,22 @@ namespace Fabrica.Pipeline.Hosting;
 ///
 ///  PRODUCTION THREAD  (producer / memory owner)                   40 ticks/sec
 ///  ──────────────────────────────────────────────────────────────────────────
-///  Bootstrap() → allocates sequence-0 node and publishes it
+///  Bootstrap() → appends the initial entry to the queue
 ///  Tick loop:
 ///    • Delegate payload production to TProducer
-///    • Append new ChainNode onto the forward chain:
-///        [seq 0] → [seq 1] → [seq 2] → … → [seq N]
-///         _oldest                            _current / LatestNode
-///    • Volatile-write LatestNode = [seq N]  (release fence)
-///    • CleanupStaleNodes(): walk chain from _oldest, freeing every
-///      node whose sequence &lt; ConsumptionEpoch and is not pinned
+///    • Append new PipelineEntry to the queue (volatile write of producer position)
+///    • Cleanup: walk entries the consumer has advanced past, releasing resources
+///      (checking PinnedVersions for deferred holds)
 ///    • ApplyPressureDelay(): slow down if running too far ahead
 ///
 ///  CONSUMPTION THREAD  (consumer / deferred consumer coordinator)   ≈60 fps
 ///  ──────────────────────────────────────────────────────────────────────────
 ///  Frame loop:
-///    • DrainCompletedDeferredTasks(): unpin nodes from finished async work
-///    • Volatile-read LatestNode                     (acquire fence)
+///    • DrainCompletedDeferredTasks(): release pins from finished async work
+///    • ConsumerAcquire(): volatile-read producer position (acquire fence)
 ///    • MaybeRunDeferredConsumers(): check min-heap, dispatch due consumers
-///    • Consume(previous, latest): called once both are non-null and distinct
-///    • Volatile-write ConsumptionEpoch = sequence   (release fence)
+///    • Consume(entries): called when segment has ≥ 2 entries (previous + new)
+///    • ConsumerAdvance(count - 1): hold back last entry for interpolation
 ///    • ThrottleToFrameRate()
 ///
 ///  DEFERRED CONSUMERS  (threadpool — dispatched by consumption thread)
@@ -40,29 +37,26 @@ namespace Fabrica.Pipeline.Hosting;
 ///
 ///  All cross-thread communication lives in SharedPipelineState&lt;TPayload&gt;:
 ///
-///  SharedPipelineState.LatestNode        (volatile ChainNode&lt;TPayload&gt;?)
-///    Written by production only; read by consumption.
-///    The volatile release/acquire pair guarantees that all payload writes
-///    made before the publish are visible to any thread that reads the node.
-///    No additional synchronisation is needed to access payload fields.
+///  ProducerConsumerQueue (SPSC volatile positions)
+///    The queue's producer position (volatile write by producer, volatile read
+///    by consumer) replaces the old LatestNode field. Its consumer position
+///    (volatile write by consumer, volatile read by producer) replaces the old
+///    ConsumptionEpoch. The release/acquire fences ensure all entry data is
+///    visible across threads without additional synchronisation.
 ///
-///  SharedPipelineState.ConsumptionEpoch  (volatile int)
-///    Written by consumption only; read by production.
-///    Production frees sequence &lt; epoch.  Conservative race: if production
-///    reads a stale (lower) epoch it retains a node one extra cleanup pass —
-///    it never frees something the consumption thread is still touching.
-///
-///  SharedPipelineState.PinnedVersions    (ConcurrentDictionary-backed)
-///    Thread-safe registry of sequences that deferred consumers hold.
+///  PinnedVersions (ConcurrentDictionary-backed)
+///    Thread-safe registry of queue positions that deferred consumers hold.
 ///    Consumption thread pins before dispatching; threadpool tasks unpin on
 ///    completion; production thread reads IsPinned during cleanup.
 ///
 /// ═══════════════════════ WHY NO LOCKS IN THE HOT PATH ══════════════════════
 ///
-///  LatestNode and ConsumptionEpoch each have at most one writer thread.
-///  Volatile fences provide the required visibility across CPUs.
-///  The epoch is conservative, so races can only make the system hold memory
-///  slightly longer — they can never corrupt state or free a live object.
+///  The queue's producer and consumer positions each have at most one writer.
+///  Volatile fences provide the required visibility across CPUs. Staleness in
+///  either direction is conservative: a stale producer position means the
+///  consumer sees fewer entries (processes them next frame); a stale consumer
+///  position means the producer retains entries longer (delays cleanup, never
+///  frees prematurely).
 ///
 ///  PinnedVersions uses ConcurrentDictionary because Unpin arrives from a
 ///  threadpool task.  Pinning only happens at deferred-consumer boundaries
@@ -71,29 +65,24 @@ namespace Fabrica.Pipeline.Hosting;
 /// ═══════════════════════ PARALLELISM OPPORTUNITIES ═════════════════════════
 ///
 ///  MULTITHREADED PRODUCTION (future)
-///    _currentNode is never freed by cleanup (it is explicitly excluded by
-///    the _oldestNode != _currentNode guard).  Its payload is fully immutable
-///    once published.  The producer can spawn any number of worker threads to
-///    read the current payload and compute parts of the next state in parallel
-///    — all workers read immutable data, and their output goes into a fresh
-///    payload not yet visible to any other thread.  No locks or atomics are
-///    required between workers and the owning thread beyond a final join/await
-///    before publishing the new node.
+///    The current payload is fully immutable once published. The producer can
+///    spawn any number of worker threads to read the current payload and compute
+///    parts of the next state in parallel — all workers read immutable data,
+///    and their output goes into a fresh payload not yet visible to any other
+///    thread. No locks or atomics are required between workers and the owning
+///    thread beyond a final join/await before publishing the new entry.
 ///
 ///  MULTITHREADED CONSUMPTION
-///    When the consumer dispatches to parallel workers, both 'previous' and
-///    'latest' nodes — and the entire chain between them — are guaranteed alive:
-///      • 'latest' is at sequence M; ConsumptionEpoch has not advanced past M.
-///      • 'previous' is at sequence N ≤ M; epoch = N, and cleanup frees only
-///        sequence &lt; N (strictly less than), so sequence N itself is never freed.
-///    All payloads are fully immutable.  Workers can safely read any node in
-///    the chain without synchronization.
+///    When the consumer dispatches to parallel workers, the entire segment from
+///    the previous entry through the latest is guaranteed alive — none of those
+///    positions have been advanced past yet. All payloads are fully immutable.
+///    Workers can safely read any entry in the segment without synchronization.
 ///    Constraint: all workers must finish before the consumer call returns,
-///    because ConsumptionEpoch advances immediately afterward and the
-///    production loop may then reclaim 'previous' on the very next cleanup.
+///    because ConsumerAdvance happens immediately afterward and the production
+///    loop may then reclaim earlier entries on the very next cleanup.
 ///
 ///  TEMPORAL DECOUPLING
-///    Consumption always operates on already-produced, immutable nodes.
+///    Consumption always operates on already-produced, immutable entries.
 ///    The production loop is concurrently producing ticks further ahead.
 ///    The two threads are temporally decoupled: consumption is always at a
 ///    point in the past relative to the latest produced state, and neither
@@ -109,23 +98,20 @@ namespace Fabrica.Pipeline.Hosting;
 ///    as fast as it can, never artificially fast and never artificially
 ///    throttled just to hit a fixed Hz when it cannot sustain it.
 ///
-///  CONSUMPTION → PRODUCTION BACK-PRESSURE (epoch gap)
-///    Because consumption always reads LatestNode (the most recent tick),
-///    a slow consumption frame rate does not by itself cause pressure:
-///    each frame still advances the epoch to the latest tick and allows
-///    cleanup to reclaim the entire backlog in one pass.
+///  CONSUMPTION → PRODUCTION BACK-PRESSURE (queue depth)
+///    Because consumption acquires the latest entries each frame and advances
+///    past all but one, a slow consumption frame rate does not by itself cause
+///    pressure: each frame still catches up to the latest entry and releases
+///    the backlog for cleanup.
 ///
 ///    Pressure builds only when the consumption thread stalls long enough
-///    for production to run far ahead.  The epoch gap (produced sequences
-///    minus consumption epoch) is the sole pressure signal.  With a 40 Hz
+///    for production to run far ahead. The queue depth (producer position
+///    minus consumer position) is the sole pressure signal. With a 40 Hz
 ///    tick rate:
 ///      • Each 1/8 of the hard-ceiling gap adds an exponential pre-tick
 ///        delay (1 ms → 2 ms → 4 ms → … → 64 ms).
 ///      • At the hard ceiling the production loop busy-waits until the
-///        consumption thread advances the epoch, preventing unbounded
-///        growth of the chain.
-///    Note: ObjectPool.Rent() never blocks — it allocates when empty.
-///    Pressure is therefore based on the epoch gap, not pool occupancy.
+///        consumption thread advances, preventing unbounded queue growth.
 ///
 /// ════════════════════════════════════════════════════════════════════════════
 ///

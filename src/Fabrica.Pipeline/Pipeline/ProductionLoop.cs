@@ -1,26 +1,34 @@
-using Fabrica.Core.Memory;
+using Fabrica.Core.Collections;
 using Fabrica.Core.Threading;
 
 namespace Fabrica.Pipeline;
 
 /// <summary>
-/// The production ("producer") thread. Advances the chain one node at a time, delegates domain-specific payload creation to a
-/// <typeparamref name="TProducer"/>, and reclaims nodes the consumption thread has finished with.
+/// The production ("producer") thread. Appends pipeline entries to the <see cref="ProducerConsumerQueue{T}"/>, delegates
+/// domain-specific payload creation to a <typeparamref name="TProducer"/>, cleans up entries the consumption thread has advanced
+/// past, and manages deferred-release of pinned payloads.
 ///
-/// Inherits chain management (node allocation, linking, cleanup, ref-counting) from <see cref="BaseProductionLoop{TPayload}"/>.
-/// This class adds the tick loop, backpressure, and domain-specific producer/consumer coordination.
+/// QUEUE-BASED DESIGN
+///   Replaces the previous ChainNode linked-list model. Each tick appends a <see cref="PipelineEntry{TPayload}"/> to the shared
+///   queue. The queue's volatile producer/consumer positions provide all SPSC synchronization — no separate LatestNode or
+///   ConsumptionEpoch fields are needed.
+///
+/// CLEANUP &amp; PINNING
+///   <see cref="ProducerConsumerQueue{T}.ProducerCleanup{THandler}"/> walks entries the consumer has advanced past. For each
+///   entry, the <see cref="CleanupHandler"/> checks <see cref="PinnedVersions.IsPinned"/>:
+///     • Not pinned → release payload resources immediately via <typeparamref name="TProducer"/>.
+///     • Pinned → stash the payload in <c>_pinnedPayloads</c>. A subsequent <see cref="DrainUnpinnedPayloads"/> pass releases
+///       them once the deferred consumer has finished and the pin has been removed.
 ///
 /// Generic on all type parameters (all constrained to struct) so the JIT/AOT devirtualises all calls — zero interface-dispatch
 /// overhead in the hot path.
 /// </summary>
 public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>(
-    ObjectPool<BaseProductionLoop<TPayload>.ChainNode, BaseProductionLoop<TPayload>.ChainNode.Allocator> nodePool,
     SharedPipelineState<TPayload> shared,
     TProducer producer,
     TClock clock,
     TWaiter waiter,
     PipelineConfiguration config)
-    : BaseProductionLoop<TPayload>(nodePool, shared.PinnedVersions)
     where TProducer : struct, IProducer<TPayload>
     where TClock : struct, IClock
     where TWaiter : struct, IWaiter
@@ -33,8 +41,15 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
     private TProducer _producer = producer;
 #pragma warning restore IDE0044
 
-    protected override void ReleasePayloadResources(TPayload payload) =>
-        _producer.ReleaseResources(payload);
+    /// <summary>Most recently produced payload. Kept so the next tick can derive the new payload from it.</summary>
+    private TPayload _currentPayload = default!;
+
+    /// <summary>Payloads whose queue positions were pinned at cleanup time. Keyed by queue position so we can match the unpin
+    /// callback. Released when <see cref="DrainUnpinnedPayloads"/> finds the pin has been removed.</summary>
+    private readonly Dictionary<long, TPayload> _pinnedPayloads = [];
+
+    /// <summary>Reusable buffer to avoid allocating during <see cref="DrainUnpinnedPayloads"/>.</summary>
+    private readonly List<long> _drainBuffer = [];
 
     public void Run(CancellationToken cancellationToken)
     {
@@ -72,7 +87,7 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
 
             this.ApplyPressureDelay(cancellationToken);
             this.Tick(cancellationToken);
-            this.CleanupStaleNodes(_shared.ConsumptionEpoch);
+            this.Cleanup();
             accumulator -= _config.TickDurationNanoseconds;
         }
     }
@@ -81,25 +96,76 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
 
     private void Bootstrap(CancellationToken cancellationToken)
     {
-        var payload = _producer.CreateInitialPayload(cancellationToken);
-        var node = this.BootstrapChain(payload, _clock.NowNanoseconds);
-        _shared.LatestNode = node;
+        _currentPayload = _producer.CreateInitialPayload(cancellationToken);
+        _shared.Queue.ProducerAppend(new PipelineEntry<TPayload>
+        {
+            Payload = _currentPayload,
+            PublishTimeNanoseconds = _clock.NowNanoseconds,
+        });
     }
 
     // ── Tick ─────────────────────────────────────────────────────────────────
 
     private void Tick(CancellationToken cancellationToken)
     {
-        var payload = _producer.Produce(this.CurrentNode!.Payload, cancellationToken);
-        var node = this.AppendToChain(payload, _clock.NowNanoseconds);
-        _shared.LatestNode = node;
+        _currentPayload = _producer.Produce(_currentPayload, cancellationToken);
+        _shared.Queue.ProducerAppend(new PipelineEntry<TPayload>
+        {
+            Payload = _currentPayload,
+            PublishTimeNanoseconds = _clock.NowNanoseconds,
+        });
+    }
+
+    // ── Cleanup ──────────────────────────────────────────────────────────────
+
+    private void Cleanup()
+    {
+        var handler = new CleanupHandler(this);
+        _shared.Queue.ProducerCleanup(ref handler);
+        this.DrainUnpinnedPayloads();
+    }
+
+    private void DrainUnpinnedPayloads()
+    {
+        if (_pinnedPayloads.Count == 0)
+            return;
+
+        foreach (var (position, _) in _pinnedPayloads)
+        {
+            if (!_shared.PinnedVersions.IsPinned(position))
+                _drainBuffer.Add(position);
+        }
+
+        foreach (var position in _drainBuffer)
+        {
+            _producer.ReleaseResources(_pinnedPayloads[position]);
+            _pinnedPayloads.Remove(position);
+        }
+
+        _drainBuffer.Clear();
+    }
+
+    /// <summary>
+    /// Cleanup handler for <see cref="ProducerConsumerQueue{T}.ProducerCleanup{THandler}"/>. Checks pinning status and either
+    /// releases resources immediately or stashes the payload for deferred release.
+    /// </summary>
+    private readonly struct CleanupHandler(ProductionLoop<TPayload, TProducer, TClock, TWaiter> loop)
+        : ProducerConsumerQueue<PipelineEntry<TPayload>>.ICleanupHandler
+    {
+        public void HandleCleanup(long position, in PipelineEntry<TPayload> item)
+        {
+            if (loop._shared.PinnedVersions.IsPinned(position))
+                loop._pinnedPayloads[position] = item.Payload;
+            else
+                loop._producer.ReleaseResources(item.Payload);
+        }
     }
 
     // ── Backpressure ─────────────────────────────────────────────────────────
 
     private void ApplyPressureDelay(CancellationToken cancellationToken)
     {
-        var gapNanoseconds = (this.CurrentSequence - _shared.ConsumptionEpoch)
+        var gapNanoseconds = (_shared.Queue.ProducerPosition - _shared.Queue.ConsumerPosition)
                             * _config.TickDurationNanoseconds;
 
         while (gapNanoseconds >= _config.PressureHardCeilingNanoseconds)
@@ -107,7 +173,7 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
             _waiter.Wait(
                 new TimeSpan(_config.PressureMaxDelayNanoseconds / 100),
                 cancellationToken);
-            gapNanoseconds = (this.CurrentSequence - _shared.ConsumptionEpoch)
+            gapNanoseconds = (_shared.Queue.ProducerPosition - _shared.Queue.ConsumerPosition)
                            * _config.TickDurationNanoseconds;
         }
 

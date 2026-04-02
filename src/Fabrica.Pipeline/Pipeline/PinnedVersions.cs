@@ -4,39 +4,40 @@ using System.Runtime.CompilerServices;
 namespace Fabrica.Pipeline;
 
 /// <summary>
-/// Thread-safe multi-owner registry of snapshot sequence numbers that must not be reclaimed by the production thread. This is the
-/// authoritative documentation for the pinning protocol; other types reference this doc.
+/// Thread-safe multi-owner registry of queue positions that must not have their payloads reclaimed by the production thread. This
+/// is the authoritative documentation for the pinning protocol; other types reference this doc.
 ///
 /// WHY THIS EXISTS
-///   The production thread (sole memory owner) normally reclaims a node once ConsumptionEpoch has advanced past it. A deferred
+///   The production thread (sole memory owner) normally reclaims an entry once the consumer has advanced past it. A deferred
 ///   consumer task, however, holds a live reference to the payload for the duration of its async work — potentially long after the
-///   consumption thread has moved on. PinnedVersions lets the consumption thread declare a hold on a sequence before dispatching
+///   consumption thread has moved on. PinnedVersions lets the consumption thread declare a hold on a position before dispatching
 ///   the deferred task, and the task releases it when done.
 ///
 /// PINNING PROTOCOL
 ///   Three threads participate; the ordering between their operations is what makes the system safe:
 ///
 ///   CONSUMPTION THREAD (single-threaded — no concurrency within this thread):
-///     1. Pin(sequenceNumber, consumer) — before dispatching the deferred task.
+///     1. Pin(position, consumer) — before dispatching the deferred task.
 ///     2. Dispatch the Task via ConsumeAsync.
-///     3. Advance ConsumptionEpoch — only after pinning is complete.
+///     3. Advance the consumer position — only after pinning is complete.
 ///
-///   Because steps 1 and 3 are sequential on the same thread, the Pin is always visible before the epoch advances past that
-///   sequence. The production thread therefore cannot see an advanced epoch for a sequence that hasn't been pinned yet.
+///   Because steps 1 and 3 are sequential on the same thread, the Pin is always visible before the position advances past that
+///   entry. The production thread therefore cannot see an advanced position for an entry that hasn't been pinned yet.
 ///
 ///   THREADPOOL (deferred consumer task — may run on any thread):
 ///     4. Task completes (success or fault).
-///     5. Consumption thread calls Unpin(sequenceNumber, consumer) on the next frame's DrainCompletedTasks pass.
+///     5. Consumption thread calls Unpin(position, consumer) on the next frame's DrainCompletedTasks pass.
 ///
-///   PRODUCTION THREAD (during CleanupStaleNodes):
-///     6. Walks the chain from _oldest forward, freeing nodes with sequence &lt; ConsumptionEpoch.
-///     7. For each candidate, checks IsPinned. If pinned, splices the node into a deferred queue instead of freeing it.
-///     8. On subsequent cleanup passes, re-checks the deferred queue and frees nodes whose pins have been released.
+///   PRODUCTION THREAD (during cleanup):
+///     6. Walks the queue via ProducerCleanup, processing entries the consumer has advanced past.
+///     7. For each entry, the cleanup handler checks IsPinned. If pinned, stashes the payload in a deferred table instead of
+///        releasing its resources.
+///     8. On subsequent cleanup passes, re-checks the deferred table and releases payloads whose pins have been released.
 ///
-///   SAFETY ARGUMENT: The production thread only frees sequence &lt; ConsumptionEpoch. The consumption thread always pins
-///   *before* advancing the epoch past that sequence (steps 1→3 are ordered on a single thread). Therefore, by the time the
-///   production thread's epoch read makes a sequence eligible for cleanup, the pin is already visible in the ConcurrentDictionary.
-///   A stale (lower) epoch read is conservative — it delays cleanup, never causes premature freeing.
+///   SAFETY ARGUMENT: The production thread only cleans entries the consumer has advanced past. The consumption thread always pins
+///   *before* advancing past that position (steps 1→3 are ordered on a single thread). Therefore, by the time the production
+///   thread's cleanup reaches that position, the pin is already visible in the ConcurrentDictionary. A stale (lower) consumer
+///   position read is conservative — it delays cleanup, never causes premature freeing.
 ///
 /// WHY ConcurrentDictionary
 ///   Pin is called on the consumption thread. Unpin is called on the threadpool task thread. IsPinned is called on the production
@@ -47,7 +48,7 @@ namespace Fabrica.Pipeline;
 ///   Despite using a concurrent collection, the pinning system has negligible impact on both the production and consumption
 ///   threads:
 ///
-///   PRODUCTION THREAD (calls IsPinned every tick during CleanupStaleNodes):
+///   PRODUCTION THREAD (calls IsPinned during cleanup):
 ///     IsPinned delegates to ConcurrentDictionary.TryGetValue, which is lock-free on .NET 5+ (volatile reads only, no
 ///     synchronization). For the overwhelming majority of ticks, no deferred consumers are in flight and the dictionary is empty —
 ///     TryGetValue returns false immediately with no contention. Even when entries exist, the read never blocks and never competes
@@ -69,42 +70,42 @@ namespace Fabrica.Pipeline;
 ///     vs threadpool) at very low frequency, contention is negligible in practice.
 ///
 /// MULTI-OWNER DESIGN
-///   Each sequence maps to a set of <see cref="IPinOwner"/> objects rather than a boolean flag. Currently each deferred consumer
+///   Each position maps to a set of <see cref="IPinOwner"/> objects rather than a boolean flag. Currently each deferred consumer
 ///   acts as its own pin owner, but the multi-owner structure supports future callers — e.g. an external viewer that wants to
-///   freeze a specific node for inspection while a deferred consumer is also processing the same sequence.
+///   freeze a specific entry for inspection while a deferred consumer is also processing the same position.
 /// </summary>
 public sealed class PinnedVersions
 {
-    private readonly ConcurrentDictionary<int, ConcurrentDictionary<IPinOwner, byte>> _pinned = new();
+    private readonly ConcurrentDictionary<long, ConcurrentDictionary<IPinOwner, byte>> _pinned = new();
 
-    public void Pin(int sequenceNumber, IPinOwner owner)
+    public void Pin(long position, IPinOwner owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
 
         var owners = _pinned.GetOrAdd(
-            sequenceNumber,
+            position,
             static _ => new ConcurrentDictionary<IPinOwner, byte>(ReferenceOwnerComparer.Instance));
 
         if (!owners.TryAdd(owner, 0))
-            throw new InvalidOperationException("The same owner pinned the same sequence more than once.");
+            throw new InvalidOperationException("The same owner pinned the same position more than once.");
     }
 
-    public void Unpin(int sequenceNumber, IPinOwner owner)
+    public void Unpin(long position, IPinOwner owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
 
-        if (!_pinned.TryGetValue(sequenceNumber, out var owners))
-            throw new InvalidOperationException("Attempted to unpin a sequence that is not currently pinned.");
+        if (!_pinned.TryGetValue(position, out var owners))
+            throw new InvalidOperationException("Attempted to unpin a position that is not currently pinned.");
 
         if (!owners.TryRemove(owner, out _))
-            throw new InvalidOperationException("Attempted to unpin a sequence for an owner that is not currently pinned.");
+            throw new InvalidOperationException("Attempted to unpin a position for an owner that is not currently pinned.");
 
         if (owners.IsEmpty)
-            _pinned.TryRemove(new KeyValuePair<int, ConcurrentDictionary<IPinOwner, byte>>(sequenceNumber, owners));
+            _pinned.TryRemove(new KeyValuePair<long, ConcurrentDictionary<IPinOwner, byte>>(position, owners));
     }
 
-    public bool IsPinned(int sequenceNumber) =>
-        _pinned.TryGetValue(sequenceNumber, out var owners) && !owners.IsEmpty;
+    public bool IsPinned(long position) =>
+        _pinned.TryGetValue(position, out var owners) && !owners.IsEmpty;
 
     private sealed class ReferenceOwnerComparer : IEqualityComparer<IPinOwner>
     {

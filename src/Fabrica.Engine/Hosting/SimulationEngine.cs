@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Engine.Rendering;
@@ -37,16 +38,16 @@ internal static class SimulationEngine
             RenderIntervalNanoseconds = SimulationConstants.RenderIntervalNanoseconds,
         };
 
-        var nodePool = new ObjectPool<BaseProductionLoop<WorldImage>.ChainNode, BaseProductionLoop<WorldImage>.ChainNode.Allocator>(SimulationConstants.SnapshotPoolSize);
+        var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
-        var shared = new SharedPipelineState<WorldImage>();
+        var shared = new SharedPipelineState<WorldImage>(queue);
 
         var producer = new SimulationProducer(imagePool, simulationWorkerCount);
         var consumer = new RenderConsumer<TRenderer>(renderWorkerCount, renderer);
 
         return new Host<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>(
             new ProductionLoop<WorldImage, SimulationProducer, TClock, TWaiter>(
-                nodePool, shared, producer, clock, waiter, config),
+                shared, producer, clock, waiter, config),
             new ConsumptionLoop<WorldImage, RenderConsumer<TRenderer>, TClock, TWaiter>(
                 shared, consumer, clock, waiter, deferredConsumers, config));
     }
