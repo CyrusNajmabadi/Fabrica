@@ -89,7 +89,10 @@ artifacts/
 
 # Coverage results
 coverage*/
+CoverageReport/
 *.coveragexml
+*.cobertura.xml
+*.coverage
 
 # Backup & temp files
 *.bak

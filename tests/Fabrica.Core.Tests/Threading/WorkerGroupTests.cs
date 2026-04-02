@@ -87,6 +87,38 @@ public sealed class WorkerGroupTests
         Assert.True(allExited, "Worker threads did not exit after cancellation — they are stuck on WaitOne.");
     }
 
+    [Fact]
+    public void Constructor_ThrowsWhenWorkerCountIsZero() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WorkerGroup<EmptyState, NoOpExecutor>(
+                workerCount: 0,
+                _ => new NoOpExecutor(),
+                "ZeroWorkerTest"));
+
+    [Fact]
+    public void Constructor_ThrowsWhenWorkerCountIsNegative() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WorkerGroup<EmptyState, NoOpExecutor>(
+                workerCount: -1,
+                _ => new NoOpExecutor(),
+                "NegativeWorkerTest"));
+
+    [Fact]
+    public void Dispatch_CompletesWhenExecutorThrowsOperationCanceledException()
+    {
+        using var cancellationTokenSource = new CancellationTokenSource();
+
+        var group = new WorkerGroup<EmptyState, OperationCanceledExecutor>(
+            workerCount: 1,
+            _ => new OperationCanceledExecutor(),
+            "OCETest");
+
+        group.Dispatch(default, cancellationTokenSource.Token);
+
+        var exited = group.GetTestAccessor().Join(TimeoutMilliseconds);
+        Assert.True(exited, "Worker thread did not exit after OperationCanceledException.");
+    }
+
     // ── Test executors ────────────────────────────────────────────────────
 
     private readonly struct EmptyState;
@@ -103,5 +135,13 @@ public sealed class WorkerGroupTests
 
         public void Execute(in EmptyState state, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Deliberate test exception.");
+    }
+
+    private readonly struct OperationCanceledExecutor : IThreadExecutor<EmptyState>
+    {
+        public void Prepare() { }
+
+        public void Execute(in EmptyState state, CancellationToken cancellationToken) =>
+            throw new OperationCanceledException("Deliberate cancellation in executor.");
     }
 }
