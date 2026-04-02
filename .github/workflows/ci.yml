@@ -25,12 +25,17 @@ jobs:
 
   format:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      - run: dotnet build -c ${{ matrix.configuration }}
 
       - run: dotnet format --verify-no-changes
 
