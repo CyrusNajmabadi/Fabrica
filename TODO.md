@@ -8,15 +8,10 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] Machine state — producers, consumers, inserters
 - [ ] Persistent tree structure for `WorldImage` — share unchanged subtrees across ticks so memory scales with
   changes-per-tick, not total world size (mentioned in `WorldImage` doc comment)
-- [ ] Actual world advance logic in `SimulationLoop.Tick` (currently a TODO)
+- [ ] Actual world advance logic in `SimulationExecutor.Execute()` (currently a no-op)
 
 ## Engine / Architecture — Features
 
-- [ ] **Consider `Task`/`TaskCompletionSource` for loop thread management** — `Host.Run` currently tracks exceptions
-  manually with `Exception?` locals and re-throws after `Thread.Join`. Wrapping each thread in a `TaskCompletionSource`
-  would let us use `Task.WhenAll`, automatic exception propagation via `AggregateException`, and standard `async`
-  composition. We should still use dedicated `Thread` objects for the actual loop execution (control over naming,
-  background flag, stack size), but layer the `Task` abstraction on top for lifecycle/error tracking
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput
   (struct exists as placeholder)
 - [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationExecutor.Execute()` (generic
@@ -64,8 +59,6 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 - [ ] Architecture diagram (the mermaid-style flow in `Engine.cs` comments could become a standalone doc)
 - [ ] Onboarding notes for the threading model — the doc comments are thorough but scattered across files
-- [ ] **Document pinning rules** — analogous to hazard pointers / RCU grace periods; explain when Pin/Unpin must be called
-  relative to epoch advancement
 
 ---
 
@@ -118,6 +111,15 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   reusable generic infrastructure (`ThreadWorker`, `WorkerGroup`, `IThreadExecutor`); `SimulationWorker` deleted and
   replaced by `SimulationExecutor` + generic worker; `RenderCoordinator`/`RenderExecutor` built on the same infrastructure
   for parallel rendering; `Simulator` renamed to `SimulationCoordinator` for naming consistency
+- [x] `Task`/`TaskCompletionSource` for loop thread management — `Host.Run` replaced with `async Task RunAsync` using
+  `TaskCompletionSource` per thread and `await Task.WhenAll`; automatic exception propagation via `AggregateException`;
+  dedicated `Thread` objects retained for execution (PR #67)
+- [x] Hot-path lambda allocation fix — replaced `CleanupStaleNodes` capturing lambda with manual `DrainUnpinnedNodes`
+  using a pre-allocated drain buffer; replaced `IEnumerable` boxing in `ExceptWith` with explicit loop (PRs #65, #66)
+- [x] Project structure refactor — split monolithic `Engine` project into `Fabrica.Pipeline` (generic pipeline/threading
+  infrastructure), `Fabrica.Engine` (simulation/rendering), and `Fabrica.ConsoleApp` (entry point); introduced
+  `PipelineConfiguration` to decouple pipeline from engine constants; no `InternalsVisibleTo` between production
+  libraries (PR #68)
 
 ## Testing
 
@@ -130,6 +132,10 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   ([6057e02](https://github.com/CyrusNajmabadi/Fabrica/commit/6057e02))
 - [x] Consolidate duplicate test infrastructure — shared `TestDoubles.cs` with `Test`-prefixed interface implementations,
   unified `WaiterState` families, 15 new MemorySystem/ObjectPool tests ([9a4b2bc](https://github.com/CyrusNajmabadi/Fabrica/commit/9a4b2bc))
+- [x] Test project split — split `Fabrica.Tests` into `Fabrica.Pipeline.Tests` and `Fabrica.Engine.Tests` (PR #69);
+  moved 7 pipeline test files out of Engine.Tests with `WorkerGroup`-backed test doubles (`TestWorkerProducer`,
+  `TestWorkerConsumer`) so pipeline stress tests exercise the full threading infrastructure without engine
+  dependencies (PR #71)
 
 ## Quality / Tooling
 
@@ -140,3 +146,11 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   ([7fe7d64](https://github.com/CyrusNajmabadi/Fabrica/commit/7fe7d64), [1ca02ed](https://github.com/CyrusNajmabadi/Fabrica/commit/1ca02ed))
 - [x] CI pipeline — GitHub Actions workflow with separate build and test checks; coverage summary in run page
   ([7fe7d64](https://github.com/CyrusNajmabadi/Fabrica/commit/7fe7d64), [1ca02ed](https://github.com/CyrusNajmabadi/Fabrica/commit/1ca02ed))
+- [x] Comment wrapping at ~120 columns — reflowed all `.cs` and `.md` comments to ~120 column width with minimum 80
+  char lines; codified in `.cursor/rules/comment-wrapping.mdc` (PRs #60, #61)
+- [x] Branch protection on `master` — configured via GitHub API to require PR-based updates only
+
+## Documentation
+
+- [x] Document pinning protocol — single authoritative location in `PinnedVersions.cs` with cross-references from
+  `IPinOwner`, `IDeferredConsumer`, `BaseProductionLoop`; performance characteristics documented (PRs #63, #64)
