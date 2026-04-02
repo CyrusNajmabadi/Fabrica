@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Fabrica.Core.Collections;
 using Fabrica.Core.Threading;
 
@@ -43,6 +44,9 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
 
     /// <summary>Most recently produced payload. Kept so the next tick can derive the new payload from it.</summary>
     private TPayload _currentPayload = default!;
+
+    /// <summary>Next tick number to assign. Incremented after each append.</summary>
+    private long _nextTick;
 
     /// <summary>Payloads whose queue positions were pinned at cleanup time. Keyed by queue position so we can match the unpin
     /// callback. Released when <see cref="DrainUnpinnedPayloads"/> finds the pin has been removed.</summary>
@@ -97,11 +101,7 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
     private void Bootstrap(CancellationToken cancellationToken)
     {
         _currentPayload = _producer.CreateInitialPayload(cancellationToken);
-        _shared.Queue.ProducerAppend(new PipelineEntry<TPayload>
-        {
-            Payload = _currentPayload,
-            PublishTimeNanoseconds = _clock.NowNanoseconds,
-        });
+        this.AppendEntry(_currentPayload);
     }
 
     // ── Tick ─────────────────────────────────────────────────────────────────
@@ -109,11 +109,19 @@ public sealed partial class ProductionLoop<TPayload, TProducer, TClock, TWaiter>
     private void Tick(CancellationToken cancellationToken)
     {
         _currentPayload = _producer.Produce(_currentPayload, cancellationToken);
+        this.AppendEntry(_currentPayload);
+    }
+
+    private void AppendEntry(TPayload payload)
+    {
+        var tick = _nextTick++;
         _shared.Queue.ProducerAppend(new PipelineEntry<TPayload>
         {
-            Payload = _currentPayload,
+            Payload = payload,
+            Tick = tick,
             PublishTimeNanoseconds = _clock.NowNanoseconds,
         });
+        Debug.Assert(_nextTick == _shared.Queue.ProducerPosition, "Tick counter and queue position must advance in lockstep.");
     }
 
     // ── Cleanup ──────────────────────────────────────────────────────────────

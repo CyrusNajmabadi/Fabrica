@@ -49,6 +49,8 @@ public sealed class ConsumptionLoopTests
 
         Assert.Equal([1], test.ConsumerState.ConsumedLatestPositions);
         Assert.Equal(1, test.Shared.Queue.ConsumerPosition);
+        Assert.Equal(0, test.ConsumerState.LastFirstTick);
+        Assert.Equal(1, test.ConsumerState.LastLatestTick);
     }
 
     [Fact]
@@ -194,6 +196,8 @@ public sealed class ConsumptionLoopTests
         Assert.Equal(0, test.ConsumerState.LastSegmentStart);
         Assert.Equal(6, test.ConsumerState.LastSegmentCount);
         Assert.Equal([5], test.ConsumerState.ConsumedLatestPositions);
+        Assert.Equal(0, test.ConsumerState.LastFirstTick);
+        Assert.Equal(5, test.ConsumerState.LastLatestTick);
     }
 
     [Fact]
@@ -385,6 +389,8 @@ public sealed class ConsumptionLoopTests
         public TestPayload? LastFirstPayload { get; set; }
         public TestPayload? LastLatestPayload { get; set; }
         public long LastLatestPublishTimeNanoseconds { get; set; }
+        public long LastFirstTick { get; set; }
+        public long LastLatestTick { get; set; }
 
         public Action<long>? BeforeConsume { get; set; }
 
@@ -402,9 +408,12 @@ public sealed class ConsumptionLoopTests
         {
             _state.LastSegmentStart = entries.StartPosition;
             _state.LastSegmentCount = entries.Count;
-            _state.LastFirstPayload = entries[0].Payload;
+            var firstEntry = entries[0];
+            _state.LastFirstPayload = firstEntry.Payload;
+            _state.LastFirstTick = firstEntry.Tick;
             var latestEntry = entries[^1];
             _state.LastLatestPayload = latestEntry.Payload;
+            _state.LastLatestTick = latestEntry.Tick;
             _state.LastLatestPublishTimeNanoseconds = latestEntry.PublishTimeNanoseconds;
 
             _state.BeforeConsume?.Invoke(frameStartNanoseconds);
@@ -518,12 +527,15 @@ public sealed class ConsumptionLoopTests
 
         public TestWaiterState WaiterState { get; }
 
+        private long _nextTick;
+
         public void AppendEntry(long publishTimeNanoseconds = 0)
         {
             var payload = _payloadPool.Rent();
             this.Shared.Queue.ProducerAppend(new PipelineEntry<TestPayload>
             {
                 Payload = payload,
+                Tick = _nextTick++,
                 PublishTimeNanoseconds = publishTimeNanoseconds,
             });
         }

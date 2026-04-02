@@ -26,6 +26,9 @@ public sealed class ProductionLoopTickTests
         Assert.NotNull(test.Accessor.CurrentPayload);
         Assert.Equal(1, test.Shared.Queue.ProducerPosition);
         Assert.Equal(0, test.Shared.Queue.ConsumerPosition);
+
+        var segment = test.Shared.Queue.ConsumerAcquire();
+        Assert.Equal(0, segment[0].Tick);
     }
 
     [Fact]
@@ -40,6 +43,25 @@ public sealed class ProductionLoopTickTests
 
         Assert.Equal(2, test.Shared.Queue.ProducerPosition);
         Assert.NotSame(initialPayload, test.Accessor.CurrentPayload);
+
+        var segment = test.Shared.Queue.ConsumerAcquire();
+        Assert.Equal(0, segment[0].Tick);
+        Assert.Equal(1, segment[^1].Tick);
+    }
+
+    [Fact]
+    public void Tick_StampsMonotonicallyIncreasingTickValues()
+    {
+        var test = ProductionLoopTestContext.Create();
+
+        test.Accessor.Bootstrap();
+        for (var i = 0; i < 5; i++)
+            test.Accessor.Tick();
+
+        var segment = test.Shared.Queue.ConsumerAcquire();
+        Assert.Equal(6, segment.Count);
+        for (var i = 0; i < (int)segment.Count; i++)
+            Assert.Equal(i, segment[i].Tick);
     }
 
     [Fact]

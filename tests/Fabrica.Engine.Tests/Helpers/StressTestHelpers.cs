@@ -176,6 +176,7 @@ internal sealed class StressTestMetrics
 {
     private long _framesRendered;
     private long _lastLatestPublishTime;
+    private long _lastLatestTick = -1;
     private volatile string? _invariantViolation;
 
     public long FramesRendered => Volatile.Read(ref _framesRendered);
@@ -184,6 +185,22 @@ internal sealed class StressTestMetrics
     public void RecordFrame(in PipelineEntry<WorldImage> previous, in PipelineEntry<WorldImage> latest)
     {
         Interlocked.Increment(ref _framesRendered);
+
+        if (previous.Tick >= latest.Tick)
+        {
+            _invariantViolation ??=
+                $"Previous tick ({previous.Tick}) >= latest tick ({latest.Tick})";
+            return;
+        }
+
+        var previousLastTick = Volatile.Read(ref _lastLatestTick);
+        if (previousLastTick >= 0 && latest.Tick <= previousLastTick)
+        {
+            _invariantViolation ??=
+                $"Latest tick went backwards: {latest.Tick} <= {previousLastTick}";
+            return;
+        }
+        Volatile.Write(ref _lastLatestTick, latest.Tick);
 
         var latestPublishTime = latest.PublishTimeNanoseconds;
         var previousLatestPublishTime = Volatile.Read(ref _lastLatestPublishTime);
