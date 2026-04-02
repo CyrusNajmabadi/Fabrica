@@ -127,6 +127,17 @@ internal readonly struct TestWorkerProducer(ObjectPool<TestPayload, TestPayload.
         _payloadPool.Return(payload);
 }
 
+internal readonly struct TestSimpleProducer : IProducer<TestPayload>
+{
+    public TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
+        default(TestPayload.Allocator).Allocate();
+
+    public TestPayload Produce(TestPayload current, CancellationToken cancellationToken) =>
+        default(TestPayload.Allocator).Allocate();
+
+    public void ReleaseResources(TestPayload payload) { }
+}
+
 /// <summary>
 /// Test consumer that dispatches parallel work through a <see cref="WorkerGroup{TState,TExecutor}"/> on the consumption side,
 /// exercising worker threads during frame processing.

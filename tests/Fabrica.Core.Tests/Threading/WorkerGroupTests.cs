@@ -119,6 +119,35 @@ public sealed class WorkerGroupTests
         Assert.True(exited, "Worker thread did not exit after OperationCanceledException.");
     }
 
+    [Fact]
+    public void TestAccessor_Join_ReturnsFalseWhenWorkersHaveNotExited()
+    {
+        var group = new WorkerGroup<EmptyState, NoOpExecutor>(
+            workerCount: 1,
+            _ => new NoOpExecutor(),
+            "TimeoutTest");
+
+        group.Dispatch(default, CancellationToken.None);
+
+        var exited = group.GetTestAccessor().Join(1);
+        Assert.False(exited, "Join should return false when workers are still alive (parked).");
+
+        group.Shutdown();
+    }
+
+    [Fact]
+    public void WorkerCount_ReturnsNumberOfWorkers()
+    {
+        var group = new WorkerGroup<EmptyState, NoOpExecutor>(
+            workerCount: 3,
+            _ => new NoOpExecutor(),
+            "CountTest");
+
+        Assert.Equal(3, group.WorkerCount);
+
+        group.Shutdown();
+    }
+
     // ── Test executors ────────────────────────────────────────────────────
 
     private readonly struct EmptyState;
