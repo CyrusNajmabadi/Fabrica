@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Fabrica.Core.Jobs;
+using Fabrica.Core.Memory;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Jobs;
@@ -10,7 +11,7 @@ public class JobPoolTests
 
     private sealed class TestJob : Job
     {
-        public static readonly JobPool<TestJob> Pool = new();
+        public static readonly JobPool<TestJob, TestJobAllocator> Pool = new();
 
         public int Value { get; set; }
         public bool Executed { get; set; }
@@ -19,10 +20,18 @@ public class JobPoolTests
             => this.Executed = true;
 
         public override void Return()
+            => Pool.Return(this);
+    }
+
+    private readonly struct TestJobAllocator : IAllocator<TestJob>
+    {
+        public TestJob Allocate()
+            => new();
+
+        public void Reset(TestJob item)
         {
-            this.Value = 0;
-            this.Executed = false;
-            Pool.Return(this);
+            item.Value = 0;
+            item.Executed = false;
         }
     }
 
@@ -31,7 +40,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_FromEmptyPool_AllocatesNewInstance()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job = pool.Rent();
         Assert.NotNull(job);
     }
@@ -39,7 +48,7 @@ public class JobPoolTests
     [Fact]
     public void Return_ThenRent_ReusesSameInstance()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job = pool.Rent();
         pool.Return(job);
 
@@ -50,7 +59,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_MultipleFromEmptyPool_AllocatesDistinctInstances()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job1 = pool.Rent();
         var job2 = pool.Rent();
         Assert.NotSame(job1, job2);
@@ -59,7 +68,7 @@ public class JobPoolTests
     [Fact]
     public void Return_MultipleThenRent_ReturnsInLifoOrder()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job1 = pool.Rent();
         var job2 = pool.Rent();
         var job3 = pool.Rent();
@@ -76,7 +85,7 @@ public class JobPoolTests
     [Fact]
     public void PoolNext_IsClearedAfterRent()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job = pool.Rent();
         pool.Return(job);
 
@@ -84,19 +93,35 @@ public class JobPoolTests
         Assert.Null(rented._poolNext);
     }
 
+    [Fact]
+    public void Return_ResetsFieldsViaAllocator()
+    {
+        var pool = new JobPool<TestJob, TestJobAllocator>();
+        var job = pool.Rent();
+        job.Value = 99;
+        job.Executed = true;
+
+        pool.Return(job);
+
+        var reused = pool.Rent();
+        Assert.Same(job, reused);
+        Assert.Equal(0, reused.Value);
+        Assert.False(reused.Executed);
+    }
+
     // ═══════════════════════════ COUNT ═══════════════════════════════════════
 
     [Fact]
     public void Count_EmptyPool_ReturnsZero()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         Assert.Equal(0, pool.Count);
     }
 
     [Fact]
     public void Count_AfterReturns_ReflectsPoolSize()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job1 = pool.Rent();
         var job2 = pool.Rent();
         pool.Return(job1);
@@ -107,7 +132,7 @@ public class JobPoolTests
     [Fact]
     public void Count_AfterRentAndReturn_TracksCorrectly()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var job = pool.Rent();
         Assert.Equal(0, pool.Count);
 
@@ -148,7 +173,7 @@ public class JobPoolTests
     [Trait("Category", "Stress")]
     public void Stress_ConcurrentRentAndReturn_NoItemsLostOrDuplicated(int itemsPerThread, int threadCount)
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var barrier = new Barrier(threadCount);
         var allJobs = new TestJob[threadCount][];
 
@@ -199,7 +224,7 @@ public class JobPoolTests
     [Trait("Category", "Stress")]
     public void Stress_InterleavedRentReturn_PoolStabilizes(int cyclesPerThread, int threadCount)
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var barrier = new Barrier(threadCount);
 
         var threads = new Thread[threadCount];
@@ -234,7 +259,7 @@ public class JobPoolTests
     [Trait("Category", "Stress")]
     public void Stress_OneProducerManyConsumers_NoItemsLost(int itemCount, int producerCount, int consumerCount)
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob, TestJobAllocator>();
         var jobs = new ConcurrentBag<TestJob>();
         var consumerBarrier = new CountdownEvent(consumerCount);
 

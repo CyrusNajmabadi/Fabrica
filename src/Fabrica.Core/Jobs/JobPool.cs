@@ -1,3 +1,5 @@
+using Fabrica.Core.Memory;
+
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
@@ -8,14 +10,16 @@ namespace Fabrica.Core.Jobs;
 ///   <see cref="Interlocked.CompareExchange{T}"/> on the stack head — no locks, no kernel transitions.
 ///
 /// DESIGN
-///   The pool is per-type: each concrete <typeparamref name="T"/> (e.g., <c>SimulateChunkJob</c>) has its own static
-///   <see cref="JobPool{T}"/> instance. This avoids type checks on rent/return and keeps the pool homogeneous.
+///   The pool is per-type: each concrete <typeparamref name="TJob"/> (e.g., <c>SimulateChunkJob</c>) has its own
+///   static <see cref="JobPool{TJob, TAllocator}"/> instance. This avoids type checks on rent/return and keeps the
+///   pool homogeneous.
 ///
 ///   The intrusive approach stores the next-pointer directly in the <see cref="Job._poolNext"/> field, so pooled items
 ///   require zero additional allocation for list nodes.
 ///
-///   When the pool is empty, <see cref="Rent"/> allocates a new instance via <c>new T()</c>. The pool never
-///   pre-allocates — it warms up naturally as jobs complete and return.
+///   When the pool is empty, <see cref="Rent"/> allocates a new instance via the <typeparamref name="TAllocator"/>.
+///   The allocator is constrained to struct so the JIT specialises every call, eliminating all interface dispatch. The
+///   pool never pre-allocates — it warms up naturally as jobs complete and return.
 ///
 /// CONTENTION
 ///   In the typical work-stealing pattern, renting happens on one thread (the coordinator) and returning happens across
@@ -28,16 +32,19 @@ namespace Fabrica.Core.Jobs;
 ///   jobs of this type, which is typically the batch size per frame. If this becomes a concern, a bounded variant can
 ///   cap the pool size and let excess items fall to GC.
 /// </summary>
-public sealed class JobPool<T> where T : Job, new()
+public sealed class JobPool<TJob, TAllocator>
+    where TJob : Job
+    where TAllocator : struct, IAllocator<TJob>
 {
     /// <summary>Head of the intrusive linked-list stack. Null when the pool is empty.</summary>
-    private T? _head;
+    private TJob? _head;
 
     /// <summary>
-    /// Returns a pooled instance if available, or allocates a new one. The returned job's fields are in an undefined
-    /// state — the caller must configure them before submitting.
+    /// Returns a pooled instance if available, or allocates a new one via the <typeparamref name="TAllocator"/>. The
+    /// returned job's fields are in a clean state (reset by the allocator on the previous return) — the caller must
+    /// configure them before submitting.
     /// </summary>
-    public T Rent()
+    public TJob Rent()
     {
         var spinner = new SpinWait();
 
@@ -45,9 +52,9 @@ public sealed class JobPool<T> where T : Job, new()
         {
             var head = Volatile.Read(ref _head);
             if (head is null)
-                return new T();
+                return default(TAllocator).Allocate();
 
-            var next = (T?)head._poolNext;
+            var next = (TJob?)head._poolNext;
             if (Interlocked.CompareExchange(ref _head, next, head) == head)
             {
                 head._poolNext = null;
@@ -59,11 +66,13 @@ public sealed class JobPool<T> where T : Job, new()
     }
 
     /// <summary>
-    /// Returns a job to the pool for reuse. The caller must have already reset the job's fields. May be called from
+    /// Resets the job via <see cref="IAllocator{T}.Reset"/> and returns it to the pool for reuse. May be called from
     /// any thread.
     /// </summary>
-    public void Return(T item)
+    public void Return(TJob item)
     {
+        default(TAllocator).Reset(item);
+
         var spinner = new SpinWait();
 
         while (true)
@@ -91,7 +100,7 @@ public sealed class JobPool<T> where T : Job, new()
             while (current is not null)
             {
                 count++;
-                current = (T?)current._poolNext;
+                current = (TJob?)current._poolNext;
             }
 
             return count;
