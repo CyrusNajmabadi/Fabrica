@@ -30,8 +30,8 @@ namespace Fabrica.Pipeline;
 ///   position means the producer retains entries longer (delays cleanup, never frees prematurely).
 ///
 /// SLAB LIFECYCLE
-///   Slabs are allocated from a single-threaded free list on the producer thread. When the producer's cleanup pass finishes
-///   clearing all entries in a slab, the slab is returned to the free list for reuse. The consumer holds a cached
+///   Slabs are allocated from a single-threaded free stack on the producer thread. When the producer's cleanup pass finishes
+///   clearing all entries in a slab, the slab is pushed onto the free stack for reuse. The consumer holds a cached
 ///   <c>_consumerSlab</c> pointer that is always at or ahead of the cleanup frontier, so a recycled slab is never read by the
 ///   consumer.
 ///
@@ -41,25 +41,57 @@ namespace Fabrica.Pipeline;
 /// </summary>
 public sealed class SlabList<TPayload>
 {
+    /// <summary>Number of entries per slab. Defaults to <see cref="SlabSizeHelper{TPayload}.SlabLength"/> (LOH-aware power-of-2
+    /// sizing). Tests may provide a smaller value via the internal constructor to make multi-slab scenarios easy to exercise
+    /// without producing thousands of entries.</summary>
+    private readonly int _slabLength;
+
     // ── Volatile cursors (SPSC synchronization points) ──────────────────────
+
+    /// <summary>How many entries the producer has appended (and published). Written by producer via Volatile.Write; read by
+    /// consumer via Volatile.Read.</summary>
     private long _producerPosition;
+
+    /// <summary>How many entries the consumer has released back. Written by consumer via Volatile.Write; read by producer via
+    /// Volatile.Read during cleanup.</summary>
     private long _consumerPosition;
 
     // ── Producer-owned state ────────────────────────────────────────────────
+
+    /// <summary>First slab in the chain — the reclamation walk starts here.</summary>
     private Slab<TPayload> _headSlab;
+
+    /// <summary>Last slab in the chain — new entries are appended here.</summary>
     private Slab<TPayload> _tailSlab;
+
+    /// <summary>How far the producer has cleared (slots zeroed, payloads handed to the cleanup handler). Always
+    /// <c>&lt;= _consumerPosition</c>.</summary>
     private long _cleanupPosition;
 
     // ── Consumer-owned state ────────────────────────────────────────────────
+
+    /// <summary>Cached slab pointer for the consumer's current read position. Advanced forward when the consumer releases entries
+    /// past a slab boundary. Always at or ahead of the cleanup frontier, so it is never a recycled slab.</summary>
     private Slab<TPayload> _consumerSlab;
 
-    // ── Slab recycling (producer-thread-only free list) ─────────────────────
-    private Slab<TPayload>? _freeSlab;
+    // ── Slab recycling (producer-thread-only) ───────────────────────────────
 
-    public SlabList()
+    /// <summary>LIFO stack of slabs whose entries have been fully cleaned. The producer pops from here before allocating a fresh
+    /// slab, giving recently-returned slabs the best chance of still being in CPU cache.</summary>
+    private readonly Stack<Slab<TPayload>> _freeSlabs = new();
+
+    /// <summary>Creates a <see cref="SlabList{TPayload}"/> with the default LOH-aware slab length.</summary>
+    public SlabList() : this(SlabSizeHelper<TPayload>.SlabLength)
     {
+    }
+
+    /// <summary>Creates a <see cref="SlabList{TPayload}"/> with a caller-specified slab length. Intended for tests that need small
+    /// slabs to easily exercise multi-slab edge cases.</summary>
+    internal SlabList(int slabLength)
+    {
+        _slabLength = slabLength;
         var slab = this.AllocateSlab();
-        slab._logicalStartPosition = 0;
+        slab.LogicalStartPosition = 0;
         _headSlab = slab;
         _tailSlab = slab;
         _consumerSlab = slab;
@@ -75,13 +107,13 @@ public sealed class SlabList<TPayload>
     public void ProducerAppendEntry(in PipelineEntry<TPayload> entry)
     {
         var position = _producerPosition;
-        var offset = (int)(position & SlabSizeHelper<TPayload>.OffsetMask);
+        var offset = (int)(position % _slabLength);
 
         if (offset == 0 && position > 0)
         {
             var newSlab = this.AllocateSlab();
-            newSlab._logicalStartPosition = position;
-            _tailSlab._next = newSlab;
+            newSlab.LogicalStartPosition = position;
+            _tailSlab.Next = newSlab;
             _tailSlab = newSlab;
         }
 
@@ -91,7 +123,7 @@ public sealed class SlabList<TPayload>
 
     /// <summary>
     /// Walks entries from the cleanup frontier up to the current consumer position, calling the handler for each entry before
-    /// clearing the slot. When all entries in a slab have been cleaned, the slab is returned to the free list for reuse.
+    /// clearing the slot. When all entries in a slab have been cleaned, the slab is returned to the free stack for reuse.
     ///
     /// The handler is responsible for domain-specific cleanup: checking whether an entry is pinned (and copying it to a side
     /// table), or releasing the payload's resources. See <see cref="IEntryCleanupHandler{TPayload}"/> for details.
@@ -100,24 +132,26 @@ public sealed class SlabList<TPayload>
         where THandler : struct, IEntryCleanupHandler<TPayload>
     {
         var consumerPosition = Volatile.Read(ref _consumerPosition);
-        var slabLength = SlabSizeHelper<TPayload>.SlabLength;
 
         while (_cleanupPosition < consumerPosition)
         {
-            var offset = (int)(_cleanupPosition - _headSlab._logicalStartPosition);
+            // Advance past any fully-cleaned head slab. This handles both the normal case (we just crossed a boundary)
+            // and the deferred case (a previous cleanup reached the boundary but Next was null at the time — the
+            // producer has since created the next slab).
+            if (_cleanupPosition >= _headSlab.LogicalStartPosition + _slabLength
+                && _headSlab.Next is not null)
+            {
+                var oldHead = _headSlab;
+                _headSlab = _headSlab.Next;
+                this.RecycleSlab(oldHead);
+            }
+
+            var offset = (int)(_cleanupPosition - _headSlab.LogicalStartPosition);
 
             handler.HandleEntry(_cleanupPosition, in _headSlab.Entries[offset]);
             _headSlab.Entries[offset] = default;
 
             _cleanupPosition++;
-
-            if (_cleanupPosition >= _headSlab._logicalStartPosition + slabLength
-                && _headSlab._next is not null)
-            {
-                var oldHead = _headSlab;
-                _headSlab = _headSlab._next;
-                this.RecycleSlab(oldHead);
-            }
         }
     }
 
@@ -139,12 +173,11 @@ public sealed class SlabList<TPayload>
         if (count == 0)
             return default;
 
-        var slabLength = SlabSizeHelper<TPayload>.SlabLength;
-        while (_consumerSlab._logicalStartPosition + slabLength <= consumed)
-            _consumerSlab = _consumerSlab._next!;
+        while (_consumerSlab.LogicalStartPosition + _slabLength <= consumed)
+            _consumerSlab = _consumerSlab.Next!;
 
-        var offset = (int)(consumed - _consumerSlab._logicalStartPosition);
-        return new SlabRange<TPayload>(_consumerSlab, offset, count);
+        var offset = (int)(consumed - _consumerSlab.LogicalStartPosition);
+        return new SlabRange<TPayload>(_consumerSlab, offset, count, _slabLength);
     }
 
     /// <summary>
@@ -158,11 +191,10 @@ public sealed class SlabList<TPayload>
 
         var newPosition = _consumerPosition + range.Count;
 
-        var slabLength = SlabSizeHelper<TPayload>.SlabLength;
-        while (_consumerSlab._logicalStartPosition + slabLength <= newPosition
-               && _consumerSlab._next is not null)
+        while (_consumerSlab.LogicalStartPosition + _slabLength <= newPosition
+               && _consumerSlab.Next is not null)
         {
-            _consumerSlab = _consumerSlab._next;
+            _consumerSlab = _consumerSlab.Next;
         }
 
         Volatile.Write(ref _consumerPosition, newPosition);
@@ -172,22 +204,20 @@ public sealed class SlabList<TPayload>
 
     private Slab<TPayload> AllocateSlab()
     {
-        if (_freeSlab is not null)
+        if (_freeSlabs.TryPop(out var slab))
         {
-            var slab = _freeSlab;
-            _freeSlab = slab._next;
-            slab._next = null;
+            slab.Next = null;
             return slab;
         }
 
-        return new Slab<TPayload>(SlabSizeHelper<TPayload>.SlabLength);
+        return new Slab<TPayload>(_slabLength);
     }
 
     private void RecycleSlab(Slab<TPayload> slab)
     {
-        slab._next = _freeSlab;
-        slab._logicalStartPosition = 0;
-        _freeSlab = slab;
+        slab.Next = null;
+        slab.LogicalStartPosition = 0;
+        _freeSlabs.Push(slab);
     }
 
     // ═══════════════════════════ TEST ACCESSOR ═══════════════════════════════
@@ -197,9 +227,11 @@ public sealed class SlabList<TPayload>
         public long ProducerPosition => Volatile.Read(ref list._producerPosition);
         public long ConsumerPosition => Volatile.Read(ref list._consumerPosition);
         public long CleanupPosition => list._cleanupPosition;
+        public int SlabLength => list._slabLength;
         public Slab<TPayload> HeadSlab => list._headSlab;
         public Slab<TPayload> TailSlab => list._tailSlab;
-        public bool HasFreeSlabs => list._freeSlab is not null;
+        public int FreeSlabCount => list._freeSlabs.Count;
+        public bool HasFreeSlabs => list._freeSlabs.Count > 0;
     }
 
     internal TestAccessor GetTestAccessor() => new(this);
