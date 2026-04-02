@@ -180,7 +180,7 @@ internal sealed class StressTestMetrics
     public int MaxTickObserved => Volatile.Read(ref _maxTickObserved);
     public string? InvariantViolation => _invariantViolation;
 
-    public void RecordFrame(BaseProductionLoop<WorldImage>.ChainNode? previous, BaseProductionLoop<WorldImage>.ChainNode latest)
+    public void RecordFrame(ChainNode? previous, ChainNode latest)
     {
         Interlocked.Increment(ref _framesRendered);
 
