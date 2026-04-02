@@ -1,0 +1,13 @@
+---
+description: Store design plans in the repo under plans/ organized by date
+alwaysApply: true
+---
+
+# Plans
+
+When creating or working with design plans:
+
+- Store all plans in `plans/<YYYY-MM-DD>/` using today's date.
+- Use kebab-case markdown filenames (e.g. `plans/2026-04-02/producer-consumer-queue-redesign.md`).
+- Plans capture architectural decisions, design rationale, and implementation strategies discussed during sessions.
+- When Cursor creates a plan (via Plan mode), save a copy to the repo under the appropriate date directory.
