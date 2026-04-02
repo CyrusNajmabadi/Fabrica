@@ -321,6 +321,47 @@ public sealed class ConsumptionLoopTests
     }
 
     [Fact]
+    public void DeferredConsumer_FaultedTask_UnpinsAndReschedulesWithErrorRetryDelay()
+    {
+        var taskCompletionSource = new TaskCompletionSource<long>();
+        var deferredState = new TestDeferredConsumerState { _taskToReturn = taskCompletionSource.Task };
+        const long ErrorRetryDelay = 500_000_000L;
+        var test = ConsumptionLoopTestContext.Create(
+            deferredConsumers: [new TestDeferredConsumer(deferredState, errorRetryDelayNanoseconds: ErrorRetryDelay)]);
+
+        test.AppendEntry();
+        test.Accessor.RunOneIteration(CancellationToken.None);
+
+        test.AppendEntry();
+        test.ClockState.NowNanoseconds = 100L;
+
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        Assert.Equal(1, deferredState._callCount);
+        Assert.True(test.PinnedVersions.IsPinned(1));
+
+        taskCompletionSource.SetException(new InvalidOperationException("save failed"));
+
+        test.ClockState.NowNanoseconds = 200L;
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        Assert.False(test.PinnedVersions.IsPinned(1));
+
+        // The consumer should be rescheduled at frameStart + ErrorRetryDelay = 200 + 500_000_000.
+        // Running at a time before that should NOT re-trigger the consumer.
+        test.AppendEntry();
+        test.ClockState.NowNanoseconds = 1000L;
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        Assert.Equal(1, deferredState._callCount);
+
+        // Running past the retry delay should trigger it again.
+        deferredState._taskToReturn = null;
+        deferredState._nextRunTime = long.MaxValue;
+        test.AppendEntry();
+        test.ClockState.NowNanoseconds = 200L + ErrorRetryDelay + 1;
+        test.Accessor.RunOneIteration(CancellationToken.None);
+        Assert.Equal(2, deferredState._callCount);
+    }
+
+    [Fact]
     public void RunOneIteration_FrameStartIsNeverBeforeLatestPublishTime()
     {
         var test = ConsumptionLoopTestContext.Create();
