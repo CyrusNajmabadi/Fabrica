@@ -1,7 +1,7 @@
 using Fabrica.Core.Memory;
 using Xunit;
 
-namespace Fabrica.Pipeline.Tests.Memory;
+namespace Fabrica.Core.Tests.Memory;
 
 public sealed class ObjectPoolTests
 {

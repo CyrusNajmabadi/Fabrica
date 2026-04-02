@@ -1,7 +1,7 @@
 using Fabrica.Core.Threading;
 using Xunit;
 
-namespace Fabrica.Pipeline.Tests.Threading;
+namespace Fabrica.Core.Tests.Threading;
 
 public sealed class WorkerGroupTests
 {

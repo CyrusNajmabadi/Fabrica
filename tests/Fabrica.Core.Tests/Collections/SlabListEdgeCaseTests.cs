@@ -1,7 +1,7 @@
 using Fabrica.Core.Collections;
 using Xunit;
 
-namespace Fabrica.Pipeline.Tests.Pipeline;
+namespace Fabrica.Core.Tests.Collections;
 
 /// <summary>
 /// Edge case tests for <see cref="SlabList{TPayload}"/> using small slab lengths (typically 4) to make multi-slab scenarios easy
