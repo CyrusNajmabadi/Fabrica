@@ -46,7 +46,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - run: dotnet test -c ${{ matrix.configuration }} --blame-hang --blame-hang-timeout 10s --collect:"XPlat Code Coverage" --results-directory ./coverage
+      - run: dotnet test -c ${{ matrix.configuration }} --parallel --blame-hang --blame-hang-timeout 10s --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: Coverage summary
         if: always()
