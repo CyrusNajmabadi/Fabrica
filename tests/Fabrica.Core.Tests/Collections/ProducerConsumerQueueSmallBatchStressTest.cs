@@ -85,7 +85,7 @@ public class ProducerConsumerQueueSmallBatchStressTest
 
         public readonly long Count => _count;
 
-        public void HandleCleanup(long position, in long item) =>
-            _count++;
+        public void HandleCleanup(long position, in long item)
+            => _count++;
     }
 }

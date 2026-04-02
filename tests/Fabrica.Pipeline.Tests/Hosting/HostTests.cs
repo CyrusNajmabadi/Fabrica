@@ -98,7 +98,8 @@ public sealed class HostTests
     private sealed class AutoAdvancingClockState
     {
         private long _now;
-        public long Read() => Interlocked.Add(ref _now, TestPipelineConfiguration.TickDurationNanoseconds);
+        public long Read()
+            => Interlocked.Add(ref _now, TestPipelineConfiguration.TickDurationNanoseconds);
     }
 
     private readonly struct TestAutoAdvancingClock(AutoAdvancingClockState state) : IClock
@@ -129,8 +130,8 @@ public sealed class HostTests
     {
         private readonly BarrierCancelState _state = state;
 
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken) =>
-            _state.OnWait();
+        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
+            => _state.OnWait();
     }
 
     private readonly struct TestThrowingProducer(TickCounter counter, int throwOnTickNumber) : IProducer<TestPayload>
@@ -138,8 +139,8 @@ public sealed class HostTests
         private readonly TickCounter _counter = counter;
         private readonly int _throwOnTickNumber = throwOnTickNumber;
 
-        public readonly TestPayload CreateInitialPayload(CancellationToken cancellationToken) =>
-            default(TestPayload.Allocator).Allocate();
+        public readonly TestPayload CreateInitialPayload(CancellationToken cancellationToken)
+            => default(TestPayload.Allocator).Allocate();
 
         public readonly TestPayload Produce(TestPayload current, CancellationToken cancellationToken)
         {

@@ -104,15 +104,17 @@ public sealed class PinnedVersions
             _pinned.TryRemove(new KeyValuePair<long, ConcurrentDictionary<IPinOwner, byte>>(position, owners));
     }
 
-    public bool IsPinned(long position) =>
-        _pinned.TryGetValue(position, out var owners) && !owners.IsEmpty;
+    public bool IsPinned(long position)
+        => _pinned.TryGetValue(position, out var owners) && !owners.IsEmpty;
 
     private sealed class ReferenceOwnerComparer : IEqualityComparer<IPinOwner>
     {
         public static readonly ReferenceOwnerComparer Instance = new();
 
-        public bool Equals(IPinOwner? x, IPinOwner? y) => ReferenceEquals(x, y);
+        public bool Equals(IPinOwner? x, IPinOwner? y)
+            => ReferenceEquals(x, y);
 
-        public int GetHashCode(IPinOwner pinOwner) => RuntimeHelpers.GetHashCode(pinOwner);
+        public int GetHashCode(IPinOwner pinOwner)
+            => RuntimeHelpers.GetHashCode(pinOwner);
     }
 }

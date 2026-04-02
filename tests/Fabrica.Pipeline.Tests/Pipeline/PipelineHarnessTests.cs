@@ -226,8 +226,8 @@ public sealed class PipelineHarnessTests
             return CreateInternal(poolSize, [new TestDeferredConsumer(deferredState)], deferredState);
         }
 
-        public static LoopHarness CreateWithNoDeferredConsumers(int poolSize = 8) =>
-            CreateInternal(poolSize, [], new TestDeferredConsumerState());
+        public static LoopHarness CreateWithNoDeferredConsumers(int poolSize = 8)
+            => CreateInternal(poolSize, [], new TestDeferredConsumerState());
 
         private static LoopHarness CreateInternal(
             int poolSize,
@@ -274,7 +274,8 @@ public sealed class PipelineHarnessTests
                 _owner._productionAccumulator = 0;
             }
 
-            public void RunIteration() => _accessor.RunOneIteration(
+            public void RunIteration()
+                => _accessor.RunOneIteration(
                     CancellationToken.None,
                     ref _owner._productionLastTime,
                     ref _owner._productionAccumulator);
@@ -285,7 +286,8 @@ public sealed class PipelineHarnessTests
         {
             private readonly ConsumptionLoop<TestPayload, TestRecordingConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
-            public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
+            public void RunIteration()
+                => _accessor.RunOneIteration(CancellationToken.None);
         }
 
         public sealed class ClockController(TestClockState state)
@@ -294,18 +296,22 @@ public sealed class PipelineHarnessTests
 
             public long NowNanoseconds => _state.NowNanoseconds;
 
-            public void AdvanceBy(long nanoseconds) => _state.NowNanoseconds += nanoseconds;
+            public void AdvanceBy(long nanoseconds)
+                => _state.NowNanoseconds += nanoseconds;
         }
 
         public sealed class PinController(PinnedVersions pinnedVersions)
         {
             private readonly PinnedVersions _pinnedVersions = pinnedVersions;
 
-            public void Pin(long position, IPinOwner owner) => _pinnedVersions.Pin(position, owner);
+            public void Pin(long position, IPinOwner owner)
+                => _pinnedVersions.Pin(position, owner);
 
-            public void Unpin(long position, IPinOwner owner) => _pinnedVersions.Unpin(position, owner);
+            public void Unpin(long position, IPinOwner owner)
+                => _pinnedVersions.Unpin(position, owner);
 
-            public bool IsPinned(long position) => _pinnedVersions.IsPinned(position);
+            public bool IsPinned(long position)
+                => _pinnedVersions.IsPinned(position);
         }
 
         public sealed class DeferredConsumerController(TestDeferredConsumerState state)
@@ -314,9 +320,11 @@ public sealed class PipelineHarnessTests
 
             public int InFlightCount => _state.InFlightTasks.Count;
 
-            public void FailDispatchWith(Exception exception) => _state.ExceptionToThrow = exception;
+            public void FailDispatchWith(Exception exception)
+                => _state.ExceptionToThrow = exception;
 
-            public void ClearDispatchFailure() => _state.ExceptionToThrow = null;
+            public void ClearDispatchFailure()
+                => _state.ExceptionToThrow = null;
 
             public void CompletePendingTask(long nextRunTime)
             {
@@ -332,9 +340,11 @@ public sealed class PipelineHarnessTests
 
             public IReadOnlyList<long> RenderedPositions => _state.RenderedPositions;
 
-            public void FailWith(Exception exception) => _state.ExceptionToThrow = exception;
+            public void FailWith(Exception exception)
+                => _state.ExceptionToThrow = exception;
 
-            public void ClearFailure() => _state.ExceptionToThrow = null;
+            public void ClearFailure()
+                => _state.ExceptionToThrow = null;
         }
     }
 

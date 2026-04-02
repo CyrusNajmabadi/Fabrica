@@ -16,8 +16,8 @@ internal readonly struct SimulationProducer(ObjectPool<WorldImage, WorldImage.Al
     private readonly ObjectPool<WorldImage, WorldImage.Allocator> _imagePool = imagePool;
     private readonly SimulationCoordinator _coordinator = new(workerCount);
 
-    public WorldImage CreateInitialPayload(CancellationToken cancellationToken) =>
-        _imagePool.Rent();
+    public WorldImage CreateInitialPayload(CancellationToken cancellationToken)
+        => _imagePool.Rent();
 
     public WorldImage Produce(WorldImage current, CancellationToken cancellationToken)
     {
@@ -26,6 +26,6 @@ internal readonly struct SimulationProducer(ObjectPool<WorldImage, WorldImage.Al
         return image;
     }
 
-    public void ReleaseResources(WorldImage payload) =>
-        _imagePool.Return(payload);
+    public void ReleaseResources(WorldImage payload)
+        => _imagePool.Return(payload);
 }

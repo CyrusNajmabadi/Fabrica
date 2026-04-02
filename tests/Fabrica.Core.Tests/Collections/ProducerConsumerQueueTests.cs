@@ -11,10 +11,11 @@ public class ProducerConsumerQueueTests
     {
         public List<(long Position, string? Item)> CleanedEntries { get; }
 
-        public TrackingCleanupHandler() => this.CleanedEntries = [];
+        public TrackingCleanupHandler()
+            => this.CleanedEntries = [];
 
-        public readonly void HandleCleanup(long position, in string item) =>
-            this.CleanedEntries.Add((position, item));
+        public readonly void HandleCleanup(long position, in string item)
+            => this.CleanedEntries.Add((position, item));
     }
 
     // ═══════════════════════════ APPEND + ACQUIRE ════════════════════════════

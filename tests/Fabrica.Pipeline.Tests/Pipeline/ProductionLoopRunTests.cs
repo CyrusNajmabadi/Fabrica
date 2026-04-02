@@ -152,8 +152,8 @@ public sealed class ProductionLoopRunTests
     {
         private readonly CancellationTokenSource _cts = cts;
 
-        public void Wait(TimeSpan duration, CancellationToken cancellationToken) =>
-            _cts.Cancel();
+        public void Wait(TimeSpan duration, CancellationToken cancellationToken)
+            => _cts.Cancel();
     }
 
     private static class ProductionLoopTestContext
@@ -164,8 +164,8 @@ public sealed class ProductionLoopRunTests
             TestWaiterState waiterState,
             int poolSize = 8)
             where TClock : struct, IClock
-            where TWaiter : struct, IWaiter =>
-            ProductionLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
+            where TWaiter : struct, IWaiter
+            => ProductionLoopTestContext<TClock, TWaiter>.Create(clock, waiter, waiterState, poolSize);
     }
 
     private sealed class ProductionLoopTestContext<TClock, TWaiter>

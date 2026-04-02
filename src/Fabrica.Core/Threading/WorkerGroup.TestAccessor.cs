@@ -2,7 +2,8 @@ namespace Fabrica.Core.Threading;
 
 public sealed partial class WorkerGroup<TState, TExecutor>
 {
-    internal TestAccessor GetTestAccessor() => new(this);
+    internal TestAccessor GetTestAccessor()
+        => new(this);
 
     internal readonly struct TestAccessor(WorkerGroup<TState, TExecutor> group)
     {

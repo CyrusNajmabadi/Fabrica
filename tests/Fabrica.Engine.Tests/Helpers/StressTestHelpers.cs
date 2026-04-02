@@ -149,8 +149,8 @@ internal static class StressTestHelpers
 
         public long ErrorRetryDelayNanoseconds => 1_000_000_000L;
 
-        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken) =>
-            Task.Run(() =>
+        public Task<long> ConsumeAsync(WorldImage payload, CancellationToken cancellationToken)
+            => Task.Run(() =>
             {
                 try
                 {
@@ -229,7 +229,9 @@ internal sealed class SaveMetrics
     public int SavesCompleted => Volatile.Read(ref _savesCompleted);
     public int SavesFailed => Volatile.Read(ref _savesFailed);
 
-    public void IncrementSavesCompleted() => Interlocked.Increment(ref _savesCompleted);
+    public void IncrementSavesCompleted()
+        => Interlocked.Increment(ref _savesCompleted);
 
-    public void IncrementSavesFailed() => Interlocked.Increment(ref _savesFailed);
+    public void IncrementSavesFailed()
+        => Interlocked.Increment(ref _savesFailed);
 }

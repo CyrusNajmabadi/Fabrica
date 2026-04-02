@@ -113,8 +113,8 @@ public sealed partial class WorkerGroup<TState, TExecutor>
         /// <summary>
         /// Wakes the worker thread to begin its next dispatch. The go signal auto-resets when the worker wakes.
         /// </summary>
-        public void Signal() =>
-            _goSignal.Set();
+        public void Signal()
+            => _goSignal.Set();
 
         /// <summary>
         /// Sets the shutdown flag and unblocks the thread so it can exit. Must be followed by <see cref="Join"/> to ensure the
@@ -129,10 +129,10 @@ public sealed partial class WorkerGroup<TState, TExecutor>
         /// <summary>
         /// Blocks until the worker thread has exited.
         /// </summary>
-        public void Join() =>
-            _thread.Join();
+        public void Join()
+            => _thread.Join();
 
-        internal bool Join(int millisecondsTimeout) =>
-            _thread.Join(millisecondsTimeout);
+        internal bool Join(int millisecondsTimeout)
+            => _thread.Join(millisecondsTimeout);
     }
 }

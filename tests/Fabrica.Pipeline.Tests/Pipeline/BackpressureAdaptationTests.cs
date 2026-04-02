@@ -281,8 +281,8 @@ public sealed class BackpressureAdaptationTests
             _totalPressureDelays += CountPressureDelays(_waiterState.WaitCalls);
         }
 
-        public void StepConsumption() =>
-            _consumptionAccessor.RunOneIteration(CancellationToken.None);
+        public void StepConsumption()
+            => _consumptionAccessor.RunOneIteration(CancellationToken.None);
 
         public void AdvanceConsumptionEpochDirectly(int epoch)
         {
@@ -291,7 +291,8 @@ public sealed class BackpressureAdaptationTests
                 _shared.Queue.ConsumerAdvance(epoch - current);
         }
 
-        public void ResetPressureCount() => _totalPressureDelays = 0;
+        public void ResetPressureCount()
+            => _totalPressureDelays = 0;
 
         public List<TimeSpan> DrainPressureDelays()
         {
@@ -302,7 +303,7 @@ public sealed class BackpressureAdaptationTests
             return delays;
         }
 
-        private static int CountPressureDelays(List<TimeSpan> waitCalls) =>
-            waitCalls.Count(w => w > TimeSpan.Zero && w != IdleYield);
+        private static int CountPressureDelays(List<TimeSpan> waitCalls)
+            => waitCalls.Count(w => w > TimeSpan.Zero && w != IdleYield);
     }
 }

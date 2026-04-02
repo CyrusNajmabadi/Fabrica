@@ -69,6 +69,6 @@ internal sealed partial class SimulationCoordinator(int workerCount)
         // counts.
     }
 
-    public void Shutdown() =>
-        _group.Shutdown();
+    public void Shutdown()
+        => _group.Shutdown();
 }

@@ -37,8 +37,8 @@ public sealed partial class WorkerGroup<TState, TExecutor>
     {
         private static class ThreadPinning
         {
-            public static bool TryPinCurrentThread(int coreIndex) =>
-                ThreadPinningNative.TryPinCurrentThread(coreIndex);
+            public static bool TryPinCurrentThread(int coreIndex)
+                => ThreadPinningNative.TryPinCurrentThread(coreIndex);
         }
     }
 }

@@ -88,16 +88,16 @@ public sealed class WorkerGroupTests
     }
 
     [Fact]
-    public void Constructor_ThrowsWhenWorkerCountIsZero() =>
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
+    public void Constructor_ThrowsWhenWorkerCountIsZero()
+        => Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WorkerGroup<EmptyState, NoOpExecutor>(
                 workerCount: 0,
                 _ => new NoOpExecutor(),
                 "ZeroWorkerTest"));
 
     [Fact]
-    public void Constructor_ThrowsWhenWorkerCountIsNegative() =>
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
+    public void Constructor_ThrowsWhenWorkerCountIsNegative()
+        => Assert.Throws<ArgumentOutOfRangeException>(() =>
             new WorkerGroup<EmptyState, NoOpExecutor>(
                 workerCount: -1,
                 _ => new NoOpExecutor(),
@@ -162,15 +162,15 @@ public sealed class WorkerGroupTests
     {
         public void Prepare() { }
 
-        public void Execute(in EmptyState state, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("Deliberate test exception.");
+        public void Execute(in EmptyState state, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Deliberate test exception.");
     }
 
     private readonly struct OperationCanceledExecutor : IThreadExecutor<EmptyState>
     {
         public void Prepare() { }
 
-        public void Execute(in EmptyState state, CancellationToken cancellationToken) =>
-            throw new OperationCanceledException("Deliberate cancellation in executor.");
+        public void Execute(in EmptyState state, CancellationToken cancellationToken)
+            => throw new OperationCanceledException("Deliberate cancellation in executor.");
     }
 }

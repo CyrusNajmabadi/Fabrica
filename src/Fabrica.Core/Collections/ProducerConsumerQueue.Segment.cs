@@ -65,7 +65,8 @@ public sealed partial class ProducerConsumerQueue<T>
             return ref slab.Entries[(int)localPosition];
         }
 
-        public Enumerator GetEnumerator() => new(_startSlab, _startOffset, _count, _slabLength);
+        public Enumerator GetEnumerator()
+            => new(_startSlab, _startOffset, _count, _slabLength);
 
         /// <summary>
         /// Stack-only enumerator for zero-allocation <c>foreach</c> over the segment. Tracks the current slab and offset, advancing

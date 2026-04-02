@@ -15,8 +15,8 @@ internal sealed partial class RenderCoordinator
     {
         public readonly RenderWorkerResources Resources = resources;
 
-        public void Prepare() =>
-            Resources.PrepareForFrame();
+        public void Prepare()
+            => Resources.PrepareForFrame();
 
         public void Execute(in RenderDispatchState state, CancellationToken cancellationToken)
         {

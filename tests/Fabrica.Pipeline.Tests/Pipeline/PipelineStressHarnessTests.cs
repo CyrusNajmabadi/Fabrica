@@ -103,8 +103,8 @@ public sealed class PipelineStressHarnessTests
         Assert.All(test.Waiter.WaitCalls, w => Assert.Equal(idleYield, w));
     }
 
-    private static TimeSpan GetIdleYieldWait() =>
-        TimeSpan.FromTicks(TestPipelineConfiguration.IdleYieldNanoseconds / 100);
+    private static TimeSpan GetIdleYieldWait()
+        => TimeSpan.FromTicks(TestPipelineConfiguration.IdleYieldNanoseconds / 100);
 
     private sealed class LoopStressHarness
     {
@@ -162,7 +162,8 @@ public sealed class PipelineStressHarnessTests
         {
             private readonly TestClockState _state = state;
 
-            public void AdvanceBy(long nanoseconds) => _state.NowNanoseconds += nanoseconds;
+            public void AdvanceBy(long nanoseconds)
+                => _state.NowNanoseconds += nanoseconds;
         }
 
         public sealed class WaiterController(TestWaiterState state)
@@ -177,7 +178,8 @@ public sealed class PipelineStressHarnessTests
                 set => _state.OnWait = value;
             }
 
-            public void ClearCalls() => _state.WaitCalls.Clear();
+            public void ClearCalls()
+                => _state.WaitCalls.Clear();
         }
 
         public sealed class ProductionLoopController(
@@ -197,7 +199,8 @@ public sealed class PipelineStressHarnessTests
                 _owner._productionAccumulator = 0;
             }
 
-            public void RunIteration() => _accessor.RunOneIteration(
+            public void RunIteration()
+                => _accessor.RunOneIteration(
                     CancellationToken.None,
                     ref _owner._productionLastTime,
                     ref _owner._productionAccumulator);
@@ -208,7 +211,8 @@ public sealed class PipelineStressHarnessTests
         {
             private readonly ConsumptionLoop<TestPayload, TestNoOpConsumer, TestRecordingClock, TestNoOpWaiter>.TestAccessor _accessor = accessor;
 
-            public void RunIteration() => _accessor.RunOneIteration(CancellationToken.None);
+            public void RunIteration()
+                => _accessor.RunOneIteration(CancellationToken.None);
         }
     }
 }
