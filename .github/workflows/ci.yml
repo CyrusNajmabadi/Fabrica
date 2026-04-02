@@ -46,19 +46,27 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - run: dotnet test -c ${{ matrix.configuration }} --blame-hang --blame-hang-timeout 10s --collect:"XPlat Code Coverage" --results-directory ./coverage -- RunConfiguration.MaxCpuCount=0
+      - run: dotnet test -c ${{ matrix.configuration }} --results-directory ./test-results --coverage --coverage-output-format cobertura --report-junit
 
       - name: Coverage summary
         if: always()
         run: |
           dotnet tool install -g dotnet-reportgenerator-globaltool
-          reportgenerator -reports:./coverage/**/coverage.cobertura.xml -targetdir:./coverage-report -reporttypes:MarkdownSummaryGithub
+          reportgenerator -reports:./test-results/*.cobertura.xml -targetdir:./coverage-report -reporttypes:MarkdownSummaryGithub
           cat ./coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload to Codecov
+      - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./coverage
+          directory: ./test-results
+          fail_ci_if_error: false
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./test-results/*.junit
           fail_ci_if_error: false
