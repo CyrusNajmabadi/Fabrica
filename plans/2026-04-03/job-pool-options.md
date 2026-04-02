@@ -3,60 +3,57 @@
 Two branches off `master`, each containing the same `Job` base class but a different pooling strategy.
 The user will compare them side-by-side to decide which approach to adopt.
 
+Both options use the `IAllocator<TJob>` pattern (struct-constrained, JIT-specialized) for zero-overhead
+allocation and reset. No `new()` constraint.
+
 ---
 
 ## Shared Across Both PRs
 
 ### `src/Fabrica.Core/Jobs/Job.cs` — Abstract base class
 
-- `_poolNext` internal field (intrusive linked-list pointer for the pool)
 - `abstract void Execute()` — worker calls this
-- `abstract void Return()` — worker calls after Execute; derived class resets fields and returns itself to its pool
+- `abstract void Return()` — worker calls after Execute; derived class delegates to its pool's Return method
+- Option A adds `_poolNext` internal field for the intrusive Treiber stack; Option B does not need it
 
 ---
 
-## Option A: `JobPool<T>` — Lock-free shared Treiber stack
+## Option A: `JobPool<TJob, TAllocator>` — Lock-free shared Treiber stack
 
-**Branch:** `feature/job-pool-option-a`
+**Branch:** `feature/job-pool-option-a` | **PR:** #92
 
 ### `src/Fabrica.Core/Jobs/JobPool.cs`
 
 - Single `_head` field; both `Rent()` and `Return()` use `Interlocked.CompareExchange` CAS loop with `SpinWait`
-- Any thread can rent; any thread can return — fully thread-safe
+- Any thread can rent; any thread can return — fully thread-safe, no usage constraints
 - Intrusive: uses `Job._poolNext` as the next pointer, so zero node allocations
+- `Return` calls `IAllocator.Reset` before pushing to the stack
 - `Count` property for diagnostics (not linearizable)
-
-### `tests/Fabrica.Core.Tests/Jobs/JobPoolTests.cs`
-
-- Unit tests: empty pool rent, rent-return-reuse, LIFO order, PoolNext cleared, Count tracking, full lifecycle
-- Stress tests (Theory): concurrent rent/return with barrier synchronization, interleaved rent/return stabilization, one-producer many-consumers
+- Workers spawning sub-jobs works out of the box
 
 **Tradeoffs:**
-- Simple — one class, one file
+- Simple — one class, one file, no thread-index API
 - CAS contention on `_head` when many workers return simultaneously (in practice dispersed and rare)
+- Single cache line for `_head` bounces across cores
 
 ---
 
-## Option B: `ThreadLocalJobPool<T>` — Per-thread pools, zero contention on return
+## Option B: `ThreadLocalJobPool<TJob, TAllocator>` — Per-thread WorkStealingDeques
 
-**Branch:** `feature/job-pool-option-b`
+**Branch:** `feature/job-pool-option-b` | **PR:** #93
 
 ### `src/Fabrica.Core/Jobs/ThreadLocalJobPool.cs`
 
-- Each worker thread gets its own non-thread-safe stack (just a `Stack<T>`)
-- `Register(int threadIndex)` — called once per worker during pool startup, creates the per-thread stack
-- `Rent(int threadIndex)` — pops from that thread's stack, or allocates new
-- `Return(int threadIndex, T item)` — pushes onto that thread's stack, no CAS needed
-- A `RentFromAny()` fallback for the coordinator: if its own stack is empty, linearly scan other threads' stacks (rare path — only matters during warmup)
-- `Count` property sums all per-thread stacks (diagnostic only)
-
-### `tests/Fabrica.Core.Tests/Jobs/ThreadLocalJobPoolTests.cs`
-
-- Unit tests: register thread, rent/return from same thread, LIFO order, rent from other thread's pool, Count across threads
-- Stress tests: each thread rents/returns to its own index (no contention), coordinator renting from worker pools
+- Each thread owns a `WorkStealingDeque<TJob>` — the same lock-free deque already in the codebase
+- `Return(threadIndex, item)` → `Push` (owner operation — store + volatile write, no CAS)
+- `Rent(threadIndex)` → `TryPop` from own deque first (owner operation — typically no CAS), then round-robin `TrySteal` from other deques (lock-free, safe concurrently with Push/TryPop)
+- `Return` calls `IAllocator.Reset` before pushing to the deque
+- Round-robin steal index distributes steal pressure evenly across threads
+- No fork/join phase restrictions — TrySteal is concurrent-safe by design
+- `Count` / `CountForThread` for diagnostics
 
 **Tradeoffs:**
-- Zero contention on the hot path (return after execute)
+- Zero CAS on the hot path (Return + same-thread Rent)
+- Each thread's deque is on a separate cache line — no cross-core invalidation on return
 - More complex API — callers must know their thread index
-- Cross-thread rent (coordinator renting during setup) needs special handling
-- More state to manage (array of stacks)
+- Reuses existing tested infrastructure (`WorkStealingDeque<T>`)
