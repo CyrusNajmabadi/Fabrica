@@ -46,33 +46,24 @@ public sealed partial class ProducerConsumerQueue<T>
         /// <summary>The absolute queue position of the first item in this segment.</summary>
         public long StartPosition => _startPosition;
 
-        public ref readonly T this[long index]
+        public ref readonly T this[Index index] => ref this.ItemAt(index.GetOffset((int)_count));
+
+        private ref readonly T ItemAt(long offset)
         {
-            get
+            if ((ulong)offset >= (ulong)_count)
+                throw new ArgumentOutOfRangeException(nameof(offset));
+
+            var localPosition = _startOffset + offset;
+            var slab = _startSlab!;
+
+            while (localPosition >= _slabLength)
             {
-                if ((ulong)index >= (ulong)_count)
-                    throw new ArgumentOutOfRangeException(nameof(index));
-
-                var localPosition = _startOffset + index;
-                var slab = _startSlab!;
-
-                while (localPosition >= _slabLength)
-                {
-                    slab = slab.Next!;
-                    localPosition -= _slabLength;
-                }
-
-                return ref slab.Entries[(int)localPosition];
+                slab = slab.Next!;
+                localPosition -= _slabLength;
             }
+
+            return ref slab.Entries[(int)localPosition];
         }
-
-        /// <summary>
-        /// Disambiguates <c>segment[n]</c> when <c>n</c> is an <see cref="int"/>; otherwise <c>int</c> is implicitly convertible to
-        /// both <see cref="long"/> and <see cref="Index"/>.
-        /// </summary>
-        public ref readonly T this[int index] => ref this[(long)index];
-
-        public ref readonly T this[Index index] => ref this[(long)index.GetOffset((int)_count)];
 
         public Enumerator GetEnumerator() => new(_startSlab, _startOffset, _count, _slabLength);
 
