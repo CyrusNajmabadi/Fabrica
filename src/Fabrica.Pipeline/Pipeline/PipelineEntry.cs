@@ -1,13 +1,19 @@
 namespace Fabrica.Pipeline;
 
 /// <summary>
-/// A single entry in the pipeline's queue. Each tick produces one entry containing the simulation payload and the wall-clock
-/// timestamp at which it was published. The entry's global position within the <see cref="Core.Collections.ProducerConsumerQueue{T}"/>
-/// serves as its implicit sequence number — no explicit field is needed.
+/// A single entry in the pipeline's queue. Each tick produces one entry containing the simulation payload, the simulation tick
+/// that produced it, and the wall-clock timestamp at which it was published.
 /// </summary>
 public readonly struct PipelineEntry<TPayload>
 {
     public required TPayload Payload { get; init; }
+
+    /// <summary>
+    /// Zero-based simulation tick that produced this entry. Bootstrap is tick 0; subsequent ticks increment monotonically.
+    /// Useful for diagnostics, test assertions, and (in the future) determining how much state is shared between consecutive
+    /// world snapshots.
+    /// </summary>
+    public required long Tick { get; init; }
 
     /// <summary>
     /// Wall-clock timestamp (in nanoseconds) recorded when this entry was appended to the queue. Used exclusively by the

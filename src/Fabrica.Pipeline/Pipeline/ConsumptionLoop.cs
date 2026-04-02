@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Fabrica.Core.Threading;
 
 namespace Fabrica.Pipeline;
@@ -53,6 +54,10 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
     private TConsumer _consumer = consumer;
 #pragma warning restore IDE0044
 
+#if DEBUG
+    private long _debugLastHeldBackTick = -1;
+#endif
+
     public void Run(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -80,6 +85,8 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
         var segment = _shared.Queue.ConsumerAcquire();
         if (segment.Count >= 2)
         {
+            this.AssertSegmentTickInvariants(in segment);
+
             var latestEntry = segment[^1];
 
             // Clamp: if the production thread published between our clock read and the acquire, frameStart could precede the
@@ -91,12 +98,42 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
 
             _consumer.Consume(in segment, frameStart, cancellationToken);
 
+            this.UpdateDebugLastHeldBackTick(segment[^1].Tick);
+
             // Advance past all but the last entry. The last entry stays in the queue as the "previous" for next frame's
             // interpolation range.
             _shared.Queue.ConsumerAdvance(segment.Count - 1);
         }
 
         this.ThrottleToFrameRate(frameStart, cancellationToken);
+    }
+
+    // ── Debug invariants ───────────────────────────────────────────────────────
+
+    [Conditional("DEBUG")]
+    private void AssertSegmentTickInvariants(
+        in Core.Collections.ProducerConsumerQueue<PipelineEntry<TPayload>>.Segment segment)
+    {
+#if DEBUG
+        if (_debugLastHeldBackTick >= 0)
+            Debug.Assert(segment[0].Tick == _debugLastHeldBackTick, $"First entry tick ({segment[0].Tick}) must equal the held-back tick from the previous frame ({_debugLastHeldBackTick}).");
+
+        var previousTick = segment[0].Tick;
+        for (var i = 1; i < (int)segment.Count; i++)
+        {
+            var tick = segment[i].Tick;
+            Debug.Assert(tick == previousTick + 1, $"Segment ticks must be contiguous: expected {previousTick + 1} at index {i}, got {tick}.");
+            previousTick = tick;
+        }
+#endif
+    }
+
+    [Conditional("DEBUG")]
+    private void UpdateDebugLastHeldBackTick(long tick)
+    {
+#if DEBUG
+        _debugLastHeldBackTick = tick;
+#endif
     }
 
     // ── Frame throttle ───────────────────────────────────────────────────────
