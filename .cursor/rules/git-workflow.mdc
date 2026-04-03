@@ -1,0 +1,27 @@
+---
+description: Git workflow rules — never push to master, always use PRs
+alwaysApply: true
+---
+
+# Git Workflow
+
+## Branch Protection
+
+- **NEVER push to `master`.** It is protected and requires PRs with passing status checks.
+- Do not even attempt `git push origin master` — it will be rejected and wastes time.
+- Always create a feature branch, commit there, push, and open a PR via `gh pr create`.
+
+## Branch Naming
+
+- Feature work: `feature/<short-description>` (e.g., `feature/job-pool-option-a`)
+- Research/docs: `research/<short-description>`
+- Bug fixes: `fix/<short-description>`
+
+## Commits
+
+- Pull `master` before branching: `git checkout master && git pull && git checkout -b <branch>`.
+- Run `dotnet format --verify-no-changes` (in both Debug and Release configurations) before
+  committing. Fix any violations.
+- Run `dotnet test` and confirm zero test failures before pushing. The pre-existing
+  `System.InvalidOperationException: A test session start event` error is a known infrastructure
+  bug — ignore the exit code if all tests pass with `failed: 0`.

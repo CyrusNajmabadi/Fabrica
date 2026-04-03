@@ -1,0 +1,42 @@
+---
+description: C# code style conventions for the Fabrica codebase
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# C# Style
+
+## Formatting
+
+- The `.editorconfig` is authoritative. Run `dotnet format --verify-no-changes` in both Debug and
+  Release configurations — some analyzers are configuration-specific.
+- Methods and constructors using expression body (`=>`) must have the arrow on its own line,
+  indented one level (4 spaces) from the member declaration.
+
+## Naming (from .editorconfig)
+
+- Instance fields: `_camelCase` (private/internal)
+- Properties and methods: `PascalCase`
+- Local variables and parameters: `camelCase`
+- Do not use `this.` qualification except to resolve ambiguity.
+
+## Testing
+
+- Use `[Fact]` for single tests, `[Theory]` with `[InlineData]` for parameterized tests.
+- Pass `TestContext.Current.CancellationToken` to any `Wait()` or blocking call on the test
+  thread (xUnit analyzer xUnit1051 enforces this).
+- Use `Trait("Category", "Stress")` for stress tests.
+- Debug-only tests should be wrapped in `#if DEBUG` / `#endif`.
+
+## Debug Injection Pattern
+
+For testing concurrent code, add `#if DEBUG` callback properties (e.g., `DebugBeforeRentCas`)
+that fire at specific interleaving points. Tests set these to inject deterministic races. Always
+null-check and invoke: `this.DebugBeforeXxx?.Invoke();`. Pair with a `TestAccessor` struct for
+exposing internal state to tests.
+
+## Allocations
+
+- See `lambda-allocations.mdc` for hot-path allocation rules.
+- Prefer `where TAllocator : struct, IAllocator<TJob>` over `new()` constraints for poolable
+  types — enables JIT specialization and explicit reset logic.

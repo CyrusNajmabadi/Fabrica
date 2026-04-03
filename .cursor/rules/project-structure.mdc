@@ -1,0 +1,41 @@
+---
+description: Fabrica project structure and architecture overview
+alwaysApply: true
+---
+
+# Project Structure
+
+## Source Layout
+
+```
+src/
+  Fabrica.Core/         — Shared primitives (collections, memory, threading, jobs)
+  Fabrica.Pipeline/     — Producer-consumer pipeline (SPSC queue, loops)
+  Fabrica.Engine/       — Simulation engine (world, coordinators)
+  Fabrica.ConsoleApp/   — Entry point and console host
+tests/
+  Fabrica.Core.Tests/
+  Fabrica.Pipeline.Tests/
+  Fabrica.Engine.Tests/
+plans/<date>/           — Design plans and architectural decisions
+research/<date>/        — Technical investigations and literature surveys
+```
+
+## Architecture
+
+- **Pipeline**: `ProductionLoop` (simulation) and `ConsumptionLoop` (rendering) connected by a
+  lock-free SPSC `ProducerConsumerQueue<T>`. Production runs at a fixed timestep; consumption
+  runs at variable rate.
+- **Threading**: One thread per core, pinned. Coordinators (Thread 0 = sim, Thread 1 = render)
+  also participate as workers. Work-stealing deque per worker for job scheduling.
+- **Memory**: Object pools with `IAllocator<T>` pattern. Zero GC allocations on hot paths.
+  Deferred cleanup via per-thread SPSC log buffers.
+- **Determinism**: Simulation is deterministic. Same inputs → same outputs. Time dilation is
+  allowed; work-shedding per tick is not.
+
+## Key Design Principles
+
+- Minimize cross-core cache line bouncing. Prefer per-thread data over shared atomics.
+- Immutable shared data (Shared cache state on all cores, zero invalidation).
+- Batch cross-thread coordination to phase boundaries (fork-join points).
+- See `research/2026-04-03/synthesis-and-recommendations.md` for the full rationale.
