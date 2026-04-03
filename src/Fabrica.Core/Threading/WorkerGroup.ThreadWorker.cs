@@ -42,6 +42,10 @@ public sealed partial class WorkerGroup<TState, TExecutor>
     internal sealed partial class ThreadWorker
     {
         private readonly Thread _thread;
+
+        // GC-RELIANCE: These AutoResetEvent instances are never disposed; SafeHandle finalizers release the underlying kernel event
+        // objects when the ThreadWorker (or process) becomes unreachable. In Rust/C++: close handles explicitly in shutdown/Join or
+        // store RAII-owned sync primitives dropped with the worker.
         private readonly AutoResetEvent _goSignal = new(false);
         private readonly AutoResetEvent _doneSignal = new(false);
         private readonly int _coreIndex;

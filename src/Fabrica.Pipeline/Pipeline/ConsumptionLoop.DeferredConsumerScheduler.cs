@@ -45,6 +45,8 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
                     continue;
 
                 _pinnedVersions.Unpin(_pinnedPositions[i], _consumers[i]);
+                // GC-RELIANCE: Nulling the slot drops the last reference to the completed Task; the GC reclaims the task object and
+                // its continuation state. In Rust/C++: drop the completed async/join handle explicitly when clearing the slot.
                 _inFlightTasks[i] = null;
 
                 if (task.IsFaulted)
