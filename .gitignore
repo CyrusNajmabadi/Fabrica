@@ -102,3 +102,6 @@ CoverageReport/
 # Crash dumps
 *.mdmp
 test-results/
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
