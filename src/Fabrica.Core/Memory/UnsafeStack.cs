@@ -1,12 +1,14 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if !DEBUG
 using System.Runtime.InteropServices;
+#endif
 
 namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Minimal LIFO stack backed by a growable array. In release builds, push/pop use <see cref="Unsafe"/> to bypass
-/// bounds checking for maximum throughput. In debug builds, full bounds assertions are performed.
+/// bounds checking for maximum throughput. In debug builds, standard array access is used so the CLR performs
+/// real bounds checking.
 /// </summary>
 internal sealed class UnsafeStack<T>(int initialCapacity = 16)
 {
@@ -28,8 +30,11 @@ internal sealed class UnsafeStack<T>(int initialCapacity = 16)
         if (count == array.Length)
             array = this.Grow();
 
-        Debug.Assert((uint)count < (uint)array.Length, $"Push index {count} out of bounds [0, {array.Length}).");
+#if DEBUG
+        array[count] = item;
+#else
         Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), count) = item;
+#endif
         _count = count + 1;
     }
 
@@ -44,8 +49,11 @@ internal sealed class UnsafeStack<T>(int initialCapacity = 16)
         }
 
         var newCount = count - 1;
-        Debug.Assert((uint)newCount < (uint)_array.Length, $"Pop index {newCount} out of bounds [0, {_array.Length}).");
+#if DEBUG
+        item = _array[newCount];
+#else
         item = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_array), newCount);
+#endif
         _count = newCount;
         return true;
     }
