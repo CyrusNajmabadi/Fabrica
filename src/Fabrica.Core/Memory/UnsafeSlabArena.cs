@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
 
@@ -45,23 +46,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     private int _count;
     private readonly UnsafeStack<int> _freeList = new();
 
-    // ── Debug thread-ownership tracking ───────────────────────────────────
-
-#if DEBUG
-    private int _ownerThreadId = -1;
-
-    private void AssertOwnerThread()
-    {
-        var current = Environment.CurrentManagedThreadId;
-        if (_ownerThreadId == -1)
-            _ownerThreadId = current;
-        else
-            Debug.Assert(
-                _ownerThreadId == current,
-                $"UnsafeSlabArena<{typeof(T).Name}> mutating operation called from thread {current} " +
-                $"but owner is thread {_ownerThreadId}. Mutating operations are single-threaded.");
-    }
-#endif
+    private SingleThreadedOwner _owner;
 
     // ── Constructors ──────────────────────────────────────────────────────
 
@@ -99,9 +84,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     /// </summary>
     public int Allocate()
     {
-#if DEBUG
-        this.AssertOwnerThread();
-#endif
+        _owner.AssertOwnerThread();
         int index;
         if (_freeList.TryPop(out var freed))
         {
@@ -123,10 +106,8 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     /// </summary>
     public void Free(int index)
     {
-#if DEBUG
-        this.AssertOwnerThread();
+        _owner.AssertOwnerThread();
         Debug.Assert(index >= 0 && index < _highWater, $"Free index {index} is out of range [0, {_highWater}).");
-#endif
         _freeList.Push(index);
         _count--;
     }

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
 
@@ -28,22 +28,7 @@ public sealed class ObjectPool<T, TAllocator>
     where TAllocator : struct, IAllocator<T>
 {
     private readonly Stack<T> _items;
-
-#if DEBUG
-    private int _ownerThreadId = -1;
-
-    private void AssertOwnerThread()
-    {
-        var current = Environment.CurrentManagedThreadId;
-        if (_ownerThreadId == -1)
-            _ownerThreadId = current;
-        else
-            Debug.Assert(
-                _ownerThreadId == current,
-                $"ObjectPool<{typeof(T).Name}> accessed from thread {current} " +
-                $"but owner is thread {_ownerThreadId}. This pool is not thread-safe.");
-    }
-#endif
+    private SingleThreadedOwner _owner;
 
     public ObjectPool(int initialCapacity)
     {
@@ -57,9 +42,7 @@ public sealed class ObjectPool<T, TAllocator>
     /// </summary>
     public T Rent()
     {
-#if DEBUG
-        this.AssertOwnerThread();
-#endif
+        _owner.AssertOwnerThread();
         return _items.Count > 0 ? _items.Pop() : default(TAllocator).Allocate();
     }
 
@@ -68,9 +51,7 @@ public sealed class ObjectPool<T, TAllocator>
     /// </summary>
     public void Return(T item)
     {
-#if DEBUG
-        this.AssertOwnerThread();
-#endif
+        _owner.AssertOwnerThread();
         default(TAllocator).Reset(item);
         _items.Push(item);
     }

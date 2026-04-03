@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Collections;
 
@@ -62,23 +62,7 @@ public sealed class WorkStealingDeque<T>
     /// <summary>Current circular buffer. Grown by the owner when full; read by thieves during steal.</summary>
     private RingBuffer _buffer;
 
-    // ── Debug thread-ownership tracking ──────────────────────────────────────
-
-#if DEBUG
-    private int _ownerThreadId = -1;
-
-    private void AssertOwnerThread()
-    {
-        var current = Environment.CurrentManagedThreadId;
-        if (_ownerThreadId == -1)
-            _ownerThreadId = current;
-        else
-            Debug.Assert(
-                _ownerThreadId == current,
-                $"WorkStealingDeque<{typeof(T).Name}> owner operation called from thread {current} " +
-                $"but owner is thread {_ownerThreadId}. Push and TryPop are single-owner operations.");
-    }
-#endif
+    private SingleThreadedOwner _owner;
 
     // ── Debug injection points for deterministic interleaving tests ──────────
 
@@ -112,9 +96,7 @@ public sealed class WorkStealingDeque<T>
     /// </summary>
     public void Push(T item)
     {
-#if DEBUG
-        this.AssertOwnerThread();
-#endif
+        _owner.AssertOwnerThread();
 
         // Read the owner's bottom (no volatile needed — single writer) and the thieves' top (acquire fence — need to see
         // the latest steals so we know how many live items exist).
@@ -144,9 +126,7 @@ public sealed class WorkStealingDeque<T>
     /// </summary>
     public bool TryPop(out T item)
     {
-#if DEBUG
-        this.AssertOwnerThread();
-#endif
+        _owner.AssertOwnerThread();
 
         // Speculatively decrement bottom. This "claims" the slot at (bottom - 1). We must publish this decrement before
         // reading top so that a concurrent thief sees the reduced range and doesn't also try to take the same item.
