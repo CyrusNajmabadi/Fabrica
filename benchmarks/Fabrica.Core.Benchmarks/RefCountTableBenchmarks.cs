@@ -14,50 +14,54 @@ public class RefCountTableBenchmarks
     [Params(1_000, 10_000, 100_000)]
     public int N;
 
-    // ── Shared helpers ───────────────────────────────────────────────────
+    // ── Struct helpers (zero interface dispatch overhead) ─────────────────
 
-    private sealed class NullEvents : RefCountTable.IRefCountEvents
+    private struct NullEvents : RefCountTable.IRefCountEvents
     {
-        public static readonly NullEvents Instance = new();
         public void OnFreed(int index) { }
     }
 
-    private sealed class CountingEvents : RefCountTable.IRefCountEvents
+    private struct CountingEvents : RefCountTable.IRefCountEvents
     {
         public int FreeCount;
         public void OnFreed(int index) => this.FreeCount++;
     }
 
-    private sealed class BinaryTreeChildren(int maxIndex) : RefCountTable.IChildEnumerator
+    private struct NoChildren : RefCountTable.IChildEnumerator
     {
-        public void EnumerateChildren(int index, ref UnsafeStack<int> worklist, RefCountTable table)
+        public void EnumerateChildren(int index, RefCountTable table) { }
+    }
+
+    private struct BinaryTreeChildren(int maxIndex) : RefCountTable.IChildEnumerator
+    {
+        public void EnumerateChildren(int index, RefCountTable table)
         {
             var left = (index * 2) + 1;
             var right = (index * 2) + 2;
             if (left <= maxIndex)
-                table.DecrementChild(left, ref worklist);
+                table.DecrementChild(left);
             if (right <= maxIndex)
-                table.DecrementChild(right, ref worklist);
+                table.DecrementChild(right);
         }
     }
 
-    private sealed class LinearChainChildren(int maxIndex) : RefCountTable.IChildEnumerator
+    private struct LinearChainChildren(int maxIndex) : RefCountTable.IChildEnumerator
     {
-        public void EnumerateChildren(int index, ref UnsafeStack<int> worklist, RefCountTable table)
+        public void EnumerateChildren(int index, RefCountTable table)
         {
             var next = index + 1;
             if (next <= maxIndex)
-                table.DecrementChild(next, ref worklist);
+                table.DecrementChild(next);
         }
     }
 
-    private sealed class WideTreeChildren(int fanout) : RefCountTable.IChildEnumerator
+    private struct WideTreeChildren(int fanout) : RefCountTable.IChildEnumerator
     {
-        public void EnumerateChildren(int index, ref UnsafeStack<int> worklist, RefCountTable table)
+        public void EnumerateChildren(int index, RefCountTable table)
         {
             if (index != 0) return;
             for (var i = 1; i <= fanout; i++)
-                table.DecrementChild(i, ref worklist);
+                table.DecrementChild(i);
         }
     }
 
@@ -67,6 +71,7 @@ public class RefCountTableBenchmarks
     public void Increment_Sequential()
     {
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         for (var i = 0; i < N; i++)
             table.Increment(i);
     }
@@ -87,6 +92,7 @@ public class RefCountTableBenchmarks
     public void Increment_Random()
     {
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         var indices = _randomIndices!;
         for (var i = 0; i < indices.Length; i++)
             table.Increment(indices[i]);
@@ -98,6 +104,7 @@ public class RefCountTableBenchmarks
     public void Decrement_NoFrees()
     {
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         for (var i = 0; i < N; i++)
         {
             table.Increment(i);
@@ -105,19 +112,20 @@ public class RefCountTableBenchmarks
         }
 
         for (var i = 0; i < N; i++)
-            table.Decrement(i, NullEvents.Instance); // rc 2→1, no frees
+            table.Decrement(i, default(NullEvents), default(NoChildren)); // rc 2→1, no frees
     }
 
     [Benchmark]
     public int Decrement_AllFree()
     {
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         var events = new CountingEvents();
         for (var i = 0; i < N; i++)
-            table.Increment(i); // rc = 1
+            table.Increment(i);
 
         for (var i = 0; i < N; i++)
-            table.Decrement(i, events); // rc 1→0, all free
+            table.Decrement(i, events, default(NoChildren));
 
         return events.FreeCount;
     }
@@ -127,13 +135,13 @@ public class RefCountTableBenchmarks
     [Benchmark]
     public int CascadeDecrement_BinaryTree()
     {
-        // Build a complete binary tree of size N in index layout: children of i are 2i+1, 2i+2
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         var events = new CountingEvents();
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
-        table.DecrementCascade(0, events, new BinaryTreeChildren(N - 1));
+        table.Decrement(0, events, new BinaryTreeChildren(N - 1));
         return events.FreeCount;
     }
 
@@ -141,24 +149,25 @@ public class RefCountTableBenchmarks
     public int CascadeDecrement_LinearChain()
     {
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         var events = new CountingEvents();
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
-        table.DecrementCascade(0, events, new LinearChainChildren(N - 1));
+        table.Decrement(0, events, new LinearChainChildren(N - 1));
         return events.FreeCount;
     }
 
     [Benchmark]
     public int CascadeDecrement_WideTree()
     {
-        // Root (index 0) points to N-1 children (indices 1..N-1)
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         var events = new CountingEvents();
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
-        table.DecrementCascade(0, events, new WideTreeChildren(N - 1));
+        table.Decrement(0, events, new WideTreeChildren(N - 1));
         return events.FreeCount;
     }
 
@@ -172,14 +181,15 @@ public class RefCountTableBenchmarks
         for (var i = 0; i < N; i++)
             indices[i] = i;
 
+        table.EnsureCapacity(N);
         table.IncrementBatch(indices);
     }
 
     [Benchmark]
     public int DecrementBatch_Mixed()
     {
-        // Half at rc=2 (won't free), half at rc=1 (will free)
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
         var events = new CountingEvents();
         var half = N / 2;
 
@@ -187,14 +197,14 @@ public class RefCountTableBenchmarks
         {
             table.Increment(i);
             if (i < half)
-                table.Increment(i); // rc = 2 for first half
+                table.Increment(i);
         }
 
         var indices = new int[N];
         for (var i = 0; i < N; i++)
             indices[i] = i;
 
-        table.DecrementBatch(indices, events);
+        table.DecrementBatch(indices, events, default(NoChildren));
         return events.FreeCount;
     }
 
@@ -204,18 +214,17 @@ public class RefCountTableBenchmarks
     public void SteadyState_IncrementDecrement()
     {
         var table = new RefCountTable();
+        table.EnsureCapacity(N);
 
-        // Warm up: increment all to rc=2
         for (var i = 0; i < N; i++)
         {
             table.Increment(i);
             table.Increment(i);
         }
 
-        // Steady state: decrement then re-increment (rc oscillates 2→1→2)
         for (var i = 0; i < N; i++)
         {
-            table.Decrement(i, NullEvents.Instance);
+            table.Decrement(i, default(NullEvents), default(NoChildren));
             table.Increment(i);
         }
     }
