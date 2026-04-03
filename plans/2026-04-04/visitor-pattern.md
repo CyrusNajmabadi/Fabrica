@@ -40,6 +40,7 @@ Into a single generic walker that can handle both same-type and cross-type child
 ## Prerequisites
 
 - **`Handle<T>` typed wrapper** (PR #111) — completed. Makes the visitor type-safe: each child handle carries its type, preventing accidental lookup in the wrong store.
+- **Zero-overhead experiment** — completed. Confirmed that struct-constrained generic interface methods (`IChildAction.OnChild<TChild, TChildHandler>`) are fully devirtualized and specialized by the JIT. See `plans/2026-04-04/visitor-pattern-experiment.md` and `benchmarks/results/2026-04-04/visitor-experiment/comparison.md`.
 
 ## Open Questions
 
