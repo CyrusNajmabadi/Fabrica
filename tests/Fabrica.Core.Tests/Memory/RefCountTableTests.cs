@@ -10,69 +10,67 @@ public class RefCountTableTests
     private static RefCountTable CreateTinyTable(int directoryLength = 4, int slabShift = 2)
         => new(directoryLength, slabShift);
 
-    private readonly struct FreeTracker : RefCountTable.IRefCountEvents
+    /// <summary>Tracks freed indices, no children to decrement.</summary>
+    private readonly struct TrackingHandler(List<int> freed) : RefCountTable.IRefCountHandler
     {
-        private readonly List<int> _freed;
-
-        public FreeTracker()
-            => _freed = [];
-
-        public readonly List<int> Freed => _freed;
-
-        public readonly void OnFreed(int index)
-            => _freed.Add(index);
+        public readonly void OnFreed(int index, RefCountTable table)
+            => freed.Add(index);
     }
 
-    private struct NullEvents : RefCountTable.IRefCountEvents
+    /// <summary>No-op: ignores frees, no children.</summary>
+    private readonly struct NullHandler : RefCountTable.IRefCountHandler
     {
-        public readonly void OnFreed(int index) { }
+        public readonly void OnFreed(int index, RefCountTable table) { }
     }
 
-    private struct NoChildren : RefCountTable.IChildEnumerator
+    /// <summary>Binary tree: children of index i are 2i+1 and 2i+2. Tracks frees.</summary>
+    private readonly struct BinaryTreeHandler(int maxIndex, List<int> freed) : RefCountTable.IRefCountHandler
     {
-        public readonly void EnumerateChildren(int index, RefCountTable table) { }
-    }
-
-    private struct BinaryTreeChildren(int maxIndex) : RefCountTable.IChildEnumerator
-    {
-        public readonly void EnumerateChildren(int index, RefCountTable table)
+        public readonly void OnFreed(int index, RefCountTable table)
         {
+            freed.Add(index);
             var left = (index * 2) + 1;
             var right = (index * 2) + 2;
             if (left <= maxIndex)
-                table.DecrementChild(left);
+                table.Decrement(left, this);
             if (right <= maxIndex)
-                table.DecrementChild(right);
+                table.Decrement(right, this);
         }
     }
 
-    private struct LinearChainChildren(int maxIndex) : RefCountTable.IChildEnumerator
+    /// <summary>Linear chain: each node points to index+1. Tracks frees.</summary>
+    private readonly struct LinearChainHandler(int maxIndex, List<int> freed) : RefCountTable.IRefCountHandler
     {
-        public readonly void EnumerateChildren(int index, RefCountTable table)
+        public readonly void OnFreed(int index, RefCountTable table)
         {
+            freed.Add(index);
             var next = index + 1;
             if (next <= maxIndex)
-                table.DecrementChild(next);
+                table.Decrement(next, this);
         }
     }
 
-    private struct WideTreeChildren(int fanout) : RefCountTable.IChildEnumerator
+    /// <summary>Wide tree: node 0 points to 1..fanout. Tracks frees.</summary>
+    private readonly struct WideTreeHandler(int fanout, List<int> freed) : RefCountTable.IRefCountHandler
     {
-        public readonly void EnumerateChildren(int index, RefCountTable table)
+        public readonly void OnFreed(int index, RefCountTable table)
         {
+            freed.Add(index);
             if (index != 0)
                 return;
             for (var i = 1; i <= fanout; i++)
-                table.DecrementChild(i);
+                table.Decrement(i, this);
         }
     }
 
-    private struct SingleChildEnumerator(int parentIndex, int childIndex) : RefCountTable.IChildEnumerator
+    /// <summary>Single parent→child relationship. Tracks frees.</summary>
+    private readonly struct SingleChildHandler(int parentIndex, int childIndex, List<int> freed) : RefCountTable.IRefCountHandler
     {
-        public readonly void EnumerateChildren(int index, RefCountTable table)
+        public readonly void OnFreed(int index, RefCountTable table)
         {
+            freed.Add(index);
             if (index == parentIndex)
-                table.DecrementChild(childIndex);
+                table.Decrement(childIndex, this);
         }
     }
 
@@ -81,13 +79,13 @@ public class RefCountTableTests
     [Fact]
     public void EnsureCapacity_AllocatesRequiredSlabs()
     {
-        var table = CreateTinyTable(directoryLength: 4, slabShift: 2); // 4 per slab
+        var table = CreateTinyTable(directoryLength: 4, slabShift: 2);
         var ta = table.GetTestAccessor();
 
         for (var i = 0; i < 4; i++)
             Assert.Null(ta.Directory[i]);
 
-        table.EnsureCapacity(5); // needs slabs 0 (indices 0-3) and 1 (index 4)
+        table.EnsureCapacity(5);
         Assert.NotNull(ta.Directory[0]);
         Assert.NotNull(ta.Directory[1]);
         Assert.Null(ta.Directory[2]);
@@ -96,10 +94,10 @@ public class RefCountTableTests
     [Fact]
     public void EnsureCapacity_MultipleSlabs()
     {
-        var table = CreateTinyTable(directoryLength: 8, slabShift: 2); // 4 per slab
+        var table = CreateTinyTable(directoryLength: 8, slabShift: 2);
         var ta = table.GetTestAccessor();
 
-        table.EnsureCapacity(12); // needs slabs 0, 1, 2 (indices 0-11)
+        table.EnsureCapacity(12);
         Assert.NotNull(ta.Directory[0]);
         Assert.NotNull(ta.Directory[1]);
         Assert.NotNull(ta.Directory[2]);
@@ -156,12 +154,12 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
         table.Increment(0);
         table.Increment(0);
-        table.Decrement(0, tracker, default(NoChildren));
+        table.Decrement(0, new TrackingHandler(freed));
         Assert.Equal(1, table.GetCount(0));
-        Assert.Empty(tracker.Freed);
+        Assert.Empty(freed);
     }
 
     [Fact]
@@ -169,12 +167,12 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
         table.Increment(0);
-        table.Decrement(0, tracker, default(NoChildren));
+        table.Decrement(0, new TrackingHandler(freed));
         Assert.Equal(0, table.GetCount(0));
-        Assert.Single(tracker.Freed);
-        Assert.Equal(0, tracker.Freed[0]);
+        Assert.Single(freed);
+        Assert.Equal(0, freed[0]);
     }
 
     [Fact]
@@ -210,14 +208,14 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
         table.Increment(0);
 
-        table.Decrement(0, tracker, new BinaryTreeChildren(0));
+        table.Decrement(0, new BinaryTreeHandler(0, freed));
 
         Assert.Equal(0, table.GetCount(0));
-        Assert.Single(tracker.Freed);
-        Assert.Equal(0, tracker.Freed[0]);
+        Assert.Single(freed);
+        Assert.Equal(0, freed[0]);
     }
 
     [Fact]
@@ -225,19 +223,19 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable(directoryLength: 4, slabShift: 2);
         table.EnsureCapacity(7);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         for (var i = 0; i <= 6; i++)
             table.Increment(i);
 
-        table.Decrement(0, tracker, new BinaryTreeChildren(6));
+        table.Decrement(0, new BinaryTreeHandler(6, freed));
 
         for (var i = 0; i <= 6; i++)
             Assert.Equal(0, table.GetCount(i));
 
-        Assert.Equal(7, tracker.Freed.Count);
-        Assert.Contains(0, tracker.Freed);
-        Assert.Contains(6, tracker.Freed);
+        Assert.Equal(7, freed.Count);
+        Assert.Contains(0, freed);
+        Assert.Contains(6, freed);
     }
 
     [Fact]
@@ -245,26 +243,26 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(3);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         table.Increment(0);
         table.Increment(1);
         table.Increment(1); // shared: two parents
         table.Increment(2);
 
-        table.Decrement(0, tracker, new SingleChildEnumerator(0, 1));
+        table.Decrement(0, new SingleChildHandler(0, 1, freed));
 
         Assert.Equal(1, table.GetCount(1));
-        Assert.Single(tracker.Freed);
-        Assert.Equal(0, tracker.Freed[0]);
+        Assert.Single(freed);
+        Assert.Equal(0, freed[0]);
 
-        tracker.Freed.Clear();
-        table.Decrement(2, tracker, new SingleChildEnumerator(2, 1));
+        freed.Clear();
+        table.Decrement(2, new SingleChildHandler(2, 1, freed));
 
         Assert.Equal(0, table.GetCount(1));
-        Assert.Equal(2, tracker.Freed.Count);
-        Assert.Contains(2, tracker.Freed);
-        Assert.Contains(1, tracker.Freed);
+        Assert.Equal(2, freed.Count);
+        Assert.Contains(2, freed);
+        Assert.Contains(1, freed);
     }
 
     [Fact]
@@ -272,15 +270,15 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         table.Increment(0);
-        table.Increment(0); // rc = 2
+        table.Increment(0);
 
-        table.Decrement(0, tracker, new BinaryTreeChildren(0));
+        table.Decrement(0, new BinaryTreeHandler(0, freed));
 
         Assert.Equal(1, table.GetCount(0));
-        Assert.Empty(tracker.Freed);
+        Assert.Empty(freed);
     }
 
     // ═══════════════════════════ Cascade-free: linear chain ═══════════════
@@ -289,16 +287,16 @@ public class RefCountTableTests
     public void CascadeDecrement_LinearChain_FreesAll()
     {
         const int ChainLength = 100;
-        var table = new RefCountTable(directoryLength: 4, slabShift: 5); // 32 per slab
+        var table = new RefCountTable(directoryLength: 4, slabShift: 5);
         table.EnsureCapacity(ChainLength);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         for (var i = 0; i < ChainLength; i++)
             table.Increment(i);
 
-        table.Decrement(0, tracker, new LinearChainChildren(ChainLength - 1));
+        table.Decrement(0, new LinearChainHandler(ChainLength - 1, freed));
 
-        Assert.Equal(ChainLength, tracker.Freed.Count);
+        Assert.Equal(ChainLength, freed.Count);
         for (var i = 0; i < ChainLength; i++)
             Assert.Equal(0, table.GetCount(i));
     }
@@ -309,14 +307,14 @@ public class RefCountTableTests
         const int Depth = 10_000;
         var table = new RefCountTable();
         table.EnsureCapacity(Depth);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         for (var i = 0; i < Depth; i++)
             table.Increment(i);
 
-        table.Decrement(0, tracker, new LinearChainChildren(Depth - 1));
+        table.Decrement(0, new LinearChainHandler(Depth - 1, freed));
 
-        Assert.Equal(Depth, tracker.Freed.Count);
+        Assert.Equal(Depth, freed.Count);
     }
 
     // ═══════════════════════════ Cascade-free: wide tree ══════════════════
@@ -327,20 +325,20 @@ public class RefCountTableTests
         const int Fanout = 50;
         var table = CreateTinyTable(directoryLength: 8, slabShift: 3);
         table.EnsureCapacity(Fanout + 1);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         table.Increment(0);
         for (var i = 1; i <= Fanout; i++)
             table.Increment(i);
 
-        table.Decrement(0, tracker, new WideTreeChildren(Fanout));
+        table.Decrement(0, new WideTreeHandler(Fanout, freed));
 
-        Assert.Equal(Fanout + 1, tracker.Freed.Count);
-        Assert.Contains(0, tracker.Freed);
+        Assert.Equal(Fanout + 1, freed.Count);
+        Assert.Contains(0, freed);
         for (var i = 1; i <= Fanout; i++)
         {
             Assert.Equal(0, table.GetCount(i));
-            Assert.Contains(i, tracker.Freed);
+            Assert.Contains(i, freed);
         }
     }
 
@@ -364,7 +362,7 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(3);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         table.Increment(0);
         table.Increment(0);
@@ -372,32 +370,31 @@ public class RefCountTableTests
         table.Increment(2);
 
         int[] batch = [0, 1, 2];
-        table.DecrementBatch(batch, tracker, default(NoChildren));
+        table.DecrementBatch(batch, new TrackingHandler(freed));
 
-        Assert.Equal(1, table.GetCount(0)); // was 2, now 1
-        Assert.Equal(0, table.GetCount(1)); // was 1, now 0 → freed
-        Assert.Equal(0, table.GetCount(2)); // was 1, now 0 → freed
+        Assert.Equal(1, table.GetCount(0));
+        Assert.Equal(0, table.GetCount(1));
+        Assert.Equal(0, table.GetCount(2));
 
-        Assert.Equal(2, tracker.Freed.Count);
-        Assert.Contains(1, tracker.Freed);
-        Assert.Contains(2, tracker.Freed);
+        Assert.Equal(2, freed.Count);
+        Assert.Contains(1, freed);
+        Assert.Contains(2, freed);
     }
 
     [Fact]
     public void DecrementBatch_CascadesThroughChildren()
     {
-        // Nodes 0-6 form a binary tree. Batch-decrement root (0) → should cascade free all 7.
         var table = CreateTinyTable(directoryLength: 4, slabShift: 2);
         table.EnsureCapacity(7);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         for (var i = 0; i <= 6; i++)
             table.Increment(i);
 
         int[] batch = [0];
-        table.DecrementBatch(batch, tracker, new BinaryTreeChildren(6));
+        table.DecrementBatch(batch, new BinaryTreeHandler(6, freed));
 
-        Assert.Equal(7, tracker.Freed.Count);
+        Assert.Equal(7, freed.Count);
         for (var i = 0; i <= 6; i++)
             Assert.Equal(0, table.GetCount(i));
     }
@@ -406,9 +403,9 @@ public class RefCountTableTests
     public void DecrementBatch_Empty_DoesNothing()
     {
         var table = CreateTinyTable();
-        var tracker = new FreeTracker();
-        table.DecrementBatch([], tracker, default(NoChildren));
-        Assert.Empty(tracker.Freed);
+        var freed = new List<int>();
+        table.DecrementBatch([], new TrackingHandler(freed));
+        Assert.Empty(freed);
     }
 
     // ═══════════════════════════ Slab boundaries ═════════════════════════
@@ -449,23 +446,22 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(2);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         table.Increment(0);
         table.Increment(0);
         table.Increment(1);
 
-        table.Decrement(0, tracker, default(NoChildren));
+        table.Decrement(0, new NullHandler());
         Assert.Equal(1, table.GetCount(0));
-        Assert.Empty(tracker.Freed);
 
         table.Increment(0);
         Assert.Equal(2, table.GetCount(0));
 
-        table.Decrement(0, tracker, default(NoChildren));
-        table.Decrement(0, tracker, default(NoChildren));
+        table.Decrement(0, new TrackingHandler(freed));
+        table.Decrement(0, new TrackingHandler(freed));
         Assert.Equal(0, table.GetCount(0));
-        Assert.Single(tracker.Freed);
+        Assert.Single(freed);
     }
 
     [Fact]
@@ -474,7 +470,7 @@ public class RefCountTableTests
         var table = CreateTinyTable(directoryLength: 8, slabShift: 3);
         const int Count = 20;
         table.EnsureCapacity(Count);
-        var tracker = new FreeTracker();
+        var freed = new List<int>();
 
         var indices = new int[Count];
         for (var i = 0; i < Count; i++)
@@ -483,9 +479,9 @@ public class RefCountTableTests
             table.Increment(i);
         }
 
-        table.DecrementBatch(indices, tracker, default(NoChildren));
+        table.DecrementBatch(indices, new TrackingHandler(freed));
 
-        Assert.Equal(Count, tracker.Freed.Count);
+        Assert.Equal(Count, freed.Count);
         for (var i = 0; i < Count; i++)
             Assert.Equal(0, table.GetCount(i));
     }
@@ -500,35 +496,25 @@ public class RefCountTableTests
         public List<int> FreedB { get; } = [];
     }
 
-    private struct CrossTableAEvents(CrossTableContext ctx) : RefCountTable.IRefCountEvents
+    /// <summary>A-node 0 → B-node 0 (cross-table). Tracks A frees.</summary>
+    private readonly struct CrossTableAHandler(CrossTableContext ctx) : RefCountTable.IRefCountHandler
     {
-        public readonly void OnFreed(int index)
-            => ctx.FreedA.Add(index);
-    }
-
-    private struct CrossTableBEvents(CrossTableContext ctx) : RefCountTable.IRefCountEvents
-    {
-        public readonly void OnFreed(int index)
-            => ctx.FreedB.Add(index);
-    }
-
-    /// <summary>A-node 0 has a cross-reference to B-node 0.</summary>
-    private struct CrossTableAChildren(CrossTableContext ctx) : RefCountTable.IChildEnumerator
-    {
-        public readonly void EnumerateChildren(int index, RefCountTable table)
+        public readonly void OnFreed(int index, RefCountTable table)
         {
+            ctx.FreedA.Add(index);
             if (index == 0)
-                ctx.TableB.Decrement(0, new CrossTableBEvents(ctx), new CrossTableBChildren(ctx));
+                ctx.TableB.Decrement(0, new CrossTableBHandler(ctx));
         }
     }
 
-    /// <summary>B-node 0 has a cross-reference to A-node 1.</summary>
-    private struct CrossTableBChildren(CrossTableContext ctx) : RefCountTable.IChildEnumerator
+    /// <summary>B-node 0 → A-node 1 (cross-table). Tracks B frees.</summary>
+    private readonly struct CrossTableBHandler(CrossTableContext ctx) : RefCountTable.IRefCountHandler
     {
-        public readonly void EnumerateChildren(int index, RefCountTable table)
+        public readonly void OnFreed(int index, RefCountTable table)
         {
+            ctx.FreedB.Add(index);
             if (index == 0)
-                ctx.TableA.Decrement(1, new CrossTableAEvents(ctx), new CrossTableAChildren(ctx));
+                ctx.TableA.Decrement(1, new CrossTableAHandler(ctx));
         }
     }
 
@@ -543,12 +529,11 @@ public class RefCountTableTests
         ctx.TableA.EnsureCapacity(2);
         ctx.TableB.EnsureCapacity(1);
 
-        ctx.TableA.Increment(0); // A[0] = 1
-        ctx.TableA.Increment(1); // A[1] = 1
-        ctx.TableB.Increment(0); // B[0] = 1
+        ctx.TableA.Increment(0);
+        ctx.TableA.Increment(1);
+        ctx.TableB.Increment(0);
 
-        // Cascade from A[0]: frees A[0] → cascades to B[0] → frees B[0] → cascades to A[1] → frees A[1]
-        ctx.TableA.Decrement(0, new CrossTableAEvents(ctx), new CrossTableAChildren(ctx));
+        ctx.TableA.Decrement(0, new CrossTableAHandler(ctx));
 
         Assert.Equal(0, ctx.TableA.GetCount(0));
         Assert.Equal(0, ctx.TableA.GetCount(1));
@@ -564,8 +549,6 @@ public class RefCountTableTests
     [Fact]
     public void CrossTable_BounceBack_SharedChildSurvives()
     {
-        // A[0] → B[0], B[0] → A[1]. A[1] has rc=2 (shared by another parent).
-        // Cascade from A[0] should free A[0] and B[0], but NOT A[1].
         var ctx = new CrossTableContext
         {
             TableA = CreateTinyTable(directoryLength: 4, slabShift: 2),
@@ -574,27 +557,27 @@ public class RefCountTableTests
         ctx.TableA.EnsureCapacity(2);
         ctx.TableB.EnsureCapacity(1);
 
-        ctx.TableA.Increment(0); // A[0] = 1
-        ctx.TableA.Increment(1); // A[1] = 1
+        ctx.TableA.Increment(0);
+        ctx.TableA.Increment(1);
         ctx.TableA.Increment(1); // A[1] = 2 (shared)
-        ctx.TableB.Increment(0); // B[0] = 1
+        ctx.TableB.Increment(0);
 
-        ctx.TableA.Decrement(0, new CrossTableAEvents(ctx), new CrossTableAChildren(ctx));
+        ctx.TableA.Decrement(0, new CrossTableAHandler(ctx));
 
-        Assert.Equal(0, ctx.TableA.GetCount(0)); // freed
-        Assert.Equal(1, ctx.TableA.GetCount(1)); // survived (rc was 2, now 1)
-        Assert.Equal(0, ctx.TableB.GetCount(0)); // freed
+        Assert.Equal(0, ctx.TableA.GetCount(0));
+        Assert.Equal(1, ctx.TableA.GetCount(1)); // survived
+        Assert.Equal(0, ctx.TableB.GetCount(0));
 
-        Assert.Single(ctx.FreedA); // only A[0]
+        Assert.Single(ctx.FreedA);
         Assert.Equal(0, ctx.FreedA[0]);
-        Assert.Single(ctx.FreedB); // only B[0]
+        Assert.Single(ctx.FreedB);
         Assert.Equal(0, ctx.FreedB[0]);
     }
 
-    // ═══════════════════════════ Re-entrancy flag state ═══════════════════
+    // ═══════════════════════════ Cascade state ════════════════════════════
 
     [Fact]
-    public void CascadeInProgress_FalseBeforeAndAfterDecrement()
+    public void CascadeActive_FalseBeforeAndAfterDecrement()
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(3);
@@ -604,9 +587,9 @@ public class RefCountTableTests
         table.Increment(1);
         table.Increment(2);
 
-        Assert.False(ta.CascadeInProgress);
-        table.Decrement(0, default(NullEvents), new LinearChainChildren(2));
-        Assert.False(ta.CascadeInProgress);
+        Assert.False(ta.CascadeActive);
+        table.Decrement(0, new LinearChainHandler(2, []));
+        Assert.False(ta.CascadeActive);
     }
 
     // ═══════════════════════════ Debug assertions ═════════════════════════
@@ -617,7 +600,7 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(2);
-        table.Increment(0); // establish owner
+        table.Increment(0);
 
         Exception? caught = null;
         var thread = new Thread(() =>
@@ -650,8 +633,8 @@ public class RefCountTableTests
         try
         {
             using var listener = new AssertThrowsListener();
-            table.Decrement(0, default(NullEvents), default(NoChildren)); // rc = 0
-            table.Decrement(0, default(NullEvents), default(NoChildren)); // rc would go to -1 → assert
+            table.Decrement(0, default(NullHandler));
+            table.Decrement(0, default(NullHandler));
         }
         catch (Exception ex)
         {

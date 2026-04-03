@@ -16,52 +16,56 @@ public class RefCountTableBenchmarks
 
     // ── Struct helpers (zero interface dispatch overhead) ─────────────────
 
-    private struct NullEvents : RefCountTable.IRefCountEvents
+    private struct NullHandler : RefCountTable.IRefCountHandler
     {
-        public void OnFreed(int index) { }
+        public void OnFreed(int index, RefCountTable table) { }
     }
 
-    private struct CountingEvents : RefCountTable.IRefCountEvents
+    private struct CountingHandler : RefCountTable.IRefCountHandler
     {
         public int FreeCount;
-        public void OnFreed(int index) => this.FreeCount++;
+        public void OnFreed(int index, RefCountTable table) => this.FreeCount++;
     }
 
-    private struct NoChildren : RefCountTable.IChildEnumerator
+    private struct BinaryTreeHandler(int maxIndex) : RefCountTable.IRefCountHandler
     {
-        public void EnumerateChildren(int index, RefCountTable table) { }
-    }
+        public int FreeCount;
 
-    private struct BinaryTreeChildren(int maxIndex) : RefCountTable.IChildEnumerator
-    {
-        public void EnumerateChildren(int index, RefCountTable table)
+        public void OnFreed(int index, RefCountTable table)
         {
+            this.FreeCount++;
             var left = (index * 2) + 1;
             var right = (index * 2) + 2;
             if (left <= maxIndex)
-                table.DecrementChild(left);
+                table.Decrement(left, this);
             if (right <= maxIndex)
-                table.DecrementChild(right);
+                table.Decrement(right, this);
         }
     }
 
-    private struct LinearChainChildren(int maxIndex) : RefCountTable.IChildEnumerator
+    private struct LinearChainHandler(int maxIndex) : RefCountTable.IRefCountHandler
     {
-        public void EnumerateChildren(int index, RefCountTable table)
+        public int FreeCount;
+
+        public void OnFreed(int index, RefCountTable table)
         {
+            this.FreeCount++;
             var next = index + 1;
             if (next <= maxIndex)
-                table.DecrementChild(next);
+                table.Decrement(next, this);
         }
     }
 
-    private struct WideTreeChildren(int fanout) : RefCountTable.IChildEnumerator
+    private struct WideTreeHandler(int fanout) : RefCountTable.IRefCountHandler
     {
-        public void EnumerateChildren(int index, RefCountTable table)
+        public int FreeCount;
+
+        public void OnFreed(int index, RefCountTable table)
         {
+            this.FreeCount++;
             if (index != 0) return;
             for (var i = 1; i <= fanout; i++)
-                table.DecrementChild(i);
+                table.Decrement(i, this);
         }
     }
 
@@ -108,11 +112,11 @@ public class RefCountTableBenchmarks
         for (var i = 0; i < N; i++)
         {
             table.Increment(i);
-            table.Increment(i); // rc = 2
+            table.Increment(i);
         }
 
         for (var i = 0; i < N; i++)
-            table.Decrement(i, default(NullEvents), default(NoChildren)); // rc 2→1, no frees
+            table.Decrement(i, default(NullHandler));
     }
 
     [Benchmark]
@@ -120,14 +124,14 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable();
         table.EnsureCapacity(N);
-        var events = new CountingEvents();
+        var handler = new CountingHandler();
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
         for (var i = 0; i < N; i++)
-            table.Decrement(i, events, default(NoChildren));
+            table.Decrement(i, handler);
 
-        return events.FreeCount;
+        return handler.FreeCount;
     }
 
     // ═══════════════════════════ Cascade ══════════════════════════════════
@@ -137,12 +141,12 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable();
         table.EnsureCapacity(N);
-        var events = new CountingEvents();
+        var handler = new BinaryTreeHandler(N - 1);
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
-        table.Decrement(0, events, new BinaryTreeChildren(N - 1));
-        return events.FreeCount;
+        table.Decrement(0, handler);
+        return handler.FreeCount;
     }
 
     [Benchmark]
@@ -150,12 +154,12 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable();
         table.EnsureCapacity(N);
-        var events = new CountingEvents();
+        var handler = new LinearChainHandler(N - 1);
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
-        table.Decrement(0, events, new LinearChainChildren(N - 1));
-        return events.FreeCount;
+        table.Decrement(0, handler);
+        return handler.FreeCount;
     }
 
     [Benchmark]
@@ -163,12 +167,12 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable();
         table.EnsureCapacity(N);
-        var events = new CountingEvents();
+        var handler = new WideTreeHandler(N - 1);
         for (var i = 0; i < N; i++)
             table.Increment(i);
 
-        table.Decrement(0, events, new WideTreeChildren(N - 1));
-        return events.FreeCount;
+        table.Decrement(0, handler);
+        return handler.FreeCount;
     }
 
     // ═══════════════════════════ Batch ════════════════════════════════════
@@ -190,7 +194,7 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable();
         table.EnsureCapacity(N);
-        var events = new CountingEvents();
+        var handler = new CountingHandler();
         var half = N / 2;
 
         for (var i = 0; i < N; i++)
@@ -204,8 +208,8 @@ public class RefCountTableBenchmarks
         for (var i = 0; i < N; i++)
             indices[i] = i;
 
-        table.DecrementBatch(indices, events, default(NoChildren));
-        return events.FreeCount;
+        table.DecrementBatch(indices, handler);
+        return handler.FreeCount;
     }
 
     // ═══════════════════════════ Steady state ═════════════════════════════
@@ -224,7 +228,7 @@ public class RefCountTableBenchmarks
 
         for (var i = 0; i < N; i++)
         {
-            table.Decrement(i, default(NullEvents), default(NoChildren));
+            table.Decrement(i, default(NullHandler));
             table.Increment(i);
         }
     }

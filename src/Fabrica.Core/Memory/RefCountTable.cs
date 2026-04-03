@@ -16,19 +16,20 @@ namespace Fabrica.Core.Memory;
 ///   so a missing slab during <see cref="Increment"/> indicates a caller bug.
 ///
 /// CASCADE FREE
-///   <see cref="Decrement{TEvents,TChildren}"/> always cascades: when a refcount reaches zero, the table
-///   iteratively processes freed nodes via a reusable worklist (<see cref="UnsafeStack{T}"/> field — no per-call
-///   allocation). For each freed node, <see cref="IRefCountEvents.OnFreed"/> fires and
-///   <see cref="IChildEnumerator.EnumerateChildren"/> discovers children to decrement.
+///   <see cref="Decrement{THandler}"/> always cascades: when a refcount reaches zero, the table iteratively
+///   processes freed nodes via a reusable stack (<see cref="_cascadePending"/>). For each freed node,
+///   <see cref="IRefCountHandler.OnFreed"/> fires. The handler is responsible for both freeing the node from
+///   the arena and decrementing child refcounts via <see cref="Decrement{THandler}"/> — which, during an
+///   active cascade, simply pushes zero-refcount children onto the pending stack for the outer loop.
 ///
 ///   Re-entrancy is supported for cross-table cascades (type A → type B → type A). When a cascade is already
-///   in progress and a re-entrant <see cref="Decrement{TEvents,TChildren}"/> hits zero, the index is pushed
-///   onto the existing worklist and the outer loop processes it — no nested loops, bounded stack depth.
+///   active and a re-entrant <see cref="Decrement{THandler}"/> hits zero, the index is pushed onto the pending
+///   stack and the outer loop processes it — no nested loops, bounded stack depth.
 ///
 /// STRUCT GENERIC PATTERN
-///   <see cref="Decrement{TEvents,TChildren}"/> and <see cref="DecrementBatch{TEvents,TChildren}"/> take
-///   struct type parameters constrained to <see cref="IRefCountEvents"/> and <see cref="IChildEnumerator"/>.
-///   The JIT specializes per struct type, eliminating interface dispatch in hot paths.
+///   <see cref="Decrement{THandler}"/> and <see cref="DecrementBatch{THandler}"/> take a struct type parameter
+///   constrained to <see cref="IRefCountHandler"/>. The JIT specializes per struct type, eliminating interface
+///   dispatch in hot paths.
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from one thread (the coordinator). Debug builds assert via
@@ -46,8 +47,21 @@ internal sealed class RefCountTable
     private const int DefaultDirectoryLength = 65_536;
 
     private readonly UnsafeSlabDirectory<int> _directory;
-    private readonly UnsafeStack<int> _worklist = new();
-    private bool _cascadeInProgress;
+
+    /// <summary>
+    /// Indices whose refcount reached zero during a decrement cascade, pending processing (the handler's
+    /// <see cref="IRefCountHandler.OnFreed"/> callback). Reused across cascade operations to avoid allocation.
+    /// </summary>
+    private readonly UnsafeStack<int> _cascadePending = new();
+
+    /// <summary>
+    /// True while a decrement cascade is being processed. When a <see cref="Decrement{THandler}"/> call hits
+    /// zero during an active cascade (e.g., a child decrement within <see cref="IRefCountHandler.OnFreed"/>,
+    /// or a cross-table A→B→A bounce), the index is pushed onto <see cref="_cascadePending"/> and the caller
+    /// returns immediately — the outer cascade loop will process it.
+    /// </summary>
+    private bool _cascadeActive;
+
     private SingleThreadedOwner _owner;
 
     // ── Constructors ──────────────────────────────────────────────────────
@@ -94,16 +108,16 @@ internal sealed class RefCountTable
     }
 
     /// <summary>
-    /// Decrements the refcount at the given index. If it reaches zero, iteratively cascades through children
-    /// via the reusable worklist: <see cref="IRefCountEvents.OnFreed"/> fires for each freed node, and
-    /// <see cref="IChildEnumerator.EnumerateChildren"/> discovers child indices to decrement.
+    /// Decrements the refcount at the given index. If it reaches zero, the index is added to the cascade
+    /// pending stack. If no cascade is already active, starts the cascade loop which pops pending indices and
+    /// calls <see cref="IRefCountHandler.OnFreed"/> for each. The handler is responsible for decrementing
+    /// child refcounts (by calling <see cref="Decrement{THandler}"/> for each child) and freeing the node.
     ///
-    /// Re-entrant calls (from cross-table cascades) push onto the existing worklist instead of starting a
-    /// nested loop, keeping call-stack depth bounded by the number of distinct tables rather than tree depth.
+    /// Re-entrant calls (from within a handler, or from cross-table cascades) push onto the existing pending
+    /// stack instead of starting a nested loop, keeping call-stack depth bounded.
     /// </summary>
-    public void Decrement<TEvents, TChildren>(int index, TEvents events, TChildren children)
-        where TEvents : struct, IRefCountEvents
-        where TChildren : struct, IChildEnumerator
+    public void Decrement<THandler>(int index, THandler handler)
+        where THandler : struct, IRefCountHandler
     {
         _owner.AssertOwnerThread();
         Debug.Assert(_directory[index] > 0, $"Decrement on index {index} with refcount already at {_directory[index]}.");
@@ -111,36 +125,10 @@ internal sealed class RefCountTable
         if (--_directory[index] != 0)
             return;
 
-        if (_cascadeInProgress)
-        {
-            _worklist.Push(index);
-            return;
-        }
+        _cascadePending.Push(index);
 
-        _cascadeInProgress = true;
-        _worklist.Push(index);
-
-        while (_worklist.TryPop(out var current))
-        {
-            events.OnFreed(current);
-            children.EnumerateChildren(current, this);
-        }
-
-        _cascadeInProgress = false;
-    }
-
-    /// <summary>
-    /// Called by <see cref="IChildEnumerator.EnumerateChildren"/> implementations to decrement a child's
-    /// refcount during cascade processing. If the child hits zero, it is pushed onto the worklist for the
-    /// cascade loop to process. Must only be called during an active cascade.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void DecrementChild(int childIndex)
-    {
-        Debug.Assert(_cascadeInProgress, "DecrementChild must only be called during cascade processing.");
-        Debug.Assert(_directory[childIndex] > 0, $"DecrementChild on index {childIndex} with refcount already at {_directory[childIndex]}.");
-        if (--_directory[childIndex] == 0)
-            _worklist.Push(childIndex);
+        if (!_cascadeActive)
+            this.RunCascade(handler);
     }
 
     // ── Bulk operations ──────────────────────────────────────────────────
@@ -158,48 +146,50 @@ internal sealed class RefCountTable
     /// Decrements refcounts for all indices in the span, then cascades any that hit zero. Must not be called
     /// during an active cascade (i.e., not re-entrant — batch operations are top-level coordinator calls).
     /// </summary>
-    public void DecrementBatch<TEvents, TChildren>(ReadOnlySpan<int> indices, TEvents events, TChildren children)
-        where TEvents : struct, IRefCountEvents
-        where TChildren : struct, IChildEnumerator
+    public void DecrementBatch<THandler>(ReadOnlySpan<int> indices, THandler handler)
+        where THandler : struct, IRefCountHandler
     {
         _owner.AssertOwnerThread();
-        Debug.Assert(!_cascadeInProgress, "DecrementBatch must not be called during an active cascade.");
+        Debug.Assert(!_cascadeActive, "DecrementBatch must not be called during an active cascade.");
 
         for (var i = 0; i < indices.Length; i++)
         {
             var index = indices[i];
             Debug.Assert(_directory[index] > 0, $"DecrementBatch on index {index} with refcount already at {_directory[index]}.");
             if (--_directory[index] == 0)
-                _worklist.Push(index);
+                _cascadePending.Push(index);
         }
 
-        if (_worklist.Count == 0)
+        this.RunCascade(handler);
+    }
+
+    // ── Cascade loop ─────────────────────────────────────────────────────
+
+    private void RunCascade<THandler>(THandler handler)
+        where THandler : struct, IRefCountHandler
+    {
+        if (_cascadePending.Count == 0)
             return;
 
-        _cascadeInProgress = true;
+        _cascadeActive = true;
 
-        while (_worklist.TryPop(out var current))
-        {
-            events.OnFreed(current);
-            children.EnumerateChildren(current, this);
-        }
+        while (_cascadePending.TryPop(out var current))
+            handler.OnFreed(current, this);
 
-        _cascadeInProgress = false;
+        _cascadeActive = false;
     }
 
-    // ── Callback interfaces ──────────────────────────────────────────────
+    // ── Callback interface ───────────────────────────────────────────────
 
-    /// <summary>Receives notifications when a refcount reaches zero.</summary>
-    public interface IRefCountEvents
+    /// <summary>
+    /// Handles a node whose refcount reached zero. The implementation is responsible for both decrementing
+    /// child refcounts (by calling <see cref="Decrement{THandler}"/> for each child) and freeing the node
+    /// (e.g., returning the index to the arena's free list). The <paramref name="table"/> parameter enables
+    /// the handler to call <see cref="Decrement{THandler}"/> for child indices.
+    /// </summary>
+    public interface IRefCountHandler
     {
-        void OnFreed(int index);
-    }
-
-    /// <summary>Enumerates child indices of a node during cascade-free. Implementations call
-    /// <see cref="DecrementChild"/> for each child index.</summary>
-    public interface IChildEnumerator
-    {
-        void EnumerateChildren(int index, RefCountTable table);
+        void OnFreed(int index, RefCountTable table);
     }
 
     // ── Test accessor ─────────────────────────────────────────────────────
@@ -213,6 +203,6 @@ internal sealed class RefCountTable
         public int DirectoryLength => table._directory.DirectoryLength;
         public int SlabLength => table._directory.SlabLength;
         public int SlabShift => table._directory.SlabShift;
-        public bool CascadeInProgress => table._cascadeInProgress;
+        public bool CascadeActive => table._cascadeActive;
     }
 }
