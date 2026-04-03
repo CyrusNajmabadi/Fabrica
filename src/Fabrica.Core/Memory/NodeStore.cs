@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Threading;
 
@@ -14,11 +15,11 @@ namespace Fabrica.Core.Memory;
 ///   refcount updates for snapshot root sets. The stored handler enables <see cref="DecrementRoots"/>
 ///   to trigger cascade-free without the caller needing to construct or pass a handler.
 ///
-/// VALIDATION
+/// VALIDATION (DEBUG ONLY)
 ///   Call <see cref="EnableValidation{TEnumerator}"/> in tests to activate automatic DAG invariant
 ///   checking after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call. The
 ///   store tracks the multi-set of active roots and runs <see cref="DagValidator.AssertValid"/> after
-///   each mutation. Not for production hot paths.
+///   each mutation. All validation state and logic is compiled out in release builds.
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>NodeStore</c>),
@@ -42,18 +43,10 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     private readonly THandler _handler = handler;
     private SingleThreadedOwner _owner;
 
-    /// <summary>
-    /// Multi-set of active root indices (root → hold count). Null when validation is disabled.
-    /// Populated by <see cref="IncrementRoots"/> and depopulated by <see cref="DecrementRoots"/>
-    /// so the validator always sees the current set of live roots.
-    /// </summary>
+#if DEBUG
     private Dictionary<int, int>? _trackedRootCounts;
-
-    /// <summary>
-    /// Validation callback, set by <see cref="EnableValidation{TEnumerator}"/>. Captures the child
-    /// enumerator in a closure so validation can run without the caller passing it each time.
-    /// </summary>
     private Action? _runValidation;
+#endif
 
     /// <summary>The slab-backed arena storing nodes of type <typeparamref name="TNode"/>.</summary>
     public UnsafeSlabArena<TNode> Arena { get; } = arena;
@@ -86,30 +79,31 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
         _owner.AssertOwnerThread();
         this.TrackBeforeDecrement(roots);
         this.RefCounts.DecrementBatch(roots, _handler);
-        _runValidation?.Invoke();
+        this.RunValidation();
     }
 
-    // ── Validation ───────────────────────────────────────────────────────
+    // ── Validation (debug only) ──────────────────────────────────────────
 
     /// <summary>
-    /// Enables automatic DAG invariant checking. After every <see cref="IncrementRoots"/> and
-    /// <see cref="DecrementRoots"/>, the store runs <see cref="DagValidator.AssertValid"/> in relaxed
-    /// mode with the current set of tracked roots. Relaxed mode checks <c>actual &gt;= expected</c>
-    /// (tolerating cross-store references and untracked roots) rather than exact match. Call once
-    /// during test setup.
+    /// Enables automatic DAG invariant checking (debug builds only). After every <see cref="IncrementRoots"/>
+    /// and <see cref="DecrementRoots"/>, the store runs <see cref="DagValidator.AssertValid"/> in relaxed
+    /// mode with the current set of tracked roots. Compiled out entirely in release builds.
     /// </summary>
+    [Conditional("DEBUG")]
     internal void EnableValidation<TEnumerator>(TEnumerator enumerator)
         where TEnumerator : struct, DagValidator.IChildEnumerator<TNode>
     {
+#if DEBUG
         _trackedRootCounts = [];
         _runValidation = () =>
         {
             var roots = this.ExpandTrackedRoots();
             DagValidator.AssertValid(this, roots, enumerator, strict: false);
         };
+#endif
     }
 
-    /// <summary>Expands the multi-set of tracked roots into a flat array for the validator.</summary>
+#if DEBUG
     private int[] ExpandTrackedRoots()
     {
         var counts = _trackedRootCounts!;
@@ -127,9 +121,12 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
 
         return result;
     }
+#endif
 
+    [Conditional("DEBUG")]
     private void TrackAndValidateAfterIncrement(ReadOnlySpan<int> roots)
     {
+#if DEBUG
         if (_trackedRootCounts == null)
             return;
 
@@ -140,10 +137,13 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
         }
 
         _runValidation!();
+#endif
     }
 
+    [Conditional("DEBUG")]
     private void TrackBeforeDecrement(ReadOnlySpan<int> roots)
     {
+#if DEBUG
         if (_trackedRootCounts == null)
             return;
 
@@ -155,6 +155,15 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
             if (count <= 0)
                 _trackedRootCounts.Remove(root);
         }
+#endif
+    }
+
+    [Conditional("DEBUG")]
+    private void RunValidation()
+    {
+#if DEBUG
+        _runValidation?.Invoke();
+#endif
     }
 
     // ── Test accessor ─────────────────────────────────────────────────────
