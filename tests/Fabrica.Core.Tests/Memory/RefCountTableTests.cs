@@ -1707,6 +1707,85 @@ public class RefCountTableTests
         h.Verify();
     }
 
+    // ── Fork-then-release: only the old spine is freed ───────────────────
+
+    [Theory]
+    [InlineData(3, 7)]   // depth 3: 15 nodes, leftmost leaf
+    [InlineData(3, 12)]  // depth 3: 15 nodes, middle-right leaf
+    [InlineData(4, 15)]  // depth 4: 31 nodes, leftmost leaf
+    [InlineData(4, 22)]  // depth 4: 31 nodes, middle-right leaf
+    [InlineData(5, 31)]  // depth 5: 63 nodes, leftmost leaf
+    [InlineData(5, 60)]  // depth 5: 63 nodes, near-rightmost leaf
+    public void Fork_ThenReleaseOldRoot_FreesOnlyOldSpine(int depth, int targetLeaf)
+    {
+        var nodeCount = (1 << (depth + 1)) - 1;
+        var ctx = new MultiTableContext(nodesPerTable: nodeCount * 3);
+        var h = new PersistentTreeHarness(ctx);
+
+        var v1 = h.BuildCompleteBinaryTree(depth);
+        h.AddRoot(v1[0]);
+        h.Verify();
+
+        var v2 = h.PathCopy(v1, targetLeaf);
+        h.AddRoot(v2[0]);
+        h.Verify();
+
+        var freedBefore = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
+        Assert.Equal(0, freedBefore);
+
+        h.ReleaseRoot(v1[0]);
+        h.Verify();
+
+        // The old root was released. Only the old spine (root → target) should be freed.
+        // Path length = depth + 1 nodes (root through the target leaf).
+        var pathLength = depth + 1;
+        var freedAfter = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
+        Assert.Equal(pathLength, freedAfter);
+
+        // Verify each freed node is one of the old spine positions
+        var freedSet = new HashSet<(int t, int i)>();
+        for (var table = 0; table < 3; table++)
+            foreach (var idx in ctx.Freed[table])
+                freedSet.Add((table, idx));
+
+        var pos = targetLeaf;
+        while (pos > 0)
+        {
+            Assert.Contains(v1[pos], freedSet);
+            pos = (pos - 1) / 2;
+        }
+
+        Assert.Contains(v1[0], freedSet);
+
+        // All new nodes (V2's spine) should still be alive
+        var pathPositions = new List<int>();
+        pos = targetLeaf;
+        while (pos > 0)
+        {
+            pathPositions.Add(pos);
+            pos = (pos - 1) / 2;
+        }
+
+        pathPositions.Add(0);
+        foreach (var p in pathPositions)
+            Assert.True(ctx.Tables[v2[p].t].GetCount(v2[p].i) > 0, $"V2 spine node at position {p} should be alive");
+
+        // Shared subtree nodes (not on the path) should still be alive with refcount 1
+        for (var n = 0; n < nodeCount; n++)
+        {
+            if (pathPositions.Contains(n)) continue;
+            var (t, i) = v1[n]; // same as v2[n] for non-path positions
+            Assert.True(ctx.Tables[t].GetCount(i) > 0, $"Shared node at position {n} should be alive");
+        }
+
+        // Release V2 — now everything should be freed
+        h.ReleaseRoot(v2[0]);
+        h.Verify();
+
+        var totalFreed = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
+        Assert.Equal(nodeCount + pathLength, totalFreed);
+    }
+
     // ═══════════════════════════ Cascade state ════════════════════════════
 
     [Fact]
