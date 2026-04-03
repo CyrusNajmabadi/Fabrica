@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
 
-public class SlabArenaTests
+public class UnsafeSlabArenaTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ public class SlabArenaTests
     private struct OversizedEntry;
 
     /// <summary>Creates an arena with tiny parameters for edge-case testing. With slabShift=2, each slab holds 4 entries.</summary>
-    private static SlabArena<Int32Entry> CreateTinyArena(int directoryLength = 4, int slabShift = 2)
+    private static UnsafeSlabArena<Int32Entry> CreateTinyArena(int directoryLength = 4, int slabShift = 2)
         => new(directoryLength, slabShift);
 
     // ═══════════════════════════ Allocation basics ════════════════════════
@@ -236,6 +236,7 @@ public class SlabArenaTests
         Assert.NotNull(ta.Directory[2]);
     }
 
+#if DEBUG
     [Fact]
     public void Allocate_PastDirectoryEnd_Crashes()
     {
@@ -245,8 +246,10 @@ public class SlabArenaTests
         for (var i = 0; i < 4; i++)
             arena.Allocate();
 
+        using var listener = new AssertThrowsListener();
         Assert.ThrowsAny<Exception>(() => arena.Allocate());
     }
+#endif
 
     [Fact]
     public void SlabsOnlyAllocatedOnDemand()
@@ -362,7 +365,7 @@ public class SlabArenaTests
     [Fact]
     public void SlabShiftZero_OneEntryPerSlab()
     {
-        var arena = new SlabArena<Int32Entry>(directoryLength: 4, slabShift: 0);
+        var arena = new UnsafeSlabArena<Int32Entry>(directoryLength: 4, slabShift: 0);
         var ta = arena.GetTestAccessor();
 
         Assert.Equal(1, ta.SlabLength);
@@ -392,7 +395,7 @@ public class SlabArenaTests
     {
         var slabLength = 1 << slabShift;
         var directoryLength = (count / slabLength) + 2;
-        var arena = new SlabArena<Int32Entry>(directoryLength, slabShift);
+        var arena = new UnsafeSlabArena<Int32Entry>(directoryLength, slabShift);
         var ta = arena.GetTestAccessor();
 
         var seen = new HashSet<int>();
@@ -417,7 +420,7 @@ public class SlabArenaTests
     {
         var slabLength = 1 << slabShift;
         var directoryLength = (count / slabLength) + 2;
-        var arena = new SlabArena<Int32Entry>(directoryLength, slabShift);
+        var arena = new UnsafeSlabArena<Int32Entry>(directoryLength, slabShift);
         var ta = arena.GetTestAccessor();
 
         // Allocate all
@@ -458,7 +461,7 @@ public class SlabArenaTests
     [Fact]
     public void DefaultConstructor_UsesExpectedParameters()
     {
-        var arena = new SlabArena<Int32Entry>();
+        var arena = new UnsafeSlabArena<Int32Entry>();
         var ta = arena.GetTestAccessor();
 
         Assert.Equal(65_536, ta.DirectoryLength);
@@ -470,7 +473,7 @@ public class SlabArenaTests
     [Fact]
     public void DefaultConstructor_AllocateAndAccess()
     {
-        var arena = new SlabArena<Int32Entry>();
+        var arena = new UnsafeSlabArena<Int32Entry>();
         var idx = arena.Allocate();
         arena[idx] = new Int32Entry { Value = 777 };
         Assert.Equal(777, arena[idx].Value);

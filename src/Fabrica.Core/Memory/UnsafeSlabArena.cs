@@ -32,22 +32,18 @@ namespace Fabrica.Core.Memory;
 ///   this maps to <c>Vec&lt;Box&lt;[T]&gt;&gt;</c> or equivalent. No finalizers, no weak references.
 ///
 /// PERFORMANCE (see benchmarks/results/ for full tables)
-///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.7ns sequential, ~0.9ns random (zero-allocation).
-///   Free-list reuse is ~1.5–2x bump at small N, scaling to ~10x at 100K due to Stack&lt;int&gt; overhead. Steady-state
-///   interleaved alloc/free: ~6.8ns/op at 100K entries.
+///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.8ns sequential, ~1ns random (zero-allocation).
+///   Free-list reuse (via UnsafeStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
+///   alloc/free: ~4.3ns/op at 100K entries.
 /// </summary>
-internal sealed class SlabArena<T> where T : struct
+internal sealed class UnsafeSlabArena<T> where T : struct
 {
     private const int DefaultDirectoryLength = 65_536;
 
-    private readonly T[][] _directory;
-    private readonly int _slabLength;
-    private readonly int _slabShift;
-    private readonly int _slabMask;
-
+    private readonly UnsafeSlabDirectory<T> _directory;
     private int _highWater;
     private int _count;
-    private readonly Stack<int> _freeList = new();
+    private readonly UnsafeStack<int> _freeList = new();
 
     // ── Debug thread-ownership tracking ───────────────────────────────────
 
@@ -62,7 +58,7 @@ internal sealed class SlabArena<T> where T : struct
         else
             Debug.Assert(
                 _ownerThreadId == current,
-                $"SlabArena<{typeof(T).Name}> mutating operation called from thread {current} " +
+                $"UnsafeSlabArena<{typeof(T).Name}> mutating operation called from thread {current} " +
                 $"but owner is thread {_ownerThreadId}. Mutating operations are single-threaded.");
     }
 #endif
@@ -70,20 +66,15 @@ internal sealed class SlabArena<T> where T : struct
     // ── Constructors ──────────────────────────────────────────────────────
 
     /// <summary>Creates an arena with the default directory length and LOH-aware slab sizing.</summary>
-    public SlabArena()
+    public UnsafeSlabArena()
         : this(DefaultDirectoryLength, SlabSizeHelper<T>.SlabShift)
     {
     }
 
     /// <summary>Creates an arena with caller-specified directory length and slab shift. Intended for tests that need small
     /// parameters to exercise edge cases without allocating large amounts of memory.</summary>
-    internal SlabArena(int directoryLength, int slabShift)
-    {
-        _directory = new T[directoryLength][];
-        _slabShift = slabShift;
-        _slabLength = 1 << slabShift;
-        _slabMask = _slabLength - 1;
-    }
+    internal UnsafeSlabArena(int directoryLength, int slabShift)
+        => _directory = new UnsafeSlabDirectory<T>(directoryLength, slabShift);
 
     // ── Public API ────────────────────────────────────────────────────────
 
@@ -97,7 +88,7 @@ internal sealed class SlabArena<T> where T : struct
         get
         {
             Debug.Assert(index >= 0 && index < _highWater, $"Index {index} is out of range [0, {_highWater}).");
-            return ref _directory[index >> _slabShift][index & _slabMask];
+            return ref _directory[index];
         }
     }
 
@@ -119,7 +110,7 @@ internal sealed class SlabArena<T> where T : struct
         else
         {
             index = _highWater++;
-            _directory[index >> _slabShift] ??= new T[_slabLength];
+            _directory.EnsureSlab(index);
         }
 
         _count++;
@@ -145,15 +136,15 @@ internal sealed class SlabArena<T> where T : struct
     internal TestAccessor GetTestAccessor()
         => new(this);
 
-    internal readonly struct TestAccessor(SlabArena<T> arena)
+    internal readonly struct TestAccessor(UnsafeSlabArena<T> arena)
     {
-        public T[][] Directory => arena._directory;
-        public int DirectoryLength => arena._directory.Length;
+        public T[][] Directory => arena._directory.RawArray;
+        public int DirectoryLength => arena._directory.DirectoryLength;
         public int Count => arena._count;
         public int HighWater => arena._highWater;
         public int FreeCount => arena._freeList.Count;
-        public int SlabLength => arena._slabLength;
-        public int SlabShift => arena._slabShift;
-        public int SlabMask => arena._slabMask;
+        public int SlabLength => arena._directory.SlabLength;
+        public int SlabShift => arena._directory.SlabShift;
+        public int SlabMask => arena._directory.SlabMask;
     }
 }
