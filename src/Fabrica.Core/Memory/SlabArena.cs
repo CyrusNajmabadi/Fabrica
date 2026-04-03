@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace Fabrica.Core.Memory;
 
@@ -34,21 +33,17 @@ namespace Fabrica.Core.Memory;
 ///
 /// PERFORMANCE (see benchmarks/results/ for full tables)
 ///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.8ns sequential, ~1ns random (zero-allocation).
-///   Free-list reuse (via FastStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
+///   Free-list reuse (via UnsafeStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
 ///   alloc/free: ~4.3ns/op at 100K entries.
 /// </summary>
 internal sealed class SlabArena<T> where T : struct
 {
     private const int DefaultDirectoryLength = 65_536;
 
-    private readonly T[][] _directory;
-    private readonly int _slabLength;
-    private readonly int _slabShift;
-    private readonly int _slabMask;
-
+    private readonly UnsafeSlabDirectory<T> _directory;
     private int _highWater;
     private int _count;
-    private readonly FastStack<int> _freeList = new();
+    private readonly UnsafeStack<int> _freeList = new();
 
     // ── Debug thread-ownership tracking ───────────────────────────────────
 
@@ -79,12 +74,7 @@ internal sealed class SlabArena<T> where T : struct
     /// <summary>Creates an arena with caller-specified directory length and slab shift. Intended for tests that need small
     /// parameters to exercise edge cases without allocating large amounts of memory.</summary>
     internal SlabArena(int directoryLength, int slabShift)
-    {
-        _directory = new T[directoryLength][];
-        _slabShift = slabShift;
-        _slabLength = 1 << slabShift;
-        _slabMask = _slabLength - 1;
-    }
+        => _directory = new UnsafeSlabDirectory<T>(directoryLength, slabShift);
 
     // ── Public API ────────────────────────────────────────────────────────
 
@@ -98,7 +88,7 @@ internal sealed class SlabArena<T> where T : struct
         get
         {
             Debug.Assert(index >= 0 && index < _highWater, $"Index {index} is out of range [0, {_highWater}).");
-            return ref this.GetEntry(index);
+            return ref _directory[index];
         }
     }
 
@@ -120,7 +110,7 @@ internal sealed class SlabArena<T> where T : struct
         else
         {
             index = _highWater++;
-            this.EnsureSlab(index);
+            _directory.EnsureSlab(index);
         }
 
         _count++;
@@ -141,32 +131,6 @@ internal sealed class SlabArena<T> where T : struct
         _count--;
     }
 
-    // ── Internals ─────────────────────────────────────────────────────────
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private ref T GetEntry(int index)
-    {
-        var slabIndex = index >> _slabShift;
-        var offset = index & _slabMask;
-
-        Debug.Assert((uint)slabIndex < (uint)_directory.Length, $"Slab index {slabIndex} out of directory bounds [0, {_directory.Length}).");
-        ref var slab = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_directory), slabIndex);
-
-        Debug.Assert(slab is not null, $"Slab at index {slabIndex} is null.");
-        Debug.Assert((uint)offset < (uint)slab!.Length, $"Offset {offset} out of slab bounds [0, {slab.Length}).");
-        return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(slab), offset);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void EnsureSlab(int index)
-    {
-        var slabIndex = index >> _slabShift;
-
-        Debug.Assert((uint)slabIndex < (uint)_directory.Length, $"Slab index {slabIndex} out of directory bounds [0, {_directory.Length}).");
-        ref var slab = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_directory), slabIndex);
-        slab ??= new T[_slabLength];
-    }
-
     // ── Test accessor ─────────────────────────────────────────────────────
 
     internal TestAccessor GetTestAccessor()
@@ -174,13 +138,13 @@ internal sealed class SlabArena<T> where T : struct
 
     internal readonly struct TestAccessor(SlabArena<T> arena)
     {
-        public T[][] Directory => arena._directory;
-        public int DirectoryLength => arena._directory.Length;
+        public T[][] Directory => arena._directory.RawArray;
+        public int DirectoryLength => arena._directory.DirectoryLength;
         public int Count => arena._count;
         public int HighWater => arena._highWater;
         public int FreeCount => arena._freeList.Count;
-        public int SlabLength => arena._slabLength;
-        public int SlabShift => arena._slabShift;
-        public int SlabMask => arena._slabMask;
+        public int SlabLength => arena._directory.SlabLength;
+        public int SlabShift => arena._directory.SlabShift;
+        public int SlabMask => arena._directory.SlabMask;
     }
 }

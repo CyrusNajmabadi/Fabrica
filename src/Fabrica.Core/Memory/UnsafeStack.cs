@@ -8,7 +8,7 @@ namespace Fabrica.Core.Memory;
 /// Minimal LIFO stack backed by a growable array. In release builds, push/pop use <see cref="Unsafe"/> to bypass
 /// bounds checking for maximum throughput. In debug builds, full bounds assertions are performed.
 /// </summary>
-internal sealed class FastStack<T>(int initialCapacity = 16)
+internal sealed class UnsafeStack<T>(int initialCapacity = 16)
 {
     private T[] _array = new T[initialCapacity];
     private int _count;
