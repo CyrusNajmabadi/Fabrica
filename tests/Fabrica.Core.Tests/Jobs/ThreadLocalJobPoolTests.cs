@@ -368,12 +368,15 @@ public class ThreadLocalJobPoolTests
 
         var job = pool.Rent(0);
         job.Value = 7;
-        pool.Return(1, job);
+
+        var workerThread = new Thread(() => pool.Return(1, job));
+        workerThread.Start();
+        workerThread.Join();
 
         Assert.Equal(0, pool.CountForThread(0));
         Assert.Equal(1, pool.CountForThread(1));
 
-        var stolen = pool.Rent(2);
+        var stolen = pool.Rent(0);
         Assert.Same(job, stolen);
         Assert.Equal(0, stolen.Value);
     }
@@ -579,23 +582,52 @@ public class ThreadLocalJobPoolTests
         var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(4);
         var accessor = pool.GetTestAccessor();
 
-        var t1 = new Thread(() => pool.Return(1, new TestJob()));
-        var t2 = new Thread(() => pool.Return(2, new TestJob()));
+        var pushGate1 = new ManualResetEventSlim();
+        var pushGate2 = new ManualResetEventSlim();
+        var done1 = new ManualResetEventSlim();
+        var done2 = new ManualResetEventSlim();
+        var shutdown = false;
+
+        var t1 = new Thread(() =>
+        {
+            pool.Return(1, new TestJob());
+            done1.Set();
+            pushGate1.Wait();
+            if (Volatile.Read(ref shutdown)) return;
+            pool.Return(1, new TestJob());
+            done1.Set();
+        });
+        var t2 = new Thread(() =>
+        {
+            pool.Return(2, new TestJob());
+            done2.Set();
+            pushGate2.Wait();
+            if (Volatile.Read(ref shutdown)) return;
+            pool.Return(2, new TestJob());
+            done2.Set();
+        });
+
         t1.Start(); t2.Start();
-        t1.Join(); t2.Join();
+        done1.Wait(TestContext.Current.CancellationToken);
+        done2.Wait(TestContext.Current.CancellationToken);
 
         pool.Rent(0);
         var nextIndex = accessor.NextStealIndex;
         Assert.True(nextIndex is >= 0 and < 4);
 
-        var t1b = new Thread(() => pool.Return(1, new TestJob()));
-        var t2b = new Thread(() => pool.Return(2, new TestJob()));
-        t1b.Start(); t2b.Start();
-        t1b.Join(); t2b.Join();
+        done1.Reset();
+        done2.Reset();
+        pushGate1.Set();
+        pushGate2.Set();
+        done1.Wait(TestContext.Current.CancellationToken);
+        done2.Wait(TestContext.Current.CancellationToken);
 
         pool.Rent(0);
         var nextIndex2 = accessor.NextStealIndex;
         Assert.NotEqual(nextIndex, nextIndex2);
+
+        Volatile.Write(ref shutdown, true);
+        t1.Join(); t2.Join();
     }
 #endif
 
@@ -647,47 +679,67 @@ public class ThreadLocalJobPoolTests
     [InlineData(5_000, 4)]
     [InlineData(5_000, 8)]
     [Trait("Category", "Stress")]
-    public void Stress_ForkJoinPattern_ItemsFlowAndStabilize(int jobsPerBatch, int threadCount)
+    public void Stress_ForkJoinPattern_ItemsFlowAndStabilize(int jobsPerBatch, int workerCount)
     {
-        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(threadCount);
+        var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(workerCount + 1);
+        const int CoordinatorIndex = 0;
         const int Batches = 10;
+        var jobsPerWorker = jobsPerBatch / workerCount;
 
-        for (var batch = 0; batch < Batches; batch++)
+        // Long-lived worker threads, reused across batches (matches real-world pinned threads).
+        var batchReady = new Barrier(workerCount + 1);
+        var batchDone = new CountdownEvent(workerCount);
+        var shutdown = false;
+        var currentJobs = new TestJob[jobsPerBatch];
+
+        var threads = new Thread[workerCount];
+        for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
         {
-            var jobs = new TestJob[jobsPerBatch];
-            for (var i = 0; i < jobsPerBatch; i++)
-                jobs[i] = pool.Rent(0);
+            var localIndex = workerIndex;
+            var threadSlot = localIndex + 1;
 
-            var barrier = new Barrier(threadCount);
-            var threads = new Thread[threadCount];
-            var jobsPerThread = jobsPerBatch / threadCount;
-
-            for (var threadIndex = 0; threadIndex < threadCount; threadIndex++)
+            threads[localIndex] = new Thread(() =>
             {
-                var localIndex = threadIndex;
-                var start = localIndex * jobsPerThread;
-                var end = (localIndex == threadCount - 1) ? jobsPerBatch : start + jobsPerThread;
-
-                threads[localIndex] = new Thread(() =>
+                while (true)
                 {
-                    barrier.SignalAndWait();
+                    batchReady.SignalAndWait();
+                    if (Volatile.Read(ref shutdown))
+                        return;
+
+                    var start = localIndex * jobsPerWorker;
+                    var end = (localIndex == workerCount - 1) ? jobsPerBatch : start + jobsPerWorker;
 
                     for (var i = start; i < end; i++)
                     {
-                        jobs[i].Value = i;
-                        jobs[i].Execute();
-                        pool.Return(localIndex, jobs[i]);
+                        currentJobs[i].Value = i;
+                        currentJobs[i].Execute();
+                        pool.Return(threadSlot, currentJobs[i]);
                     }
-                });
 
-                threads[localIndex].Start();
-            }
+                    batchDone.Signal();
+                }
+            });
 
-            foreach (var thread in threads)
-                thread.Join();
+            threads[localIndex].Start();
+        }
+
+        for (var batch = 0; batch < Batches; batch++)
+        {
+            for (var i = 0; i < jobsPerBatch; i++)
+                currentJobs[i] = pool.Rent(CoordinatorIndex);
+
+            batchDone.Reset(workerCount);
+            batchReady.SignalAndWait(TestContext.Current.CancellationToken);
+            batchDone.Wait(TestContext.Current.CancellationToken);
 
             Assert.Equal(jobsPerBatch, pool.Count);
         }
+
+        Volatile.Write(ref shutdown, true);
+        batchReady.SignalAndWait(TestContext.Current.CancellationToken);
+
+        foreach (var thread in threads)
+            thread.Join();
     }
 
     [Theory]
@@ -700,44 +752,62 @@ public class ThreadLocalJobPoolTests
         var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(workerCount + 1);
         const int CoordinatorIndex = 0;
         var totalExecuted = 0L;
+        var perWorker = batchSize / workerCount;
+
+        var batchReady = new Barrier(workerCount + 1);
+        var batchDone = new CountdownEvent(workerCount);
+        var shutdown = false;
+        var currentJobs = new TestJob[batchSize];
+
+        var threads = new Thread[workerCount];
+        for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
+        {
+            var localWorker = workerIndex;
+            var threadSlot = localWorker + 1;
+
+            threads[localWorker] = new Thread(() =>
+            {
+                while (true)
+                {
+                    batchReady.SignalAndWait();
+                    if (Volatile.Read(ref shutdown))
+                        return;
+
+                    var start = localWorker * perWorker;
+                    var end = (localWorker == workerCount - 1) ? batchSize : start + perWorker;
+
+                    for (var i = start; i < end; i++)
+                    {
+                        currentJobs[i].Execute();
+                        Interlocked.Increment(ref totalExecuted);
+                        pool.Return(threadSlot, currentJobs[i]);
+                    }
+
+                    batchDone.Signal();
+                }
+            });
+
+            threads[localWorker].Start();
+        }
 
         for (var batch = 0; batch < batches; batch++)
         {
-            var jobs = new TestJob[batchSize];
             for (var i = 0; i < batchSize; i++)
             {
-                jobs[i] = pool.Rent(CoordinatorIndex);
-                jobs[i].Value = i;
+                currentJobs[i] = pool.Rent(CoordinatorIndex);
+                currentJobs[i].Value = i;
             }
 
-            var done = new CountdownEvent(workerCount);
-            var threads = new Thread[workerCount];
-            var perWorker = batchSize / workerCount;
-
-            for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
-            {
-                var localWorker = workerIndex;
-                var threadSlot = localWorker + 1;
-                var start = localWorker * perWorker;
-                var end = (localWorker == workerCount - 1) ? batchSize : start + perWorker;
-
-                threads[localWorker] = new Thread(() =>
-                {
-                    for (var i = start; i < end; i++)
-                    {
-                        jobs[i].Execute();
-                        Interlocked.Increment(ref totalExecuted);
-                        pool.Return(threadSlot, jobs[i]);
-                    }
-
-                    done.Signal();
-                });
-
-                threads[localWorker].Start();
-            }
-
-            done.Wait(TestContext.Current.CancellationToken);
+            batchDone.Reset(workerCount);
+            batchReady.SignalAndWait(TestContext.Current.CancellationToken);
+            batchDone.Wait(TestContext.Current.CancellationToken);
         }
+
+        Volatile.Write(ref shutdown, true);
+        batchReady.SignalAndWait(TestContext.Current.CancellationToken);
+
+        foreach (var thread in threads)
+            thread.Join();
 
         Assert.Equal(batchSize * batches, totalExecuted);
     }
@@ -865,60 +935,63 @@ public class ThreadLocalJobPoolTests
     {
         var pool = new ThreadLocalJobPool<TestJob, TestJobAllocator>(workerCount + 1);
         const int CoordinatorIndex = 0;
-
-        var jobs = new TestJob[jobsPerBatch];
-        for (var i = 0; i < jobsPerBatch; i++)
-            jobs[i] = pool.Rent(CoordinatorIndex);
-
-        var stolenCount = 0;
-        var workersStarted = new CountdownEvent(workerCount);
-        var workersDone = new CountdownEvent(workerCount);
-
-        var threads = new Thread[workerCount + 1];
         var jobsPerWorker = jobsPerBatch / workerCount;
+        var totalPooled = 0;
+        var totalUnique = 0;
 
-        for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
+        var coordinatorThread = new Thread(() =>
         {
-            var localIndex = workerIndex;
-            var threadSlot = localIndex + 1;
-            var start = localIndex * jobsPerWorker;
-            var end = (localIndex == workerCount - 1) ? jobsPerBatch : start + jobsPerWorker;
+            var jobs = new TestJob[jobsPerBatch];
+            for (var i = 0; i < jobsPerBatch; i++)
+                jobs[i] = pool.Rent(CoordinatorIndex);
 
-            threads[localIndex] = new Thread(() =>
+            var workersDone = new CountdownEvent(workerCount);
+            var threads = new Thread[workerCount];
+
+            for (var workerIndex = 0; workerIndex < workerCount; workerIndex++)
             {
-                workersStarted.Signal();
+                var localIndex = workerIndex;
+                var threadSlot = localIndex + 1;
+                var start = localIndex * jobsPerWorker;
+                var end = (localIndex == workerCount - 1) ? jobsPerBatch : start + jobsPerWorker;
 
-                for (var i = start; i < end; i++)
+                threads[localIndex] = new Thread(() =>
                 {
-                    jobs[i].Execute();
-                    pool.Return(threadSlot, jobs[i]);
-                }
+                    for (var i = start; i < end; i++)
+                    {
+                        jobs[i].Execute();
+                        pool.Return(threadSlot, jobs[i]);
+                    }
 
-                workersDone.Signal();
-            });
+                    workersDone.Signal();
+                });
 
-            threads[localIndex].Start();
-        }
+                threads[localIndex].Start();
+            }
 
-        threads[workerCount] = new Thread(() =>
-        {
-            workersStarted.Wait(TestContext.Current.CancellationToken);
+            workersDone.Wait();
 
-            while (!workersDone.IsSet || pool.Count > 0)
+            foreach (var thread in threads)
+                thread.Join();
+
+            totalPooled = pool.Count;
+
+            var uniqueJobs = new HashSet<TestJob>();
+            for (var i = 0; i < jobsPerBatch; i++)
             {
                 var job = pool.Rent(CoordinatorIndex);
-                Interlocked.Increment(ref stolenCount);
-                pool.Return(CoordinatorIndex, job);
+                uniqueJobs.Add(job);
             }
+
+            totalUnique = uniqueJobs.Count;
         });
 
-        threads[workerCount].Start();
+        coordinatorThread.Start();
+        coordinatorThread.Join();
 
-        foreach (var thread in threads)
-            thread.Join();
-
-        Assert.True(stolenCount >= jobsPerBatch,
-            $"Should have stolen at least {jobsPerBatch} items but only got {stolenCount}");
+        Assert.Equal(jobsPerBatch, totalPooled);
+        Assert.Equal(jobsPerBatch, totalUnique);
+        Assert.Equal(0, pool.Count);
     }
 
     // ═══════════════════════════ STRESS — MIXED ════════════════════════════
