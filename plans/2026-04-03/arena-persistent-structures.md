@@ -120,23 +120,27 @@ possible but deferred as a future optimization.
 - Single-threaded increment, decrement, and cascade-free with worklist
 - Tests: basic inc/dec, cascade through tree structures, worklist bounds
 
-### PR 3: `ThreadLocalBuffer<T>` and `IArenaNode`
+### PR 3+4 (Combined): `ThreadLocalBuffer<T>`, `IArenaNode`, `ArenaCoordinator<TNode>`
 
-- Append-only per-thread buffer with tagged local/global indices
-- `IArenaNode` interface for reference fixup
-- Tests: local allocation, tag bit encoding, fixup with known remaps
+Combined into a single PR since the components are tightly coupled and deliver value only together.
 
-### PR 4: `ArenaCoordinator<T, TNode>` — Merge and Refcount Processing
+- **`ArenaIndex`**: Static helper for tag/untag/sentinel convention (high bit = local index, -1 = no child).
+- **`IArenaNode`**: Struct-constrained interface with `FixupReferences(ReadOnlySpan<int>)` and
+  `IncrementChildren(RefCountTable)`, enabling JIT-specialized merge.
+- **`ThreadLocalBuffer<T>`**: Append-only per-thread buffer with release log (`UnsafeStack<int>`), unsafe
+  array access in release builds (matching `UnsafeStack`/`UnsafeSlabDirectory` pattern).
+- **`ArenaCoordinator<TNode>`**: Merge pipeline (alloc globals → EnsureCapacity → copy+fixup+increment) with
+  deferred release processing via `DecrementBatch`. Reusable internal arrays (no per-merge allocation).
+- **Tests** (887 total, 237 new): ArenaIndex encoding, ThreadLocalBuffer operations, coordinator merge/fixup,
+  persistent tree path-copy with full permutation testing (4! + 5! + 4! release orders, depth-4 sampled,
+  interleaved add/release, multi-buffer, stress tests).
+- **Benchmarks**: Full pipeline on 1M-node tree — ~2.5 µs per fork+release cycle through coordinator.
+  Unsafe pass: ~6% improvement from bounds-check elimination. Bottleneck is cache pressure, not bounds checks.
 
-- Compose SlabArena + RefCountTable + ThreadLocalBuffers
-- Full merge pipeline: allocate globals, remap, copy, process inc/dec logs, cascade-free
-- Integration tests: multi-thread fork-join producing persistent trees, verify refcounts, verify steady-state zero
-  allocation
+## Resolved Questions
 
-## Open Questions (to resolve during implementation)
-
-- **Tag bit convention**: High bit of int, or use a separate bool/flag? High bit limits index space to 2^31 (~2
-  billion) — more than enough.
-- **Increment log granularity**: One SPSC buffer per thread, or a simple array handed over at the join point?
-- **Slab deallocation**: Should completely empty slabs ever be freed back to the OS, or just stay allocated? (Lean
-  toward keeping them — steady state means reuse.)
+- **Tag bit convention**: High bit of int. Local index 0 → `int.MinValue`, max local → `-2`. `-1` reserved as
+  sentinel. Max index space 2^31 (~2 billion) — more than enough.
+- **Increment log granularity**: `IArenaNode.IncrementChildren` called per-node during merge — no separate log
+  needed. The coordinator iterates all new nodes and calls IncrementChildren on each after fixup.
+- **Slab deallocation**: Slabs stay allocated. Steady state means reuse via LIFO free list.
