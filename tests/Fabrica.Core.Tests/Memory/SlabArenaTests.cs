@@ -503,7 +503,7 @@ public class SlabArenaTests
         thread.Join();
 
         Assert.NotNull(caught);
-        Assert.Contains("Mutating operations are single-threaded", caught!.Message);
+        Assert.Contains("Mutating operations are single-threaded", caught.Message);
     }
 
     [Fact]
@@ -529,7 +529,7 @@ public class SlabArenaTests
         thread.Join();
 
         Assert.NotNull(caught);
-        Assert.Contains("Mutating operations are single-threaded", caught!.Message);
+        Assert.Contains("Mutating operations are single-threaded", caught.Message);
     }
 
     /// <summary>Replaces the default trace listener so <see cref="Debug.Assert(bool)"/> failures throw instead of popping a dialog.</summary>
