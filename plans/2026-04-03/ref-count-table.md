@@ -64,18 +64,35 @@ internal sealed class RefCountTable
     public RefCountTable();                                    // default production sizing
     internal RefCountTable(int directoryLength, int slabShift); // test injection
 
+    public void EnsureCapacity(int highWater);                 // upfront slab preparation
     public int GetCount(int index);
     public void Increment(int index);
-    public void Decrement(int index, IRefCountEvents events);
-    public void DecrementCascade(int index, IRefCountEvents events, IChildEnumerator children);
-    public void DecrementChild(int childIndex, ref UnsafeStack<int> worklist);
+    public void Decrement<TEvents, TChildren>(int index, TEvents events, TChildren children)
+        where TEvents : struct, IRefCountEvents
+        where TChildren : struct, IChildEnumerator;
+    public void DecrementChild(int childIndex);                // called during cascade only
     public void IncrementBatch(ReadOnlySpan<int> indices);
-    public void DecrementBatch(ReadOnlySpan<int> indices, IRefCountEvents events);
+    public void DecrementBatch<TEvents, TChildren>(ReadOnlySpan<int> indices, TEvents events, TChildren children)
+        where TEvents : struct, IRefCountEvents
+        where TChildren : struct, IChildEnumerator;
 
     public interface IRefCountEvents { void OnFreed(int index); }
-    public interface IChildEnumerator { void EnumerateChildren(int index, ref UnsafeStack<int> worklist, RefCountTable table); }
+    public interface IChildEnumerator { void EnumerateChildren(int index, RefCountTable table); }
 }
 ```
+
+### Post-review refinements (v2)
+
+- **Struct generic pattern**: `Decrement` and `DecrementBatch` take struct type parameters, not interfaces.
+  JIT specializes per struct type → devirtualized + inlined. 15-32% performance improvement.
+- **EnsureCapacity**: Slab creation moved out of `Increment` into explicit upfront call. Missing slabs
+  during increment indicate caller bugs (crash in Debug, undefined in Release).
+- **Always cascade**: `Decrement` and `DecrementCascade` merged into single `Decrement` that always cascades.
+  Leaf nodes have empty child enumerators — zero overhead.
+- **Reusable worklist**: `UnsafeStack<int>` field instead of per-call allocation. Re-entrancy flag
+  (`_cascadeInProgress`) supports cross-table cascades (A→B→A bounce-back).
+- **SingleThreadedOwner**: Extracted from duplicated pattern across 4 types. Uses `[Conditional("DEBUG")]`.
+- **DecrementChild** simplified: uses table's internal worklist field, no `ref` parameter needed.
 
 ## Testing strategy
 

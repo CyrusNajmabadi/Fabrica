@@ -73,20 +73,21 @@ The iterative worklist pattern is well-established in garbage collectors:
 
 ## Performance characteristics
 
-Benchmarks on Apple M4 Max, .NET 10, Release mode:
+Benchmarks on Apple M4 Max, .NET 10, Release mode (v2 — struct generics, reusable worklist):
 
 | Operation | ns/op (N=100K) | Notes |
 |:----------|---------------:|:------|
-| Sequential increment | 1.22 | Best case: linear slab access |
-| Random increment | 1.65 | 36% slower from cache misses |
-| Cascade (binary tree) | 2.81 | Worklist + callback overhead |
-| Cascade (linear chain) | 3.47 | Sequential worklist push/pop |
-| Cascade (wide tree) | 4.90 | Large worklist allocation |
-| Steady-state inc/dec | 3.59 | Representative coordinator workload |
-| Flat array baseline | 0.58 | Lower bound (no indirection) |
+| Sequential increment | 0.83 | Best case: linear slab access, no EnsureSlab overhead |
+| Random increment | 1.26 | 52% slower from cache misses |
+| Cascade (binary tree) | 2.38 | Devirtualized child enumeration |
+| Cascade (linear chain) | 2.79 | Sequential worklist push/pop |
+| Cascade (wide tree) | 4.19 | Large worklist growth |
+| Steady-state inc/dec | 2.48 | Representative coordinator workload |
+| Flat array baseline | 0.55 | Lower bound (no indirection) |
 
-The ~2x overhead vs flat array for sequential increment is the cost of two-level directory indirection and
-`EnsureSlab`. This is acceptable given the no-copy growth guarantee and LOH-aware slab sizing.
+The ~1.5x overhead vs flat array for sequential increment is the cost of two-level directory indirection.
+Moving `EnsureSlab` out of `Increment` and using struct generic pattern for callbacks improved throughput
+by 15-32% compared to the initial implementation.
 
 ## Portability notes
 
