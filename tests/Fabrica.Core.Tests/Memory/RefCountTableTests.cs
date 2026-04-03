@@ -5,72 +5,78 @@ namespace Fabrica.Core.Tests.Memory;
 
 public class RefCountTableTests
 {
+    private struct DummyNode;
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private static RefCountTable CreateTinyTable(int directoryLength = 4, int slabShift = 2)
+    private static RefCountTable<DummyNode> CreateTinyTable(int directoryLength = 4, int slabShift = 2)
         => new(directoryLength, slabShift);
 
     /// <summary>Tracks freed indices, no children to decrement.</summary>
-    private readonly struct TrackingHandler(List<int> freed) : RefCountTable.IRefCountHandler
+    private readonly struct TrackingHandler(List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
-            => freed.Add(index);
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
+            => freed.Add(handle.Index);
     }
 
     /// <summary>No-op: ignores frees, no children.</summary>
-    private readonly struct NullHandler : RefCountTable.IRefCountHandler
+    private readonly struct NullHandler : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table) { }
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table) { }
     }
 
     /// <summary>Binary tree: children of index i are 2i+1 and 2i+2. Tracks frees.</summary>
-    private readonly struct BinaryTreeHandler(int maxIndex, List<int> freed) : RefCountTable.IRefCountHandler
+    private readonly struct BinaryTreeHandler(int maxIndex, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
+            var index = handle.Index;
             freed.Add(index);
             var left = (index * 2) + 1;
             var right = (index * 2) + 2;
             if (left <= maxIndex)
-                table.Decrement(left, this);
+                table.Decrement(new Handle<DummyNode>(left), this);
             if (right <= maxIndex)
-                table.Decrement(right, this);
+                table.Decrement(new Handle<DummyNode>(right), this);
         }
     }
 
     /// <summary>Linear chain: each node points to index+1. Tracks frees.</summary>
-    private readonly struct LinearChainHandler(int maxIndex, List<int> freed) : RefCountTable.IRefCountHandler
+    private readonly struct LinearChainHandler(int maxIndex, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
+            var index = handle.Index;
             freed.Add(index);
             var next = index + 1;
             if (next <= maxIndex)
-                table.Decrement(next, this);
+                table.Decrement(new Handle<DummyNode>(next), this);
         }
     }
 
     /// <summary>Wide tree: node 0 points to 1..fanout. Tracks frees.</summary>
-    private readonly struct WideTreeHandler(int fanout, List<int> freed) : RefCountTable.IRefCountHandler
+    private readonly struct WideTreeHandler(int fanout, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
+            var index = handle.Index;
             freed.Add(index);
             if (index != 0)
                 return;
             for (var i = 1; i <= fanout; i++)
-                table.Decrement(i, this);
+                table.Decrement(new Handle<DummyNode>(i), this);
         }
     }
 
     /// <summary>Single parent→child relationship. Tracks frees.</summary>
-    private readonly struct SingleChildHandler(int parentIndex, int childIndex, List<int> freed) : RefCountTable.IRefCountHandler
+    private readonly struct SingleChildHandler(int parentIndex, int childIndex, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
+            var index = handle.Index;
             freed.Add(index);
             if (index == parentIndex)
-                table.Decrement(childIndex, this);
+                table.Decrement(new Handle<DummyNode>(childIndex), this);
         }
     }
 
@@ -135,8 +141,8 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        table.Increment(0);
-        Assert.Equal(1, table.GetCount(0));
+        table.Increment(new Handle<DummyNode>(0));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
     }
 
     [Fact]
@@ -144,9 +150,9 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        table.Increment(0);
-        table.Increment(0);
-        Assert.Equal(2, table.GetCount(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(0));
+        Assert.Equal(2, table.GetCount(new Handle<DummyNode>(0)));
     }
 
     [Fact]
@@ -155,10 +161,10 @@ public class RefCountTableTests
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
         var freed = new List<int>();
-        table.Increment(0);
-        table.Increment(0);
-        table.Decrement(0, new TrackingHandler(freed));
-        Assert.Equal(1, table.GetCount(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Empty(freed);
     }
 
@@ -168,9 +174,9 @@ public class RefCountTableTests
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
         var freed = new List<int>();
-        table.Increment(0);
-        table.Decrement(0, new TrackingHandler(freed));
-        Assert.Equal(0, table.GetCount(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Single(freed);
         Assert.Equal(0, freed[0]);
     }
@@ -180,8 +186,8 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(2);
-        table.Increment(0);
-        Assert.Equal(0, table.GetCount(1));
+        table.Increment(new Handle<DummyNode>(0));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(1)));
     }
 
     [Fact]
@@ -189,16 +195,16 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(3);
-        table.Increment(0);
-        table.Increment(0);
-        table.Increment(1);
-        table.Increment(2);
-        table.Increment(2);
-        table.Increment(2);
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(1));
+        table.Increment(new Handle<DummyNode>(2));
+        table.Increment(new Handle<DummyNode>(2));
+        table.Increment(new Handle<DummyNode>(2));
 
-        Assert.Equal(2, table.GetCount(0));
-        Assert.Equal(1, table.GetCount(1));
-        Assert.Equal(3, table.GetCount(2));
+        Assert.Equal(2, table.GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(3, table.GetCount(new Handle<DummyNode>(2)));
     }
 
     // ═══════════════════════════ Cascade-free: binary tree ════════════════
@@ -209,11 +215,11 @@ public class RefCountTableTests
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
         var freed = new List<int>();
-        table.Increment(0);
+        table.Increment(new Handle<DummyNode>(0));
 
-        table.Decrement(0, new BinaryTreeHandler(0, freed));
+        table.Decrement(new Handle<DummyNode>(0), new BinaryTreeHandler(0, freed));
 
-        Assert.Equal(0, table.GetCount(0));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Single(freed);
         Assert.Equal(0, freed[0]);
     }
@@ -226,12 +232,12 @@ public class RefCountTableTests
         var freed = new List<int>();
 
         for (var i = 0; i <= 6; i++)
-            table.Increment(i);
+            table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(0, new BinaryTreeHandler(6, freed));
+        table.Decrement(new Handle<DummyNode>(0), new BinaryTreeHandler(6, freed));
 
         for (var i = 0; i <= 6; i++)
-            Assert.Equal(0, table.GetCount(i));
+            Assert.Equal(0, table.GetCount(new Handle<DummyNode>(i)));
 
         Assert.Equal(7, freed.Count);
         Assert.Contains(0, freed);
@@ -245,21 +251,21 @@ public class RefCountTableTests
         table.EnsureCapacity(3);
         var freed = new List<int>();
 
-        table.Increment(0);
-        table.Increment(1);
-        table.Increment(1); // shared: two parents
-        table.Increment(2);
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(1));
+        table.Increment(new Handle<DummyNode>(1)); // shared: two parents
+        table.Increment(new Handle<DummyNode>(2));
 
-        table.Decrement(0, new SingleChildHandler(0, 1, freed));
+        table.Decrement(new Handle<DummyNode>(0), new SingleChildHandler(0, 1, freed));
 
-        Assert.Equal(1, table.GetCount(1));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(1)));
         Assert.Single(freed);
         Assert.Equal(0, freed[0]);
 
         freed.Clear();
-        table.Decrement(2, new SingleChildHandler(2, 1, freed));
+        table.Decrement(new Handle<DummyNode>(2), new SingleChildHandler(2, 1, freed));
 
-        Assert.Equal(0, table.GetCount(1));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(1)));
         Assert.Equal(2, freed.Count);
         Assert.Contains(2, freed);
         Assert.Contains(1, freed);
@@ -272,12 +278,12 @@ public class RefCountTableTests
         table.EnsureCapacity(1);
         var freed = new List<int>();
 
-        table.Increment(0);
-        table.Increment(0);
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(0));
 
-        table.Decrement(0, new BinaryTreeHandler(0, freed));
+        table.Decrement(new Handle<DummyNode>(0), new BinaryTreeHandler(0, freed));
 
-        Assert.Equal(1, table.GetCount(0));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Empty(freed);
     }
 
@@ -287,32 +293,32 @@ public class RefCountTableTests
     public void CascadeDecrement_LinearChain_FreesAll()
     {
         const int ChainLength = 100;
-        var table = new RefCountTable(directoryLength: 4, slabShift: 5);
+        var table = new RefCountTable<DummyNode>(directoryLength: 4, slabShift: 5);
         table.EnsureCapacity(ChainLength);
         var freed = new List<int>();
 
         for (var i = 0; i < ChainLength; i++)
-            table.Increment(i);
+            table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(0, new LinearChainHandler(ChainLength - 1, freed));
+        table.Decrement(new Handle<DummyNode>(0), new LinearChainHandler(ChainLength - 1, freed));
 
         Assert.Equal(ChainLength, freed.Count);
         for (var i = 0; i < ChainLength; i++)
-            Assert.Equal(0, table.GetCount(i));
+            Assert.Equal(0, table.GetCount(new Handle<DummyNode>(i)));
     }
 
     [Fact]
     public void CascadeDecrement_DeepChain_NoStackOverflow()
     {
         const int Depth = 10_000;
-        var table = new RefCountTable();
+        var table = new RefCountTable<DummyNode>();
         table.EnsureCapacity(Depth);
         var freed = new List<int>();
 
         for (var i = 0; i < Depth; i++)
-            table.Increment(i);
+            table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(0, new LinearChainHandler(Depth - 1, freed));
+        table.Decrement(new Handle<DummyNode>(0), new LinearChainHandler(Depth - 1, freed));
 
         Assert.Equal(Depth, freed.Count);
     }
@@ -327,17 +333,17 @@ public class RefCountTableTests
         table.EnsureCapacity(Fanout + 1);
         var freed = new List<int>();
 
-        table.Increment(0);
+        table.Increment(new Handle<DummyNode>(0));
         for (var i = 1; i <= Fanout; i++)
-            table.Increment(i);
+            table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(0, new WideTreeHandler(Fanout, freed));
+        table.Decrement(new Handle<DummyNode>(0), new WideTreeHandler(Fanout, freed));
 
         Assert.Equal(Fanout + 1, freed.Count);
         Assert.Contains(0, freed);
         for (var i = 1; i <= Fanout; i++)
         {
-            Assert.Equal(0, table.GetCount(i));
+            Assert.Equal(0, table.GetCount(new Handle<DummyNode>(i)));
             Assert.Contains(i, freed);
         }
     }
@@ -350,11 +356,14 @@ public class RefCountTableTests
         var table = CreateTinyTable();
         table.EnsureCapacity(3);
         int[] indices = [0, 1, 2, 0, 1, 0];
-        table.IncrementBatch(indices);
+        var handles = new Handle<DummyNode>[indices.Length];
+        for (var i = 0; i < indices.Length; i++)
+            handles[i] = new Handle<DummyNode>(indices[i]);
+        table.IncrementBatch(handles);
 
-        Assert.Equal(3, table.GetCount(0));
-        Assert.Equal(2, table.GetCount(1));
-        Assert.Equal(1, table.GetCount(2));
+        Assert.Equal(3, table.GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(2, table.GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(2)));
     }
 
     [Fact]
@@ -364,17 +373,20 @@ public class RefCountTableTests
         table.EnsureCapacity(3);
         var freed = new List<int>();
 
-        table.Increment(0);
-        table.Increment(0);
-        table.Increment(1);
-        table.Increment(2);
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(1));
+        table.Increment(new Handle<DummyNode>(2));
 
         int[] batch = [0, 1, 2];
-        table.DecrementBatch(batch, new TrackingHandler(freed));
+        var batchHandles = new Handle<DummyNode>[batch.Length];
+        for (var i = 0; i < batch.Length; i++)
+            batchHandles[i] = new Handle<DummyNode>(batch[i]);
+        table.DecrementBatch(batchHandles, new TrackingHandler(freed));
 
-        Assert.Equal(1, table.GetCount(0));
-        Assert.Equal(0, table.GetCount(1));
-        Assert.Equal(0, table.GetCount(2));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(2)));
 
         Assert.Equal(2, freed.Count);
         Assert.Contains(1, freed);
@@ -389,14 +401,17 @@ public class RefCountTableTests
         var freed = new List<int>();
 
         for (var i = 0; i <= 6; i++)
-            table.Increment(i);
+            table.Increment(new Handle<DummyNode>(i));
 
         int[] batch = [0];
-        table.DecrementBatch(batch, new BinaryTreeHandler(6, freed));
+        var batchHandles = new Handle<DummyNode>[batch.Length];
+        for (var i = 0; i < batch.Length; i++)
+            batchHandles[i] = new Handle<DummyNode>(batch[i]);
+        table.DecrementBatch(batchHandles, new BinaryTreeHandler(6, freed));
 
         Assert.Equal(7, freed.Count);
         for (var i = 0; i <= 6; i++)
-            Assert.Equal(0, table.GetCount(i));
+            Assert.Equal(0, table.GetCount(new Handle<DummyNode>(i)));
     }
 
     [Fact]
@@ -417,13 +432,13 @@ public class RefCountTableTests
         table.EnsureCapacity(5);
         var ta = table.GetTestAccessor();
 
-        table.Increment(3);
-        table.Increment(4);
+        table.Increment(new Handle<DummyNode>(3));
+        table.Increment(new Handle<DummyNode>(4));
 
         Assert.NotNull(ta.Directory[0]);
         Assert.NotNull(ta.Directory[1]);
-        Assert.Equal(1, table.GetCount(3));
-        Assert.Equal(1, table.GetCount(4));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(3)));
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(4)));
     }
 
     // ═══════════════════════════ Default constructor ══════════════════════
@@ -431,7 +446,7 @@ public class RefCountTableTests
     [Fact]
     public void DefaultConstructor_UsesExpectedParameters()
     {
-        var table = new RefCountTable();
+        var table = new RefCountTable<DummyNode>();
         var ta = table.GetTestAccessor();
 
         Assert.Equal(65_536, ta.DirectoryLength);
@@ -448,19 +463,19 @@ public class RefCountTableTests
         table.EnsureCapacity(2);
         var freed = new List<int>();
 
-        table.Increment(0);
-        table.Increment(0);
-        table.Increment(1);
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(1));
 
-        table.Decrement(0, new NullHandler());
-        Assert.Equal(1, table.GetCount(0));
+        table.Decrement(new Handle<DummyNode>(0), new NullHandler());
+        Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
 
-        table.Increment(0);
-        Assert.Equal(2, table.GetCount(0));
+        table.Increment(new Handle<DummyNode>(0));
+        Assert.Equal(2, table.GetCount(new Handle<DummyNode>(0)));
 
-        table.Decrement(0, new TrackingHandler(freed));
-        table.Decrement(0, new TrackingHandler(freed));
-        Assert.Equal(0, table.GetCount(0));
+        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        Assert.Equal(0, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Single(freed);
     }
 
@@ -472,47 +487,47 @@ public class RefCountTableTests
         table.EnsureCapacity(Count);
         var freed = new List<int>();
 
-        var indices = new int[Count];
+        var handles = new Handle<DummyNode>[Count];
         for (var i = 0; i < Count; i++)
         {
-            indices[i] = i;
-            table.Increment(i);
+            handles[i] = new Handle<DummyNode>(i);
+            table.Increment(handles[i]);
         }
 
-        table.DecrementBatch(indices, new TrackingHandler(freed));
+        table.DecrementBatch(handles, new TrackingHandler(freed));
 
         Assert.Equal(Count, freed.Count);
         for (var i = 0; i < Count; i++)
-            Assert.Equal(0, table.GetCount(i));
+            Assert.Equal(0, table.GetCount(new Handle<DummyNode>(i)));
     }
 
     // ═══════════════════════════ Two-table cross-cascade ═════════════════
 
     private sealed class TwoTableContext
     {
-        public RefCountTable TableA { get; set; } = null!;
-        public RefCountTable TableB { get; set; } = null!;
+        public RefCountTable<DummyNode> TableA { get; set; } = null!;
+        public RefCountTable<DummyNode> TableB { get; set; } = null!;
         public List<int> FreedA { get; } = [];
         public List<int> FreedB { get; } = [];
     }
 
-    private readonly struct TwoTableAHandler(TwoTableContext ctx) : RefCountTable.IRefCountHandler
+    private readonly struct TwoTableAHandler(TwoTableContext ctx) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
-            ctx.FreedA.Add(index);
-            if (index == 0)
-                ctx.TableB.Decrement(0, new TwoTableBHandler(ctx));
+            ctx.FreedA.Add(handle.Index);
+            if (handle.Index == 0)
+                ctx.TableB.Decrement(new Handle<DummyNode>(0), new TwoTableBHandler(ctx));
         }
     }
 
-    private readonly struct TwoTableBHandler(TwoTableContext ctx) : RefCountTable.IRefCountHandler
+    private readonly struct TwoTableBHandler(TwoTableContext ctx) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
-            ctx.FreedB.Add(index);
-            if (index == 0)
-                ctx.TableA.Decrement(1, new TwoTableAHandler(ctx));
+            ctx.FreedB.Add(handle.Index);
+            if (handle.Index == 0)
+                ctx.TableA.Decrement(new Handle<DummyNode>(1), new TwoTableAHandler(ctx));
         }
     }
 
@@ -527,15 +542,15 @@ public class RefCountTableTests
         ctx.TableA.EnsureCapacity(2);
         ctx.TableB.EnsureCapacity(1);
 
-        ctx.TableA.Increment(0);
-        ctx.TableA.Increment(1);
-        ctx.TableB.Increment(0);
+        ctx.TableA.Increment(new Handle<DummyNode>(0));
+        ctx.TableA.Increment(new Handle<DummyNode>(1));
+        ctx.TableB.Increment(new Handle<DummyNode>(0));
 
-        ctx.TableA.Decrement(0, new TwoTableAHandler(ctx));
+        ctx.TableA.Decrement(new Handle<DummyNode>(0), new TwoTableAHandler(ctx));
 
-        Assert.Equal(0, ctx.TableA.GetCount(0));
-        Assert.Equal(0, ctx.TableA.GetCount(1));
-        Assert.Equal(0, ctx.TableB.GetCount(0));
+        Assert.Equal(0, ctx.TableA.GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.TableA.GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.TableB.GetCount(new Handle<DummyNode>(0)));
 
         Assert.Equal(2, ctx.FreedA.Count);
         Assert.Contains(0, ctx.FreedA);
@@ -555,16 +570,16 @@ public class RefCountTableTests
         ctx.TableA.EnsureCapacity(2);
         ctx.TableB.EnsureCapacity(1);
 
-        ctx.TableA.Increment(0);
-        ctx.TableA.Increment(1);
-        ctx.TableA.Increment(1); // A[1] = 2 (shared)
-        ctx.TableB.Increment(0);
+        ctx.TableA.Increment(new Handle<DummyNode>(0));
+        ctx.TableA.Increment(new Handle<DummyNode>(1));
+        ctx.TableA.Increment(new Handle<DummyNode>(1)); // A[1] = 2 (shared)
+        ctx.TableB.Increment(new Handle<DummyNode>(0));
 
-        ctx.TableA.Decrement(0, new TwoTableAHandler(ctx));
+        ctx.TableA.Decrement(new Handle<DummyNode>(0), new TwoTableAHandler(ctx));
 
-        Assert.Equal(0, ctx.TableA.GetCount(0));
-        Assert.Equal(1, ctx.TableA.GetCount(1)); // survived
-        Assert.Equal(0, ctx.TableB.GetCount(0));
+        Assert.Equal(0, ctx.TableA.GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(1, ctx.TableA.GetCount(new Handle<DummyNode>(1))); // survived
+        Assert.Equal(0, ctx.TableB.GetCount(new Handle<DummyNode>(0)));
 
         Assert.Single(ctx.FreedA);
         Assert.Equal(0, ctx.FreedA[0]);
@@ -582,7 +597,7 @@ public class RefCountTableTests
     {
         public const int A = 0, B = 1, C = 2;
 
-        public RefCountTable[] Tables { get; } = new RefCountTable[3];
+        public RefCountTable<DummyNode>[] Tables { get; } = new RefCountTable<DummyNode>[3];
         public List<int>[] Freed { get; } = [[], [], []];
         private readonly Dictionary<int, List<(int tableId, int index)>>[] _edges = [[], [], []];
 
@@ -614,18 +629,18 @@ public class RefCountTableTests
             => _edges[tableId].GetValueOrDefault(index);
 
         public void Decrement(int tableId, int index)
-            => this.Tables[tableId].Decrement(index, new MultiTableHandler(this, tableId));
+            => this.Tables[tableId].Decrement(new Handle<DummyNode>(index), new MultiTableHandler(this, tableId));
     }
 
-    private readonly struct MultiTableHandler(MultiTableContext ctx, int tableId) : RefCountTable.IRefCountHandler
+    private readonly struct MultiTableHandler(MultiTableContext ctx, int tableId) : RefCountTable<DummyNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
         {
-            ctx.Freed[tableId].Add(index);
-            var children = ctx.GetChildren(tableId, index);
+            ctx.Freed[tableId].Add(handle.Index);
+            var children = ctx.GetChildren(tableId, handle.Index);
             if (children == null) return;
             foreach (var (childTableId, childIndex) in children)
-                ctx.Tables[childTableId].Decrement(childIndex, new MultiTableHandler(ctx, childTableId));
+                ctx.Tables[childTableId].Decrement(new Handle<DummyNode>(childIndex), new MultiTableHandler(ctx, childTableId));
         }
     }
 
@@ -678,22 +693,22 @@ public class RefCountTableTests
     public void ThreeTable_SingleHop_AllChildSubsets(int origin, int[] childTables)
     {
         var ctx = new MultiTableContext();
-        ctx.Tables[origin].Increment(0);
+        ctx.Tables[origin].Increment(new Handle<DummyNode>(0));
 
         foreach (var ct in childTables)
         {
-            ctx.Tables[ct].Increment(1);
+            ctx.Tables[ct].Increment(new Handle<DummyNode>(1));
             ctx.AddEdge(origin, 0, ct, 1);
         }
 
         ctx.Decrement(origin, 0);
 
-        Assert.Equal(0, ctx.Tables[origin].GetCount(0));
+        Assert.Equal(0, ctx.Tables[origin].GetCount(new Handle<DummyNode>(0)));
         Assert.Contains(0, ctx.Freed[origin]);
 
         foreach (var ct in childTables)
         {
-            Assert.Equal(0, ctx.Tables[ct].GetCount(1));
+            Assert.Equal(0, ctx.Tables[ct].GetCount(new Handle<DummyNode>(1)));
             Assert.Contains(1, ctx.Freed[ct]);
         }
 
@@ -710,24 +725,24 @@ public class RefCountTableTests
     public void ThreeTable_SingleHop_SharedChildren_Survive(int origin, int[] childTables)
     {
         var ctx = new MultiTableContext();
-        ctx.Tables[origin].Increment(0);
+        ctx.Tables[origin].Increment(new Handle<DummyNode>(0));
 
         foreach (var ct in childTables)
         {
-            ctx.Tables[ct].Increment(1);
-            ctx.Tables[ct].Increment(1); // rc=2: shared by another parent
+            ctx.Tables[ct].Increment(new Handle<DummyNode>(1));
+            ctx.Tables[ct].Increment(new Handle<DummyNode>(1)); // rc=2: shared by another parent
             ctx.AddEdge(origin, 0, ct, 1);
         }
 
         // Phase 1: cascade from root — children survive with rc=1
         ctx.Decrement(origin, 0);
 
-        Assert.Equal(0, ctx.Tables[origin].GetCount(0));
+        Assert.Equal(0, ctx.Tables[origin].GetCount(new Handle<DummyNode>(0)));
         Assert.Contains(0, ctx.Freed[origin]);
 
         foreach (var ct in childTables)
         {
-            Assert.Equal(1, ctx.Tables[ct].GetCount(1));
+            Assert.Equal(1, ctx.Tables[ct].GetCount(new Handle<DummyNode>(1)));
             Assert.DoesNotContain(1, ctx.Freed[ct]);
         }
 
@@ -737,7 +752,7 @@ public class RefCountTableTests
 
         foreach (var ct in childTables)
         {
-            Assert.Equal(0, ctx.Tables[ct].GetCount(1));
+            Assert.Equal(0, ctx.Tables[ct].GetCount(new Handle<DummyNode>(1)));
             Assert.Contains(1, ctx.Freed[ct]);
         }
     }
@@ -750,18 +765,18 @@ public class RefCountTableTests
     {
         var ctx = new MultiTableContext();
 
-        ctx.Tables[first].Increment(0);
-        ctx.Tables[second].Increment(0);
-        ctx.Tables[third].Increment(0);
+        ctx.Tables[first].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[second].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[third].Increment(new Handle<DummyNode>(0));
 
         ctx.AddEdge(first, 0, second, 0);
         ctx.AddEdge(second, 0, third, 0);
 
         ctx.Decrement(first, 0);
 
-        Assert.Equal(0, ctx.Tables[first].GetCount(0));
-        Assert.Equal(0, ctx.Tables[second].GetCount(0));
-        Assert.Equal(0, ctx.Tables[third].GetCount(0));
+        Assert.Equal(0, ctx.Tables[first].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[second].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[third].GetCount(new Handle<DummyNode>(0)));
 
         Assert.Contains(0, ctx.Freed[first]);
         Assert.Contains(0, ctx.Freed[second]);
@@ -777,10 +792,10 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // A[0] → B[0] → C[0] → A[1]
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[A].Increment(1);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(B, 0, C, 0);
@@ -788,10 +803,10 @@ public class RefCountTableTests
 
         ctx.Decrement(A, 0);
 
-        Assert.Equal(0, ctx.Tables[A].GetCount(0));
-        Assert.Equal(0, ctx.Tables[A].GetCount(1));
-        Assert.Equal(0, ctx.Tables[B].GetCount(0));
-        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
 
         Assert.Equal(2, ctx.Freed[A].Count);
         Assert.Contains(0, ctx.Freed[A]);
@@ -807,11 +822,11 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // A[0] → {B[0], C[0]}, both B[0] and C[0] → A[1]. A[1] rc=2 (two paths converge).
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[A].Increment(1);
-        ctx.Tables[A].Increment(1); // rc=2
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1)); // rc=2
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(A, 0, C, 0);
@@ -820,10 +835,10 @@ public class RefCountTableTests
 
         ctx.Decrement(A, 0);
 
-        Assert.Equal(0, ctx.Tables[A].GetCount(0));
-        Assert.Equal(0, ctx.Tables[A].GetCount(1));
-        Assert.Equal(0, ctx.Tables[B].GetCount(0));
-        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
 
         Assert.Equal(2, ctx.Freed[A].Count);
         Assert.Single(ctx.Freed[B]);
@@ -837,22 +852,22 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // A[0] → C[0], B[0] → C[0]. C[0] rc=2.
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[C].Increment(0); // rc=2
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0)); // rc=2
 
         ctx.AddEdge(A, 0, C, 0);
         ctx.AddEdge(B, 0, C, 0);
 
         // First root: C[0] survives
         ctx.Decrement(A, 0);
-        Assert.Equal(1, ctx.Tables[C].GetCount(0));
+        Assert.Equal(1, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
         Assert.Empty(ctx.Freed[C]);
 
         // Second root: C[0] now frees
         ctx.Decrement(B, 0);
-        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
         Assert.Single(ctx.Freed[C]);
     }
 
@@ -863,13 +878,13 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // A[0] → {B[0], C[0]}, B[0] → {A[1], C[1]}, C[0] → {A[2]}, C[1] → {B[1]}
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[A].Increment(1);
-        ctx.Tables[A].Increment(2);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[B].Increment(1);
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[C].Increment(1);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(2));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(1));
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(A, 0, C, 0);
@@ -881,11 +896,11 @@ public class RefCountTableTests
         ctx.Decrement(A, 0);
 
         for (var i = 0; i < 3; i++)
-            Assert.Equal(0, ctx.Tables[A].GetCount(i));
+            Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(i)));
         for (var i = 0; i < 2; i++)
-            Assert.Equal(0, ctx.Tables[B].GetCount(i));
+            Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(i)));
         for (var i = 0; i < 2; i++)
-            Assert.Equal(0, ctx.Tables[C].GetCount(i));
+            Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(i)));
 
         var totalFreed = ctx.Freed[A].Count + ctx.Freed[B].Count + ctx.Freed[C].Count;
         Assert.Equal(7, totalFreed);
@@ -901,12 +916,12 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // Two paths converge: A[0]→B[0]→C[0], A[1]→B[1]→C[0]. C[0] rc=2.
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[A].Increment(1);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[B].Increment(1);
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[C].Increment(0); // rc=2
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0)); // rc=2
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(A, 1, B, 1);
@@ -915,12 +930,12 @@ public class RefCountTableTests
 
         // First root: C[0] survives
         ctx.Decrement(A, 0);
-        Assert.Equal(1, ctx.Tables[C].GetCount(0));
+        Assert.Equal(1, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
         Assert.Empty(ctx.Freed[C]);
 
         // Second root: C[0] now frees
         ctx.Decrement(A, 1);
-        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
         Assert.Single(ctx.Freed[C]);
     }
 
@@ -931,10 +946,10 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // A[0] → {B[0], B[1], B[2]}: three children in same target table
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[B].Increment(1);
-        ctx.Tables[B].Increment(2);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(2));
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(A, 0, B, 1);
@@ -942,10 +957,10 @@ public class RefCountTableTests
 
         ctx.Decrement(A, 0);
 
-        Assert.Equal(0, ctx.Tables[A].GetCount(0));
-        Assert.Equal(0, ctx.Tables[B].GetCount(0));
-        Assert.Equal(0, ctx.Tables[B].GetCount(1));
-        Assert.Equal(0, ctx.Tables[B].GetCount(2));
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(2)));
 
         Assert.Single(ctx.Freed[A]);
         Assert.Equal(3, ctx.Freed[B].Count);
@@ -959,7 +974,7 @@ public class RefCountTableTests
         int[] tableOrder = [MultiTableContext.A, MultiTableContext.B, MultiTableContext.C];
 
         for (var i = 0; i < Depth; i++)
-            ctx.Tables[tableOrder[i % 3]].Increment(i / 3);
+            ctx.Tables[tableOrder[i % 3]].Increment(new Handle<DummyNode>(i / 3));
 
         for (var i = 0; i < Depth - 1; i++)
             ctx.AddEdge(tableOrder[i % 3], i / 3, tableOrder[(i + 1) % 3], (i + 1) / 3);
@@ -967,7 +982,7 @@ public class RefCountTableTests
         ctx.Decrement(MultiTableContext.A, 0);
 
         for (var i = 0; i < Depth; i++)
-            Assert.Equal(0, ctx.Tables[tableOrder[i % 3]].GetCount(i / 3));
+            Assert.Equal(0, ctx.Tables[tableOrder[i % 3]].GetCount(new Handle<DummyNode>(i / 3)));
 
         var totalFreed = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
         Assert.Equal(Depth, totalFreed);
@@ -983,10 +998,10 @@ public class RefCountTableTests
         var ctx = new MultiTableContext();
 
         // A[0] → B[0] → C[0] → A[1]: loop through all three tables
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[A].Increment(1);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[C].Increment(0);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(B, 0, C, 0);
@@ -1020,14 +1035,14 @@ public class RefCountTableTests
         // V2: root[rootT,1] → { unique[uniqueT,3], shared[sharedT,4] }
         // shared[sharedT,4] → { shared[sharedT,5], shared[sharedT,6] }
 
-        ctx.Tables[rootT].Increment(0);
-        ctx.Tables[rootT].Increment(1);
-        ctx.Tables[uniqueT].Increment(2);
-        ctx.Tables[uniqueT].Increment(3);
-        ctx.Tables[sharedT].Increment(4);
-        ctx.Tables[sharedT].Increment(4); // rc=2 (two version roots point here)
-        ctx.Tables[sharedT].Increment(5);
-        ctx.Tables[sharedT].Increment(6);
+        ctx.Tables[rootT].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[rootT].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[uniqueT].Increment(new Handle<DummyNode>(2));
+        ctx.Tables[uniqueT].Increment(new Handle<DummyNode>(3));
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(4));
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(4)); // rc=2 (two version roots point here)
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(5));
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(6));
 
         ctx.AddEdge(rootT, 0, uniqueT, 2);
         ctx.AddEdge(rootT, 0, sharedT, 4);
@@ -1039,20 +1054,20 @@ public class RefCountTableTests
         // Release V1: root + unique freed, shared subtree survives
         ctx.Decrement(rootT, 0);
 
-        Assert.Equal(0, ctx.Tables[rootT].GetCount(0));
-        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(2));
-        Assert.Equal(1, ctx.Tables[sharedT].GetCount(4)); // survived (rc=1)
-        Assert.Equal(1, ctx.Tables[sharedT].GetCount(5)); // untouched
-        Assert.Equal(1, ctx.Tables[sharedT].GetCount(6)); // untouched
+        Assert.Equal(0, ctx.Tables[rootT].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(new Handle<DummyNode>(2)));
+        Assert.Equal(1, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(4))); // survived (rc=1)
+        Assert.Equal(1, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(5))); // untouched
+        Assert.Equal(1, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(6))); // untouched
 
         // Release V2: everything goes
         ctx.Decrement(rootT, 1);
 
-        Assert.Equal(0, ctx.Tables[rootT].GetCount(1));
-        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(3));
-        Assert.Equal(0, ctx.Tables[sharedT].GetCount(4));
-        Assert.Equal(0, ctx.Tables[sharedT].GetCount(5));
-        Assert.Equal(0, ctx.Tables[sharedT].GetCount(6));
+        Assert.Equal(0, ctx.Tables[rootT].GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(new Handle<DummyNode>(3)));
+        Assert.Equal(0, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(4)));
+        Assert.Equal(0, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(5)));
+        Assert.Equal(0, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(6)));
     }
 
     // ── Three versions, shared node: all table assignments ───────────────
@@ -1068,16 +1083,16 @@ public class RefCountTableTests
         // V3: root[rootT,2] → { unique[uniqueT,5], shared[sharedT,6] }
         // shared[sharedT,6] → shared[sharedT,7]
 
-        ctx.Tables[rootT].Increment(0);
-        ctx.Tables[rootT].Increment(1);
-        ctx.Tables[rootT].Increment(2);
-        ctx.Tables[uniqueT].Increment(3);
-        ctx.Tables[uniqueT].Increment(4);
-        ctx.Tables[uniqueT].Increment(5);
-        ctx.Tables[sharedT].Increment(6);
-        ctx.Tables[sharedT].Increment(6);
-        ctx.Tables[sharedT].Increment(6); // rc=3
-        ctx.Tables[sharedT].Increment(7);
+        ctx.Tables[rootT].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[rootT].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[rootT].Increment(new Handle<DummyNode>(2));
+        ctx.Tables[uniqueT].Increment(new Handle<DummyNode>(3));
+        ctx.Tables[uniqueT].Increment(new Handle<DummyNode>(4));
+        ctx.Tables[uniqueT].Increment(new Handle<DummyNode>(5));
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(6));
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(6));
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(6)); // rc=3
+        ctx.Tables[sharedT].Increment(new Handle<DummyNode>(7));
 
         for (var v = 0; v < 3; v++)
         {
@@ -1089,24 +1104,24 @@ public class RefCountTableTests
 
         // Release V1: shared rc=3→2
         ctx.Decrement(rootT, 0);
-        Assert.Equal(0, ctx.Tables[rootT].GetCount(0));
-        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(3));
-        Assert.Equal(2, ctx.Tables[sharedT].GetCount(6));
-        Assert.Equal(1, ctx.Tables[sharedT].GetCount(7));
+        Assert.Equal(0, ctx.Tables[rootT].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(new Handle<DummyNode>(3)));
+        Assert.Equal(2, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(6)));
+        Assert.Equal(1, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(7)));
 
         // Release V2: shared rc=2→1
         ctx.Decrement(rootT, 1);
-        Assert.Equal(0, ctx.Tables[rootT].GetCount(1));
-        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(4));
-        Assert.Equal(1, ctx.Tables[sharedT].GetCount(6));
-        Assert.Equal(1, ctx.Tables[sharedT].GetCount(7));
+        Assert.Equal(0, ctx.Tables[rootT].GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(new Handle<DummyNode>(4)));
+        Assert.Equal(1, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(6)));
+        Assert.Equal(1, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(7)));
 
         // Release V3: shared rc=1→0 → cascade frees shared + child
         ctx.Decrement(rootT, 2);
-        Assert.Equal(0, ctx.Tables[rootT].GetCount(2));
-        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(5));
-        Assert.Equal(0, ctx.Tables[sharedT].GetCount(6));
-        Assert.Equal(0, ctx.Tables[sharedT].GetCount(7));
+        Assert.Equal(0, ctx.Tables[rootT].GetCount(new Handle<DummyNode>(2)));
+        Assert.Equal(0, ctx.Tables[uniqueT].GetCount(new Handle<DummyNode>(5)));
+        Assert.Equal(0, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(6)));
+        Assert.Equal(0, ctx.Tables[sharedT].GetCount(new Handle<DummyNode>(7)));
     }
 
     // ── Three versions, all release orders ───────────────────────────────
@@ -1127,16 +1142,16 @@ public class RefCountTableTests
 
         for (var v = 0; v < 3; v++)
         {
-            ctx.Tables[A].Increment(v);
-            ctx.Tables[B].Increment(v);
+            ctx.Tables[A].Increment(new Handle<DummyNode>(v));
+            ctx.Tables[B].Increment(new Handle<DummyNode>(v));
             ctx.AddEdge(A, v, B, v);
             ctx.AddEdge(A, v, C, 0);
         }
 
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[C].Increment(0); // rc=3
-        ctx.Tables[C].Increment(1);
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0)); // rc=3
+        ctx.Tables[C].Increment(new Handle<DummyNode>(1));
         ctx.AddEdge(C, 0, C, 1);
 
         var order = new[] { first, second, third };
@@ -1145,12 +1160,12 @@ public class RefCountTableTests
             var v = order[step];
             ctx.Decrement(A, v);
 
-            Assert.Equal(0, ctx.Tables[A].GetCount(v));
-            Assert.Equal(0, ctx.Tables[B].GetCount(v));
+            Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(v)));
+            Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(v)));
 
             var expectedSharedRc = 2 - step;
-            Assert.Equal(expectedSharedRc, ctx.Tables[C].GetCount(0));
-            Assert.Equal(expectedSharedRc > 0 ? 1 : 0, ctx.Tables[C].GetCount(1));
+            Assert.Equal(expectedSharedRc, ctx.Tables[C].GetCount(new Handle<DummyNode>(0)));
+            Assert.Equal(expectedSharedRc > 0 ? 1 : 0, ctx.Tables[C].GetCount(new Handle<DummyNode>(1)));
         }
     }
 
@@ -1172,16 +1187,16 @@ public class RefCountTableTests
         //
         // Refcounts: a=1, b=1, c=2 (from b and V2), d=1, e=2 (from d and V3)
 
-        ctx.Tables[C].Increment(1); // V1 root
-        ctx.Tables[C].Increment(2); // V2 root
-        ctx.Tables[C].Increment(3); // V3 root
-        ctx.Tables[A].Increment(0); // a
-        ctx.Tables[B].Increment(0); // b
-        ctx.Tables[C].Increment(0); // c (rc will be 2)
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[A].Increment(1); // d
-        ctx.Tables[B].Increment(1); // e (rc will be 2)
-        ctx.Tables[B].Increment(1);
+        ctx.Tables[C].Increment(new Handle<DummyNode>(1)); // V1 root
+        ctx.Tables[C].Increment(new Handle<DummyNode>(2)); // V2 root
+        ctx.Tables[C].Increment(new Handle<DummyNode>(3)); // V3 root
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0)); // a
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0)); // b
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0)); // c (rc will be 2)
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1)); // d
+        ctx.Tables[B].Increment(new Handle<DummyNode>(1)); // e (rc will be 2)
+        ctx.Tables[B].Increment(new Handle<DummyNode>(1));
 
         ctx.AddEdge(C, 1, A, 0); // V1 → a
         ctx.AddEdge(C, 2, C, 0); // V2 → c
@@ -1193,21 +1208,21 @@ public class RefCountTableTests
 
         // Release V1: frees V1 root, a, b. c survives (rc=2→1).
         ctx.Decrement(C, 1);
-        Assert.Equal(0, ctx.Tables[A].GetCount(0)); // a freed
-        Assert.Equal(0, ctx.Tables[B].GetCount(0)); // b freed
-        Assert.Equal(1, ctx.Tables[C].GetCount(0)); // c survived
-        Assert.Equal(1, ctx.Tables[A].GetCount(1)); // d untouched
-        Assert.Equal(2, ctx.Tables[B].GetCount(1)); // e untouched (rc=2)
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(0))); // a freed
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(0))); // b freed
+        Assert.Equal(1, ctx.Tables[C].GetCount(new Handle<DummyNode>(0))); // c survived
+        Assert.Equal(1, ctx.Tables[A].GetCount(new Handle<DummyNode>(1))); // d untouched
+        Assert.Equal(2, ctx.Tables[B].GetCount(new Handle<DummyNode>(1))); // e untouched (rc=2)
 
         // Release V2: frees V2 root, c, d. e survives (rc=2→1).
         ctx.Decrement(C, 2);
-        Assert.Equal(0, ctx.Tables[C].GetCount(0)); // c freed
-        Assert.Equal(0, ctx.Tables[A].GetCount(1)); // d freed (cascaded through c)
-        Assert.Equal(1, ctx.Tables[B].GetCount(1)); // e survived (rc=1)
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(0))); // c freed
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(1))); // d freed (cascaded through c)
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(1))); // e survived (rc=1)
 
         // Release V3: frees V3 root, e. Everything gone.
         ctx.Decrement(C, 3);
-        Assert.Equal(0, ctx.Tables[B].GetCount(1)); // e freed
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(1))); // e freed
 
         var totalFreed = ctx.Freed[A].Count + ctx.Freed[B].Count + ctx.Freed[C].Count;
         Assert.Equal(8, totalFreed); // 3 roots + 5 spine nodes
@@ -1233,15 +1248,15 @@ public class RefCountTableTests
         // Leaf nodes under shared subtrees have rc=1 — they cascade when their parent is freed.
 
         // -- V1 tree --
-        ctx.Tables[A].Increment(0);
-        ctx.Tables[B].Increment(0);
-        ctx.Tables[B].Increment(0); // B[0] rc=2 (shared with V3)
-        ctx.Tables[C].Increment(0);
-        ctx.Tables[C].Increment(0); // C[0] rc=2 (shared with V2)
-        ctx.Tables[B].Increment(2);
-        ctx.Tables[B].Increment(3);
-        ctx.Tables[C].Increment(2);
-        ctx.Tables[C].Increment(3);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(0)); // B[0] rc=2 (shared with V3)
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(0)); // C[0] rc=2 (shared with V2)
+        ctx.Tables[B].Increment(new Handle<DummyNode>(2));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(3));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(2));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(3));
 
         ctx.AddEdge(A, 0, B, 0);
         ctx.AddEdge(A, 0, C, 0);
@@ -1251,10 +1266,10 @@ public class RefCountTableTests
         ctx.AddEdge(C, 0, C, 3);
 
         // -- V2 tree (shares right subtree C[0]) --
-        ctx.Tables[A].Increment(1);
-        ctx.Tables[B].Increment(1);
-        ctx.Tables[B].Increment(4);
-        ctx.Tables[B].Increment(5);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(4));
+        ctx.Tables[B].Increment(new Handle<DummyNode>(5));
 
         ctx.AddEdge(A, 1, B, 1);
         ctx.AddEdge(A, 1, C, 0);
@@ -1262,10 +1277,10 @@ public class RefCountTableTests
         ctx.AddEdge(B, 1, B, 5);
 
         // -- V3 tree (shares left subtree B[0]) --
-        ctx.Tables[A].Increment(2);
-        ctx.Tables[C].Increment(1);
-        ctx.Tables[C].Increment(4);
-        ctx.Tables[C].Increment(5);
+        ctx.Tables[A].Increment(new Handle<DummyNode>(2));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(1));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(4));
+        ctx.Tables[C].Increment(new Handle<DummyNode>(5));
 
         ctx.AddEdge(A, 2, B, 0);
         ctx.AddEdge(A, 2, C, 1);
@@ -1275,38 +1290,38 @@ public class RefCountTableTests
         // Release V1: only root freed. Both shared subtrees survive.
         ctx.Decrement(A, 0);
 
-        Assert.Equal(0, ctx.Tables[A].GetCount(0));
-        Assert.Equal(1, ctx.Tables[B].GetCount(0)); // survived (rc=1)
-        Assert.Equal(1, ctx.Tables[C].GetCount(0)); // survived (rc=1)
-        Assert.Equal(1, ctx.Tables[B].GetCount(2)); // untouched (child of B[0])
-        Assert.Equal(1, ctx.Tables[B].GetCount(3)); // untouched
-        Assert.Equal(1, ctx.Tables[C].GetCount(2)); // untouched (child of C[0])
-        Assert.Equal(1, ctx.Tables[C].GetCount(3)); // untouched
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(0)));
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(0))); // survived (rc=1)
+        Assert.Equal(1, ctx.Tables[C].GetCount(new Handle<DummyNode>(0))); // survived (rc=1)
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(2))); // untouched (child of B[0])
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(3))); // untouched
+        Assert.Equal(1, ctx.Tables[C].GetCount(new Handle<DummyNode>(2))); // untouched (child of C[0])
+        Assert.Equal(1, ctx.Tables[C].GetCount(new Handle<DummyNode>(3))); // untouched
 
         // Release V2: V2's unique branch + shared C[0] subtree freed.
         ctx.Decrement(A, 1);
 
-        Assert.Equal(0, ctx.Tables[A].GetCount(1));
-        Assert.Equal(0, ctx.Tables[B].GetCount(1)); // V2 unique
-        Assert.Equal(0, ctx.Tables[B].GetCount(4)); // V2 unique leaf
-        Assert.Equal(0, ctx.Tables[B].GetCount(5)); // V2 unique leaf
-        Assert.Equal(0, ctx.Tables[C].GetCount(0)); // shared freed (rc=0)
-        Assert.Equal(0, ctx.Tables[C].GetCount(2)); // cascaded
-        Assert.Equal(0, ctx.Tables[C].GetCount(3)); // cascaded
-        Assert.Equal(1, ctx.Tables[B].GetCount(0)); // V3's shared B[0] still alive
-        Assert.Equal(1, ctx.Tables[B].GetCount(2)); // its children still alive
-        Assert.Equal(1, ctx.Tables[B].GetCount(3));
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(1)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(1))); // V2 unique
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(4))); // V2 unique leaf
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(5))); // V2 unique leaf
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(0))); // shared freed (rc=0)
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(2))); // cascaded
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(3))); // cascaded
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(0))); // V3's shared B[0] still alive
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(2))); // its children still alive
+        Assert.Equal(1, ctx.Tables[B].GetCount(new Handle<DummyNode>(3)));
 
         // Release V3: V3's unique branch + shared B[0] subtree freed. Everything gone.
         ctx.Decrement(A, 2);
 
-        Assert.Equal(0, ctx.Tables[A].GetCount(2));
-        Assert.Equal(0, ctx.Tables[B].GetCount(0)); // shared freed (rc=0)
-        Assert.Equal(0, ctx.Tables[B].GetCount(2)); // cascaded
-        Assert.Equal(0, ctx.Tables[B].GetCount(3)); // cascaded
-        Assert.Equal(0, ctx.Tables[C].GetCount(1)); // V3 unique
-        Assert.Equal(0, ctx.Tables[C].GetCount(4)); // V3 unique leaf
-        Assert.Equal(0, ctx.Tables[C].GetCount(5)); // V3 unique leaf
+        Assert.Equal(0, ctx.Tables[A].GetCount(new Handle<DummyNode>(2)));
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(0))); // shared freed (rc=0)
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(2))); // cascaded
+        Assert.Equal(0, ctx.Tables[B].GetCount(new Handle<DummyNode>(3))); // cascaded
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(1))); // V3 unique
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(4))); // V3 unique leaf
+        Assert.Equal(0, ctx.Tables[C].GetCount(new Handle<DummyNode>(5))); // V3 unique leaf
 
         // 15 total nodes, each freed exactly once
         var totalFreed = ctx.Freed[A].Count + ctx.Freed[B].Count + ctx.Freed[C].Count;
@@ -1346,13 +1361,13 @@ public class RefCountTableTests
 
             list.Add(child);
             _ctx.AddEdge(parent.t, parent.i, child.t, child.i);
-            _ctx.Tables[child.t].Increment(child.i);
+            _ctx.Tables[child.t].Increment(new Handle<DummyNode>(child.i));
         }
 
         public void AddRoot((int t, int i) node)
         {
             _activeRoots.Add(node);
-            _ctx.Tables[node.t].Increment(node.i);
+            _ctx.Tables[node.t].Increment(new Handle<DummyNode>(node.i));
         }
 
         public void ReleaseRoot((int t, int i) node)
@@ -1423,7 +1438,7 @@ public class RefCountTableTests
             foreach (var node in _allNodes)
             {
                 var exp = expected.GetValueOrDefault(node);
-                var actual = _ctx.Tables[node.t].GetCount(node.i);
+                var actual = _ctx.Tables[node.t].GetCount(new Handle<DummyNode>(node.i));
                 Assert.Equal(exp, actual);
             }
         }
@@ -1768,14 +1783,15 @@ public class RefCountTableTests
 
         pathPositions.Add(0);
         foreach (var p in pathPositions)
-            Assert.True(ctx.Tables[v2[p].t].GetCount(v2[p].i) > 0, $"V2 spine node at position {p} should be alive");
+            Assert.True(ctx.Tables[v2[p].t].GetCount(new Handle<DummyNode>(v2[p].i)) > 0,
+                $"V2 spine node at position {p} should be alive");
 
         // Shared subtree nodes (not on the path) should still be alive with refcount 1
         for (var n = 0; n < nodeCount; n++)
         {
             if (pathPositions.Contains(n)) continue;
             var (t, i) = v1[n]; // same as v2[n] for non-path positions
-            Assert.True(ctx.Tables[t].GetCount(i) > 0, $"Shared node at position {n} should be alive");
+            Assert.True(ctx.Tables[t].GetCount(new Handle<DummyNode>(i)) > 0, $"Shared node at position {n} should be alive");
         }
 
         // Release V2 — now everything should be freed
@@ -1795,12 +1811,12 @@ public class RefCountTableTests
         table.EnsureCapacity(3);
         var ta = table.GetTestAccessor();
 
-        table.Increment(0);
-        table.Increment(1);
-        table.Increment(2);
+        table.Increment(new Handle<DummyNode>(0));
+        table.Increment(new Handle<DummyNode>(1));
+        table.Increment(new Handle<DummyNode>(2));
 
         Assert.False(ta.CascadeActive);
-        table.Decrement(0, new LinearChainHandler(2, []));
+        table.Decrement(new Handle<DummyNode>(0), new LinearChainHandler(2, []));
         Assert.False(ta.CascadeActive);
     }
 
@@ -1812,7 +1828,7 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(2);
-        table.Increment(0);
+        table.Increment(new Handle<DummyNode>(0));
 
         Exception? caught = null;
         var thread = new Thread(() =>
@@ -1820,7 +1836,7 @@ public class RefCountTableTests
             try
             {
                 using var listener = new AssertThrowsListener();
-                table.Increment(1);
+                table.Increment(new Handle<DummyNode>(1));
             }
             catch (Exception ex)
             {
@@ -1839,14 +1855,14 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         table.EnsureCapacity(1);
-        table.Increment(0);
+        table.Increment(new Handle<DummyNode>(0));
 
         Exception? caught = null;
         try
         {
             using var listener = new AssertThrowsListener();
-            table.Decrement(0, default(NullHandler));
-            table.Decrement(0, default(NullHandler));
+            table.Decrement(new Handle<DummyNode>(0), default(NullHandler));
+            table.Decrement(new Handle<DummyNode>(0), default(NullHandler));
         }
         catch (Exception ex)
         {

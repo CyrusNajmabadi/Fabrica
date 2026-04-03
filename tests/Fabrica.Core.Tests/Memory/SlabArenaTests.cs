@@ -32,9 +32,9 @@ public class UnsafeSlabArenaTests
     public void Allocate_ReturnsZeroBasedContiguousIndices()
     {
         var arena = CreateTinyArena();
-        Assert.Equal(0, arena.Allocate());
-        Assert.Equal(1, arena.Allocate());
-        Assert.Equal(2, arena.Allocate());
+        Assert.Equal(0, arena.Allocate().Index);
+        Assert.Equal(1, arena.Allocate().Index);
+        Assert.Equal(2, arena.Allocate().Index);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public class UnsafeSlabArenaTests
         var ta = arena.GetTestAccessor();
         const int Count = 8;
 
-        var indices = new int[Count];
+        var indices = new Handle<Int32Entry>[Count];
         for (var i = 0; i < Count; i++)
             indices[i] = arena.Allocate();
 
@@ -212,11 +212,11 @@ public class UnsafeSlabArenaTests
         for (var i = 0; i < 16; i++)
         {
             var idx = arena.Allocate();
-            arena[idx] = new Int32Entry { Value = idx * 10 };
+            arena[idx] = new Int32Entry { Value = idx.Index * 10 };
         }
 
         for (var i = 0; i < 16; i++)
-            Assert.Equal(i * 10, arena[i].Value);
+            Assert.Equal(i * 10, arena[new Handle<Int32Entry>(i)].Value);
     }
 
     [Fact]
@@ -286,7 +286,7 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena(directoryLength: 4, slabShift: 2);
 
         // Allocate 8 entries across 2 slabs
-        var indices = new int[8];
+        var indices = new Handle<Int32Entry>[8];
         for (var i = 0; i < 8; i++)
         {
             indices[i] = arena.Allocate();
@@ -300,8 +300,8 @@ public class UnsafeSlabArenaTests
         // Reallocate — should reuse freed indices (LIFO: 5 first, then 1)
         var r0 = arena.Allocate();
         var r1 = arena.Allocate();
-        Assert.Equal(5, r0);
-        Assert.Equal(1, r1);
+        Assert.Equal(5, r0.Index);
+        Assert.Equal(1, r1.Index);
 
         // Data at other indices is untouched
         Assert.Equal(0, arena[indices[0]].Value);
@@ -347,7 +347,7 @@ public class UnsafeSlabArenaTests
         Assert.Equal(3, ta.HighWater);
 
         var i4 = arena.Allocate(); // fresh bump
-        Assert.Equal(3, i4);
+        Assert.Equal(3, i4.Index);
         Assert.Equal(4, ta.Count);
         Assert.Equal(4, ta.HighWater);
 
@@ -381,7 +381,7 @@ public class UnsafeSlabArenaTests
         for (var i = 0; i < 4; i++)
         {
             Assert.NotNull(ta.Directory[i]);
-            Assert.Equal(i, arena[i].Value);
+            Assert.Equal(i, arena[new Handle<Int32Entry>(i)].Value);
         }
     }
 
@@ -398,7 +398,7 @@ public class UnsafeSlabArenaTests
         var arena = new UnsafeSlabArena<Int32Entry>(directoryLength, slabShift);
         var ta = arena.GetTestAccessor();
 
-        var seen = new HashSet<int>();
+        var seen = new HashSet<Handle<Int32Entry>>();
         for (var i = 0; i < count; i++)
         {
             var idx = arena.Allocate();
@@ -410,7 +410,7 @@ public class UnsafeSlabArenaTests
         Assert.Equal(count, ta.HighWater);
 
         for (var i = 0; i < count; i++)
-            Assert.Equal(i, arena[i].Value);
+            Assert.Equal(i, arena[new Handle<Int32Entry>(i)].Value);
     }
 
     [Theory]
@@ -424,7 +424,7 @@ public class UnsafeSlabArenaTests
         var ta = arena.GetTestAccessor();
 
         // Allocate all
-        var indices = new int[count];
+        var indices = new Handle<Int32Entry>[count];
         for (var i = 0; i < count; i++)
             indices[i] = arena.Allocate();
 
@@ -440,7 +440,7 @@ public class UnsafeSlabArenaTests
         Assert.Equal(freedCount, ta.FreeCount);
 
         // Reallocate freed entries
-        var reused = new HashSet<int>();
+        var reused = new HashSet<Handle<Int32Entry>>();
         for (var i = 0; i < freedCount; i++)
         {
             var idx = arena.Allocate();

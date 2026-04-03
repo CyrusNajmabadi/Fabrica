@@ -24,7 +24,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// USAGE
 ///   Define a struct implementing <see cref="IChildEnumerator{TNode}"/> that appends same-store child
-///   indices (&gt;= 0) to the provided list. Then call <see cref="AssertValid"/> or <see cref="Validate"/>
+///   handles to the provided list. Then call <see cref="AssertValid"/> or <see cref="Validate"/>
 ///   after building or modifying a DAG.
 ///
 /// PORTABILITY
@@ -33,13 +33,13 @@ namespace Fabrica.Core.Memory;
 internal static class DagValidator
 {
     /// <summary>
-    /// Struct callback that enumerates the same-store child indices of a node. Implementations should
-    /// append only valid (&gt;= 0) child indices to <paramref name="children"/>. Sentinel values (-1) must
-    /// be filtered out by the implementation.
+    /// Struct callback that enumerates the same-store child handles of a node. Implementations should
+    /// append only valid child handles to <paramref name="children"/>. Handles where
+    /// <see cref="Handle{T}.IsValid"/> is false must be filtered out by the implementation.
     /// </summary>
     internal interface IChildEnumerator<TNode> where TNode : struct
     {
-        void GetChildren(in TNode node, List<int> children);
+        void GetChildren(in TNode node, List<Handle<TNode>> children);
     }
 
     /// <summary>
@@ -49,11 +49,11 @@ internal static class DagValidator
     /// When false, only checks <c>actual &gt;= expected</c> (tolerates cross-store or untracked references).</param>
     internal static void AssertValid<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
-        ReadOnlySpan<int> roots,
+        ReadOnlySpan<Handle<TNode>> roots,
         TEnumerator enumerator,
         bool strict = true)
         where TNode : struct
-        where THandler : struct, RefCountTable.IRefCountHandler
+        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
         where TEnumerator : struct, IChildEnumerator<TNode>
     {
         var issues = Validate(store, roots, enumerator, strict);
@@ -69,11 +69,11 @@ internal static class DagValidator
     /// When false, only checks <c>actual &gt;= expected</c>.</param>
     internal static List<string> Validate<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
-        ReadOnlySpan<int> roots,
+        ReadOnlySpan<Handle<TNode>> roots,
         TEnumerator enumerator,
         bool strict = true)
         where TNode : struct
-        where THandler : struct, RefCountTable.IRefCountHandler
+        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
         where TEnumerator : struct, IChildEnumerator<TNode>
     {
         var issues = new List<string>();
@@ -89,19 +89,19 @@ internal static class DagValidator
         var isChildOfSomeNode = strict ? new bool[highWater] : null;
 
         // Reusable buffer for child enumeration
-        var childBuffer = new List<int>();
+        var childBuffer = new List<Handle<TNode>>();
 
         // Count root holds
         for (var i = 0; i < roots.Length; i++)
         {
             var root = roots[i];
-            if (root < 0 || root >= highWater)
+            if (root.Index < 0 || root.Index >= highWater)
             {
-                issues.Add($"Root index {root} is out of range [0, {highWater}).");
+                issues.Add($"Root index {root.Index} is out of range [0, {highWater}).");
                 continue;
             }
 
-            expectedRefCount[root]++;
+            expectedRefCount[root.Index]++;
         }
 
         // DFS from each root
@@ -109,12 +109,12 @@ internal static class DagValidator
         for (var i = 0; i < roots.Length; i++)
         {
             var root = roots[i];
-            if (root < 0 || root >= highWater)
+            if (root.Index < 0 || root.Index >= highWater)
                 continue;
-            if (color[root] != 0)
+            if (color[root.Index] != 0)
                 continue;
 
-            dfsStack.Push((root, true));
+            dfsStack.Push((root.Index, true));
 
             while (dfsStack.Count > 0)
             {
@@ -139,28 +139,28 @@ internal static class DagValidator
                 dfsStack.Push((index, false)); // post-visit marker
 
                 childBuffer.Clear();
-                enumerator.GetChildren(in store.Arena[index], childBuffer);
+                enumerator.GetChildren(in store.Arena[new Handle<TNode>(index)], childBuffer);
 
                 for (var c = 0; c < childBuffer.Count; c++)
                 {
                     var child = childBuffer[c];
-                    if (child < 0 || child >= highWater)
+                    if (child.Index < 0 || child.Index >= highWater)
                     {
-                        issues.Add($"Node {index} has out-of-range child index {child}.");
+                        issues.Add($"Node {index} has out-of-range child index {child.Index}.");
                         continue;
                     }
 
-                    isChildOfSomeNode?[child] = true;
+                    isChildOfSomeNode?[child.Index] = true;
 
-                    expectedRefCount[child]++;
+                    expectedRefCount[child.Index]++;
 
-                    if (color[child] == 1)
+                    if (color[child.Index] == 1)
                     {
-                        issues.Add($"Cycle detected: edge {index} → {child} forms a back-edge.");
+                        issues.Add($"Cycle detected: edge {index} → {child.Index} forms a back-edge.");
                     }
-                    else if (color[child] == 0)
+                    else if (color[child.Index] == 0)
                     {
-                        dfsStack.Push((child, true));
+                        dfsStack.Push((child.Index, true));
                     }
                 }
             }
@@ -169,7 +169,7 @@ internal static class DagValidator
         // Compare expected vs actual refcounts
         for (var i = 0; i < highWater; i++)
         {
-            var actual = store.RefCounts.GetCount(i);
+            var actual = store.RefCounts.GetCount(new Handle<TNode>(i));
             var expected = expectedRefCount[i];
             var reachable = color[i] == 2;
 
@@ -196,8 +196,8 @@ internal static class DagValidator
             for (var i = 0; i < roots.Length; i++)
             {
                 var root = roots[i];
-                if (root >= 0 && root < highWater && isChildOfSomeNode[root])
-                    issues.Add($"Root {root} is also a child of another node in the DAG.");
+                if (root.Index >= 0 && root.Index < highWater && isChildOfSomeNode[root.Index])
+                    issues.Add($"Root {root.Index} is also a child of another node in the DAG.");
             }
         }
 

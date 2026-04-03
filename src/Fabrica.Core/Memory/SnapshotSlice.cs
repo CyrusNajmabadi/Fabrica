@@ -5,11 +5,11 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// A typed root set within a snapshot, associated with a single <see cref="NodeStore{TNode, THandler}"/>.
-/// Holds the global arena indices that are roots for this node type in this snapshot, and provides
+/// Holds the <see cref="Handle{T}"/> values that are roots for this node type in this snapshot, and provides
 /// self-contained lifecycle operations.
 ///
 /// LIFECYCLE
-///   1. Build phase: call <see cref="AddRoot"/> for each root index.
+///   1. Build phase: call <see cref="AddRoot"/> for each root handle.
 ///   2. Publish: call <see cref="IncrementRootRefCounts"/> — bumps refcounts so the snapshot "holds" its roots.
 ///   3. Release: call <see cref="DecrementRootRefCounts"/> — decrements refcounts, triggering cascade-free
 ///      for any that hit zero.
@@ -20,15 +20,15 @@ namespace Fabrica.Core.Memory;
 ///   Once a snapshot is fully released, its slices can be reused by future snapshots with zero allocation.
 ///
 /// PORTABILITY
-///   In Rust: a struct holding a reference to the <c>NodeStore</c> and a <c>Vec&lt;i32&gt;</c> for root indices.
-///   In C++: same, with <c>std::vector&lt;int&gt;</c>.
+///   In Rust: a struct holding a reference to the <c>NodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
+///   In C++: same, with <c>std::vector&lt;Handle&gt;</c>.
 /// </summary>
-internal readonly struct SnapshotSlice<TNode, THandler>(NodeStore<TNode, THandler> store, List<int> rootIndices)
+internal readonly struct SnapshotSlice<TNode, THandler>(NodeStore<TNode, THandler> store, List<Handle<TNode>> rootHandles)
     where TNode : struct
-    where THandler : struct, RefCountTable.IRefCountHandler
+    where THandler : struct, RefCountTable<TNode>.IRefCountHandler
 {
     private readonly NodeStore<TNode, THandler> _store = store;
-    private readonly List<int> _rootIndices = rootIndices;
+    private readonly List<Handle<TNode>> _rootHandles = rootHandles;
 
     public SnapshotSlice(NodeStore<TNode, THandler> store)
         : this(store, [])
@@ -39,26 +39,26 @@ internal readonly struct SnapshotSlice<TNode, THandler>(NodeStore<TNode, THandle
     public int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _rootIndices.Count;
+        get => _rootHandles.Count;
     }
 
-    /// <summary>Returns a read-only span over the root indices. Valid until the next <see cref="AddRoot"/> or
+    /// <summary>Returns a read-only span over the root handles. Valid until the next <see cref="AddRoot"/> or
     /// <see cref="Clear"/>.</summary>
-    public ReadOnlySpan<int> Roots
+    public ReadOnlySpan<Handle<TNode>> Roots
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => CollectionsMarshal.AsSpan(_rootIndices);
+        get => CollectionsMarshal.AsSpan(_rootHandles);
     }
 
-    /// <summary>Adds a global arena index as a root in this snapshot slice.</summary>
+    /// <summary>Adds a handle as a root in this snapshot slice.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void AddRoot(int globalIndex)
-        => _rootIndices.Add(globalIndex);
+    public readonly void AddRoot(Handle<TNode> handle)
+        => _rootHandles.Add(handle);
 
     /// <summary>Resets the root list for reuse in the next snapshot. The backing array is retained so
     /// future snapshots allocate nothing in steady state.</summary>
     public readonly void Clear()
-        => _rootIndices.Clear();
+        => _rootHandles.Clear();
 
     /// <summary>
     /// Increments the refcount of every root in this slice. Called when the snapshot is published (e.g.,

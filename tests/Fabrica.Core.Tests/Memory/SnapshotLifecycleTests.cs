@@ -14,27 +14,27 @@ public class SnapshotLifecycleTests
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public int Left { get; set; }
-        public int Right { get; set; }
+        public Handle<TreeNode> Left { get; set; }
+        public Handle<TreeNode> Right { get; set; }
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable.IRefCountHandler
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
-            ref readonly var node = ref arena[index];
-            if (node.Left >= 0) table.Decrement(node.Left, this);
-            if (node.Right >= 0) table.Decrement(node.Right, this);
-            arena.Free(index);
+            ref readonly var node = ref arena[handle];
+            if (node.Left.IsValid) table.Decrement(node.Left, this);
+            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            arena.Free(handle);
         }
     }
 
     private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
     {
-        public readonly void GetChildren(in TreeNode node, List<int> children)
+        public readonly void GetChildren(in TreeNode node, List<Handle<TreeNode>> children)
         {
-            if (node.Left >= 0) children.Add(node.Left);
-            if (node.Right >= 0) children.Add(node.Right);
+            if (node.Left.IsValid) children.Add(node.Left);
+            if (node.Right.IsValid) children.Add(node.Right);
         }
     }
 
@@ -43,47 +43,47 @@ public class SnapshotLifecycleTests
     public SnapshotLifecycleTests()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
-        var refCounts = new RefCountTable();
+        var refCounts = new RefCountTable<TreeNode>();
         var handler = new TreeHandler(arena);
         _store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
         _store.EnableValidation(new TreeChildEnumerator());
     }
 
-    private int AllocNode(int left, int right)
+    private Handle<TreeNode> AllocNode(Handle<TreeNode> left, Handle<TreeNode> right)
     {
-        var index = _store.Arena.Allocate();
-        _store.RefCounts.EnsureCapacity(index + 1);
-        _store.Arena[index] = new TreeNode { Left = left, Right = right };
-        if (left >= 0) _store.RefCounts.Increment(left);
-        if (right >= 0) _store.RefCounts.Increment(right);
-        return index;
+        var handle = _store.Arena.Allocate();
+        _store.RefCounts.EnsureCapacity(handle.Index + 1);
+        _store.Arena[handle] = new TreeNode { Left = left, Right = right };
+        if (left.IsValid) _store.RefCounts.Increment(left);
+        if (right.IsValid) _store.RefCounts.Increment(right);
+        return handle;
     }
 
-    private int BuildPerfectTree(int depth)
+    private Handle<TreeNode> BuildPerfectTree(int depth)
     {
         if (depth == 0)
-            return this.AllocNode(-1, -1);
+            return this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
 
         var left = this.BuildPerfectTree(depth - 1);
         var right = this.BuildPerfectTree(depth - 1);
         return this.AllocNode(left, right);
     }
 
-    private int PathCopyLeftSpine(int oldRoot, int depth)
+    private Handle<TreeNode> PathCopyLeftSpine(Handle<TreeNode> oldRoot, int depth)
     {
         if (depth == 0)
-            return this.AllocNode(-1, -1);
+            return this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
 
         ref readonly var old = ref _store.Arena[oldRoot];
         var newLeft = this.PathCopyLeftSpine(old.Left, depth - 1);
         return this.AllocNode(newLeft, old.Right);
     }
 
-    private void AssertNodeAlive(int index)
-        => Assert.True(_store.RefCounts.GetCount(index) > 0, $"Node {index} should be alive (refcount > 0).");
+    private void AssertNodeAlive(Handle<TreeNode> handle)
+        => Assert.True(_store.RefCounts.GetCount(handle) > 0, $"Node {handle} should be alive (refcount > 0).");
 
-    private void AssertNodeDead(int index)
-        => Assert.Equal(0, _store.RefCounts.GetCount(index));
+    private void AssertNodeDead(Handle<TreeNode> handle)
+        => Assert.Equal(0, _store.RefCounts.GetCount(handle));
 
     // ── FIFO release (consumer catches up in order) ──────────────────────
 
@@ -228,9 +228,9 @@ public class SnapshotLifecycleTests
     public void MultipleRoots_SharedSubtree_SurvivesPartialRootRelease()
     {
         // Shared leaf
-        var shared = this.AllocNode(-1, -1);
-        var root1 = this.AllocNode(shared, -1);
-        var root2 = this.AllocNode(-1, shared);
+        var shared = this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var root1 = this.AllocNode(shared, Handle<TreeNode>.None);
+        var root2 = this.AllocNode(Handle<TreeNode>.None, shared);
 
         var slice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
         slice.AddRoot(root1);
@@ -300,7 +300,7 @@ public class SnapshotLifecycleTests
         {
             // Fresh store per permutation so freed nodes from prior iterations don't interfere.
             var arena = new UnsafeSlabArena<TreeNode>();
-            var refCounts = new RefCountTable();
+            var refCounts = new RefCountTable<TreeNode>();
             var handler = new TreeHandler(arena);
             var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
 
@@ -325,30 +325,30 @@ public class SnapshotLifecycleTests
         }
     }
 
-    private static int AllocNodeInStore(NodeStore<TreeNode, TreeHandler> store, int left, int right)
+    private static Handle<TreeNode> AllocNodeInStore(NodeStore<TreeNode, TreeHandler> store, Handle<TreeNode> left, Handle<TreeNode> right)
     {
-        var index = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(index + 1);
-        store.Arena[index] = new TreeNode { Left = left, Right = right };
-        if (left >= 0) store.RefCounts.Increment(left);
-        if (right >= 0) store.RefCounts.Increment(right);
-        return index;
+        var handle = store.Arena.Allocate();
+        store.RefCounts.EnsureCapacity(handle.Index + 1);
+        store.Arena[handle] = new TreeNode { Left = left, Right = right };
+        if (left.IsValid) store.RefCounts.Increment(left);
+        if (right.IsValid) store.RefCounts.Increment(right);
+        return handle;
     }
 
-    private static int BuildPerfectTreeInStore(NodeStore<TreeNode, TreeHandler> store, int depth)
+    private static Handle<TreeNode> BuildPerfectTreeInStore(NodeStore<TreeNode, TreeHandler> store, int depth)
     {
         if (depth == 0)
-            return AllocNodeInStore(store, -1, -1);
+            return AllocNodeInStore(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
 
         var left = BuildPerfectTreeInStore(store, depth - 1);
         var right = BuildPerfectTreeInStore(store, depth - 1);
         return AllocNodeInStore(store, left, right);
     }
 
-    private static int PathCopyLeftSpineInStore(NodeStore<TreeNode, TreeHandler> store, int oldRoot, int depth)
+    private static Handle<TreeNode> PathCopyLeftSpineInStore(NodeStore<TreeNode, TreeHandler> store, Handle<TreeNode> oldRoot, int depth)
     {
         if (depth == 0)
-            return AllocNodeInStore(store, -1, -1);
+            return AllocNodeInStore(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
 
         ref readonly var old = ref store.Arena[oldRoot];
         var newLeft = PathCopyLeftSpineInStore(store, old.Left, depth - 1);

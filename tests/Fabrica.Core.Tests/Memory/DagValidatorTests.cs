@@ -9,52 +9,55 @@ public class DagValidatorTests
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public int Left { get; set; }
-        public int Right { get; set; }
+        public Handle<TreeNode> Left { get; set; }
+        public Handle<TreeNode> Right { get; set; }
     }
 
     private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
     {
-        public readonly void GetChildren(in TreeNode node, List<int> children)
+        public readonly void GetChildren(in TreeNode node, List<Handle<TreeNode>> children)
         {
-            if (node.Left >= 0) children.Add(node.Left);
-            if (node.Right >= 0) children.Add(node.Right);
+            if (node.Left.IsValid) children.Add(node.Left);
+            if (node.Right.IsValid) children.Add(node.Right);
         }
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable.IRefCountHandler
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
-            ref readonly var node = ref arena[index];
-            if (node.Left >= 0) table.Decrement(node.Left, this);
-            if (node.Right >= 0) table.Decrement(node.Right, this);
-            arena.Free(index);
+            ref readonly var node = ref arena[handle];
+            if (node.Left.IsValid) table.Decrement(node.Left, this);
+            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            arena.Free(handle);
         }
     }
 
     private static NodeStore<TreeNode, TreeHandler> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
-        var refCounts = new RefCountTable();
+        var refCounts = new RefCountTable<TreeNode>();
         var handler = new TreeHandler(arena);
         return new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
     }
 
-    private static int AllocNode(NodeStore<TreeNode, TreeHandler> store, int left, int right)
+    private static Handle<TreeNode> AllocNode(
+        NodeStore<TreeNode, TreeHandler> store,
+        Handle<TreeNode> left,
+        Handle<TreeNode> right)
     {
-        var index = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(index + 1);
-        store.Arena[index] = new TreeNode { Left = left, Right = right };
-        if (left >= 0) store.RefCounts.Increment(left);
-        if (right >= 0) store.RefCounts.Increment(right);
-        return index;
+        var handle = store.Arena.Allocate();
+        store.RefCounts.EnsureCapacity(handle.Index + 1);
+        store.Arena[handle] = new TreeNode { Left = left, Right = right };
+        if (left.IsValid) store.RefCounts.Increment(left);
+        if (right.IsValid) store.RefCounts.Increment(right);
+        return handle;
     }
 
-    private static void AssertValid(NodeStore<TreeNode, TreeHandler> store, ReadOnlySpan<int> roots)
+    private static void AssertValid(NodeStore<TreeNode, TreeHandler> store, ReadOnlySpan<Handle<TreeNode>> roots)
         => DagValidator.AssertValid(store, roots, new TreeChildEnumerator());
 
-    private static List<string> Validate(NodeStore<TreeNode, TreeHandler> store, ReadOnlySpan<int> roots)
+    private static List<string> Validate(NodeStore<TreeNode, TreeHandler> store, ReadOnlySpan<Handle<TreeNode>> roots)
         => DagValidator.Validate(store, roots, new TreeChildEnumerator());
 
     // ── Valid DAGs pass ──────────────────────────────────────────────────
@@ -67,7 +70,7 @@ public class DagValidatorTests
     public void SingleLeafRoot_Valid()
     {
         var store = CreateStore();
-        var root = AllocNode(store, -1, -1);
+        var root = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         store.RefCounts.Increment(root);
         AssertValid(store, [root]);
     }
@@ -76,8 +79,8 @@ public class DagValidatorTests
     public void SimpleTree_Valid()
     {
         var store = CreateStore();
-        var left = AllocNode(store, -1, -1);
-        var right = AllocNode(store, -1, -1);
+        var left = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var right = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         var root = AllocNode(store, left, right);
         store.RefCounts.Increment(root);
         AssertValid(store, [root]);
@@ -93,9 +96,9 @@ public class DagValidatorTests
         //   a      b
         //    \    /
         //     shared
-        var shared = AllocNode(store, -1, -1);
-        var a = AllocNode(store, -1, shared);
-        var b = AllocNode(store, shared, -1);
+        var shared = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var a = AllocNode(store, Handle<TreeNode>.None, shared);
+        var b = AllocNode(store, shared, Handle<TreeNode>.None);
         var root = AllocNode(store, a, b);
 
         // shared has refcount 2 from structural references
@@ -109,9 +112,9 @@ public class DagValidatorTests
     public void DeepTree_Valid()
     {
         var store = CreateStore();
-        var node = AllocNode(store, -1, -1);
+        var node = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         for (var i = 0; i < 10; i++)
-            node = AllocNode(store, node, -1);
+            node = AllocNode(store, node, Handle<TreeNode>.None);
 
         store.RefCounts.Increment(node);
         AssertValid(store, [node]);
@@ -121,8 +124,8 @@ public class DagValidatorTests
     public void MultipleRoots_DisjointTrees_Valid()
     {
         var store = CreateStore();
-        var r1 = AllocNode(store, AllocNode(store, -1, -1), -1);
-        var r2 = AllocNode(store, -1, AllocNode(store, -1, -1));
+        var r1 = AllocNode(store, AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None), Handle<TreeNode>.None);
+        var r2 = AllocNode(store, Handle<TreeNode>.None, AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None));
         store.RefCounts.Increment(r1);
         store.RefCounts.Increment(r2);
         AssertValid(store, [r1, r2]);
@@ -142,9 +145,9 @@ public class DagValidatorTests
     {
         var store = CreateStore();
 
-        var leaf = AllocNode(store, -1, -1);
-        var root1 = AllocNode(store, leaf, -1);
-        var root2 = AllocNode(store, -1, leaf);
+        var leaf = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var root1 = AllocNode(store, leaf, Handle<TreeNode>.None);
+        var root2 = AllocNode(store, Handle<TreeNode>.None, leaf);
 
         store.RefCounts.Increment(root1);
         store.RefCounts.Increment(root2);
@@ -164,14 +167,14 @@ public class DagValidatorTests
         //   a       b      a'      b     (b shared)
         //  / \             / \
         // c   d           c'  d          (d shared)
-        var c = AllocNode(store, -1, -1);
-        var d = AllocNode(store, -1, -1);
+        var c = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var d = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         var a = AllocNode(store, c, d);
-        var b = AllocNode(store, -1, -1);
+        var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         var root1 = AllocNode(store, a, b);
         store.RefCounts.Increment(root1);
 
-        var cPrime = AllocNode(store, -1, -1);
+        var cPrime = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         var aPrime = AllocNode(store, cPrime, d);
         var root2 = AllocNode(store, aPrime, b);
         store.RefCounts.Increment(root2);
@@ -189,8 +192,8 @@ public class DagValidatorTests
     public void DetectsRefcountTooHigh()
     {
         var store = CreateStore();
-        var leaf = AllocNode(store, -1, -1);
-        var root = AllocNode(store, leaf, -1);
+        var leaf = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var root = AllocNode(store, leaf, Handle<TreeNode>.None);
         store.RefCounts.Increment(root);
 
         // Artificially inflate leaf's refcount
@@ -198,16 +201,16 @@ public class DagValidatorTests
         Assert.Equal(2, store.RefCounts.GetCount(leaf));
 
         var issues = Validate(store, [root]);
-        Assert.Contains(issues, i => i.Contains($"Node {leaf}") && i.Contains("expected refcount 1, actual 2"));
+        Assert.Contains(issues, i => i.Contains($"Node {leaf.Index}") && i.Contains("expected refcount 1, actual 2"));
     }
 
     [Fact]
     public void DetectsRefcountTooLow()
     {
         var store = CreateStore();
-        var shared = AllocNode(store, -1, -1);
-        var a = AllocNode(store, shared, -1);
-        var b = AllocNode(store, -1, shared);
+        var shared = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var a = AllocNode(store, shared, Handle<TreeNode>.None);
+        var b = AllocNode(store, Handle<TreeNode>.None, shared);
         var root = AllocNode(store, a, b);
         store.RefCounts.Increment(root);
 
@@ -217,30 +220,30 @@ public class DagValidatorTests
         // To test "too low", we build a graph where the actual refcount is wrong.
         // Instead: build a node with only one parent but set refcount to 2.
         var store2 = CreateStore();
-        var leaf2 = AllocNode(store2, -1, -1);
-        var root2 = AllocNode(store2, leaf2, -1);
+        var leaf2 = AllocNode(store2, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var root2 = AllocNode(store2, leaf2, Handle<TreeNode>.None);
         store2.RefCounts.Increment(root2);
         // leaf2 has refcount 1 (correct). Add an extra increment to make it wrong.
         store2.RefCounts.Increment(leaf2);
 
         var issues2 = Validate(store2, [root2]);
-        Assert.Contains(issues2, i => i.Contains($"Node {leaf2}") && i.Contains("expected refcount 1, actual 2"));
+        Assert.Contains(issues2, i => i.Contains($"Node {leaf2.Index}") && i.Contains("expected refcount 1, actual 2"));
     }
 
     [Fact]
     public void DetectsUnreachableNodeWithPositiveRefcount()
     {
         var store = CreateStore();
-        var root = AllocNode(store, -1, -1);
+        var root = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         store.RefCounts.Increment(root);
 
         // Allocate an orphan node with refcount > 0 (not reachable from any root)
-        var orphan = AllocNode(store, -1, -1);
-        store.RefCounts.EnsureCapacity(orphan + 1);
+        var orphan = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        store.RefCounts.EnsureCapacity(orphan.Index + 1);
         store.RefCounts.Increment(orphan);
 
         var issues = Validate(store, [root]);
-        Assert.Contains(issues, i => i.Contains($"Node {orphan}") && i.Contains("reachable=False"));
+        Assert.Contains(issues, i => i.Contains($"Node {orphan.Index}") && i.Contains("reachable=False"));
     }
 
     // ── Violation: empty roots but live nodes ────────────────────────────
@@ -249,11 +252,11 @@ public class DagValidatorTests
     public void DetectsLiveNodesWithEmptyRoots()
     {
         var store = CreateStore();
-        var node = AllocNode(store, -1, -1);
+        var node = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
         store.RefCounts.Increment(node);
 
         var issues = Validate(store, []);
-        Assert.Contains(issues, i => i.Contains($"Node {node}") && i.Contains("expected refcount 0, actual 1"));
+        Assert.Contains(issues, i => i.Contains($"Node {node.Index}") && i.Contains("expected refcount 0, actual 1"));
     }
 
     // ── Violation: root is also a child ──────────────────────────────────
@@ -262,15 +265,15 @@ public class DagValidatorTests
     public void DetectsRootThatIsAlsoChild()
     {
         var store = CreateStore();
-        var child = AllocNode(store, -1, -1);
-        var root = AllocNode(store, child, -1);
+        var child = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var root = AllocNode(store, child, Handle<TreeNode>.None);
         store.RefCounts.Increment(root);
 
         // Mark 'child' as a root too — but it's also pointed at by 'root'
         store.RefCounts.Increment(child);
 
         var issues = Validate(store, [root, child]);
-        Assert.Contains(issues, i => i.Contains($"Root {child}") && i.Contains("also a child"));
+        Assert.Contains(issues, i => i.Contains($"Root {child.Index}") && i.Contains("also a child"));
     }
 
     [Fact]
@@ -283,15 +286,15 @@ public class DagValidatorTests
         //  a    b (also marked as root)
         //   \  /
         //    c
-        var c = AllocNode(store, -1, -1);
-        var a = AllocNode(store, -1, c);
-        var b = AllocNode(store, c, -1);
+        var c = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var a = AllocNode(store, Handle<TreeNode>.None, c);
+        var b = AllocNode(store, c, Handle<TreeNode>.None);
         var root = AllocNode(store, a, b);
         store.RefCounts.Increment(root);
         store.RefCounts.Increment(b);
 
         var issues = Validate(store, [root, b]);
-        Assert.Contains(issues, i => i.Contains($"Root {b}") && i.Contains("also a child"));
+        Assert.Contains(issues, i => i.Contains($"Root {b.Index}") && i.Contains("also a child"));
     }
 
     // ── Violation: cycle detection ───────────────────────────────────────
@@ -301,9 +304,9 @@ public class DagValidatorTests
     {
         var store = CreateStore();
         var node = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(node + 1);
+        store.RefCounts.EnsureCapacity(node.Index + 1);
         // Self-loop: node points to itself
-        store.Arena[node] = new TreeNode { Left = node, Right = -1 };
+        store.Arena[node] = new TreeNode { Left = node, Right = Handle<TreeNode>.None };
         store.RefCounts.Increment(node); // structural self-reference
         store.RefCounts.Increment(node); // root hold
 
@@ -317,11 +320,11 @@ public class DagValidatorTests
         var store = CreateStore();
         var a = store.Arena.Allocate();
         var b = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(b + 1);
+        store.RefCounts.EnsureCapacity(b.Index + 1);
 
         // a → b → a (cycle)
-        store.Arena[a] = new TreeNode { Left = b, Right = -1 };
-        store.Arena[b] = new TreeNode { Left = a, Right = -1 };
+        store.Arena[a] = new TreeNode { Left = b, Right = Handle<TreeNode>.None };
+        store.Arena[b] = new TreeNode { Left = a, Right = Handle<TreeNode>.None };
         store.RefCounts.Increment(a); // b → a
         store.RefCounts.Increment(b); // a → b
         store.RefCounts.Increment(a); // root hold
@@ -336,12 +339,12 @@ public class DagValidatorTests
     public void DetectsOutOfRangeChild()
     {
         var store = CreateStore();
-        var node = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(node + 1);
-        store.Arena[node] = new TreeNode { Left = 9999, Right = -1 };
-        store.RefCounts.Increment(node);
+        var handle = store.Arena.Allocate();
+        store.RefCounts.EnsureCapacity(handle.Index + 1);
+        store.Arena[handle] = new TreeNode { Left = new Handle<TreeNode>(9999), Right = Handle<TreeNode>.None };
+        store.RefCounts.Increment(handle);
 
-        var issues = Validate(store, [node]);
+        var issues = Validate(store, [handle]);
         Assert.Contains(issues, i => i.Contains("out-of-range child index 9999"));
     }
 
@@ -408,20 +411,23 @@ public class DagValidatorTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static int BuildPerfectTree(NodeStore<TreeNode, TreeHandler> store, int depth)
+    private static Handle<TreeNode> BuildPerfectTree(NodeStore<TreeNode, TreeHandler> store, int depth)
     {
         if (depth == 0)
-            return AllocNode(store, -1, -1);
+            return AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
 
         var left = BuildPerfectTree(store, depth - 1);
         var right = BuildPerfectTree(store, depth - 1);
         return AllocNode(store, left, right);
     }
 
-    private static int PathCopyLeftSpine(NodeStore<TreeNode, TreeHandler> store, int oldRoot, int depth)
+    private static Handle<TreeNode> PathCopyLeftSpine(
+        NodeStore<TreeNode, TreeHandler> store,
+        Handle<TreeNode> oldRoot,
+        int depth)
     {
         if (depth == 0)
-            return AllocNode(store, -1, -1);
+            return AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
 
         ref readonly var old = ref store.Arena[oldRoot];
         var newLeft = PathCopyLeftSpine(store, old.Left, depth - 1);
