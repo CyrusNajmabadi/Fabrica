@@ -148,7 +148,21 @@ for the pool — stealing is for the execution deque (PR 4), not the object pool
 
 ---
 
-## Research Documents (This Directory)
+## Research Documents (Full Index)
+
+### 2026-04-01
+
+- `../2026-04-01/architecture-validation-survey.md` — Validated Fabrica's pipeline against
+  industry practice (Fix Your Timestep, EBR, volatile SPSC, struct generics, core pinning)
+
+### 2026-04-02
+
+- `../2026-04-02/dynamic-resource-allocation-and-job-systems.md` — Unified pools, work stealing,
+  coordinator-as-worker decision, CountdownEvent for fork-join
+- `../2026-04-02/unified-job-systems-industry-convergence.md` — Why the industry abandoned
+  dedicated thread pools; PID vs threshold equilibrium; spin-then-park; quality scaling
+
+### 2026-04-03
 
 - `deferred-reference-counting.md` — DRC, Biased RC, EBR, Hazard Pointers, percpu_ref
 - `cache-friendly-concurrency.md` — MESI, false sharing, atomics cost, Disruptor, batching
@@ -158,4 +172,4 @@ for the pool — stealing is for the execution deque (PR 4), not the object pool
 - `job-dependency-systems.md` — Unity, Unreal, TBB, Taskflow, CountdownEvent tradeoffs
 - `real-engine-architectures.md` — Naughty Dog, id Tech, Bungie, Bevy, EnTT, DOD
 - `engine-job-pooling-survey.md` — How engines pool job objects (spoiler: simply)
-- `../2026-04-02/dynamic-resource-allocation-and-job-systems.md` — Prior research on unified pools
+- `synthesis-and-recommendations.md` — This file; ties everything together
