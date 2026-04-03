@@ -4,17 +4,27 @@ namespace Fabrica.Core.Memory;
 /// Validates structural invariants of arena-backed DAGs. Intended for use in tests and debug scenarios —
 /// validation is O(N) in the number of live nodes and should not be called on hot paths.
 ///
-/// INVARIANTS CHECKED
+/// TWO MODES
+///   <b>Strict</b> (default): checks exact refcount match, reachability, root purity, empty-roots.
+///   Use when the caller knows ALL roots are registered and there are no cross-store references.
+///
+///   <b>Relaxed</b>: checks <c>actual &gt;= expected</c> instead of exact match. Tolerates extra refcounts
+///   from cross-store references or roots not yet tracked. Used by automatic validation in
+///   <see cref="NodeStore{TNode, THandler}.EnableValidation{TEnumerator}"/>.
+///
+/// INVARIANTS CHECKED (both modes)
 ///   1. Acyclicity — the graph is a DAG, not a cyclic graph.
-///   2. Refcount accuracy — every node's stored refcount matches the computed count (parent edges + root holds).
-///   3. Reachability — every node with refcount > 0 is reachable from at least one root.
-///   4. Root purity — no root is a child of another reachable node (true roots have no in-edges).
-///   5. Empty roots — if the root set is empty, no node should have a positive refcount.
-///   6. No dangling references — children of reachable nodes have positive refcounts.
+///   2. Refcount floor — every reachable node's stored refcount is at least the computed count.
+///   3. No dangling references — children of reachable nodes are within the valid index range.
+///
+/// ADDITIONAL INVARIANTS (strict mode only)
+///   4. Refcount accuracy — every node's stored refcount exactly matches the computed count.
+///   5. Reachability — every node with refcount &gt; 0 is reachable from at least one root.
+///   6. Root purity — no root is a child of another reachable node (true roots have no in-edges).
 ///
 /// USAGE
 ///   Define a struct implementing <see cref="IChildEnumerator{TNode}"/> that appends same-store child
-///   indices (>= 0) to the provided list. Then call <see cref="AssertValid"/> or <see cref="Validate"/>
+///   indices (&gt;= 0) to the provided list. Then call <see cref="AssertValid"/> or <see cref="Validate"/>
 ///   after building or modifying a DAG.
 ///
 /// PORTABILITY
@@ -24,7 +34,7 @@ internal static class DagValidator
 {
     /// <summary>
     /// Struct callback that enumerates the same-store child indices of a node. Implementations should
-    /// append only valid (>= 0) child indices to <paramref name="children"/>. Sentinel values (-1) must
+    /// append only valid (&gt;= 0) child indices to <paramref name="children"/>. Sentinel values (-1) must
     /// be filtered out by the implementation.
     /// </summary>
     internal interface IChildEnumerator<TNode> where TNode : struct
@@ -33,30 +43,35 @@ internal static class DagValidator
     }
 
     /// <summary>
-    /// Validates all DAG invariants and throws <see cref="DagValidationException"/> if any are violated.
-    /// The exception message contains all violations found.
+    /// Validates DAG invariants and throws <see cref="DagValidationException"/> if any are violated.
     /// </summary>
+    /// <param name="strict">When true (default), checks exact refcount match and reachability.
+    /// When false, only checks <c>actual &gt;= expected</c> (tolerates cross-store or untracked references).</param>
     internal static void AssertValid<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
         ReadOnlySpan<int> roots,
-        TEnumerator enumerator)
+        TEnumerator enumerator,
+        bool strict = true)
         where TNode : struct
         where THandler : struct, RefCountTable.IRefCountHandler
         where TEnumerator : struct, IChildEnumerator<TNode>
     {
-        var issues = Validate(store, roots, enumerator);
+        var issues = Validate(store, roots, enumerator, strict);
         if (issues.Count > 0)
             throw new DagValidationException(issues);
     }
 
     /// <summary>
-    /// Validates all DAG invariants and returns a list of violation descriptions. An empty list means
-    /// the DAG is well-formed.
+    /// Validates DAG invariants and returns a list of violation descriptions. An empty list means
+    /// the DAG is well-formed (within the chosen strictness level).
     /// </summary>
+    /// <param name="strict">When true (default), checks exact refcount match and reachability.
+    /// When false, only checks <c>actual &gt;= expected</c>.</param>
     internal static List<string> Validate<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
         ReadOnlySpan<int> roots,
-        TEnumerator enumerator)
+        TEnumerator enumerator,
+        bool strict = true)
         where TNode : struct
         where THandler : struct, RefCountTable.IRefCountHandler
         where TEnumerator : struct, IChildEnumerator<TNode>
@@ -71,7 +86,7 @@ internal static class DagValidator
         var color = new int[highWater];
 
         // Track which indices appear as children of any reachable node (for root purity check)
-        var isChildOfSomeNode = new bool[highWater];
+        var isChildOfSomeNode = strict ? new bool[highWater] : null;
 
         // Reusable buffer for child enumeration
         var childBuffer = new List<int>();
@@ -135,7 +150,8 @@ internal static class DagValidator
                         continue;
                     }
 
-                    isChildOfSomeNode[child] = true;
+                    isChildOfSomeNode?[child] = true;
+
                     expectedRefCount[child]++;
 
                     if (color[child] == 1)
@@ -150,27 +166,39 @@ internal static class DagValidator
             }
         }
 
-        // Compare expected vs actual refcounts for all indices in range
+        // Compare expected vs actual refcounts
         for (var i = 0; i < highWater; i++)
         {
             var actual = store.RefCounts.GetCount(i);
             var expected = expectedRefCount[i];
+            var reachable = color[i] == 2;
 
-            if (actual != expected)
+            if (strict)
             {
-                var reachable = color[i] == 2;
-                issues.Add(
-                    $"Node {i}: expected refcount {expected}, actual {actual}" +
-                    $" (reachable={reachable}).");
+                if (actual != expected)
+                    issues.Add(
+                        $"Node {i}: expected refcount {expected}, actual {actual}" +
+                        $" (reachable={reachable}).");
+            }
+            else
+            {
+                // Relaxed: actual must be at least expected. Extra refcounts are OK (cross-store
+                // references or untracked roots contribute additional holds).
+                if (reachable && actual < expected)
+                    issues.Add(
+                        $"Node {i}: refcount too low — expected at least {expected}, actual {actual}.");
             }
         }
 
-        // Root purity: roots should not be children of other reachable nodes
-        for (var i = 0; i < roots.Length; i++)
+        // Root purity (strict mode only)
+        if (isChildOfSomeNode != null)
         {
-            var root = roots[i];
-            if (root >= 0 && root < highWater && isChildOfSomeNode[root])
-                issues.Add($"Root {root} is also a child of another node in the DAG.");
+            for (var i = 0; i < roots.Length; i++)
+            {
+                var root = roots[i];
+                if (root >= 0 && root < highWater && isChildOfSomeNode[root])
+                    issues.Add($"Root {root} is also a child of another node in the DAG.");
+            }
         }
 
         return issues;

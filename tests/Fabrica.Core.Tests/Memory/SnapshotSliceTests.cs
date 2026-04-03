@@ -25,12 +25,23 @@ public class SnapshotSliceTests
         }
     }
 
+    private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
+    {
+        public readonly void GetChildren(in TreeNode node, List<int> children)
+        {
+            if (node.Left >= 0) children.Add(node.Left);
+            if (node.Right >= 0) children.Add(node.Right);
+        }
+    }
+
     private static NodeStore<TreeNode, TreeHandler> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable();
         var handler = new TreeHandler(arena);
-        return new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+        var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+        store.EnableValidation(new TreeChildEnumerator());
+        return store;
     }
 
     private static int AllocNode(NodeStore<TreeNode, TreeHandler> store, int left, int right, int value)
