@@ -29,6 +29,15 @@ public class SnapshotLifecycleTests
         }
     }
 
+    private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
+    {
+        public readonly void GetChildren(in TreeNode node, List<int> children)
+        {
+            if (node.Left >= 0) children.Add(node.Left);
+            if (node.Right >= 0) children.Add(node.Right);
+        }
+    }
+
     private readonly NodeStore<TreeNode, TreeHandler> _store;
 
     public SnapshotLifecycleTests()
@@ -37,6 +46,7 @@ public class SnapshotLifecycleTests
         var refCounts = new RefCountTable();
         var handler = new TreeHandler(arena);
         _store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+        _store.EnableValidation(new TreeChildEnumerator());
     }
 
     private int AllocNode(int left, int right)

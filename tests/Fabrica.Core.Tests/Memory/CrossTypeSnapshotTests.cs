@@ -56,6 +56,26 @@ public class CrossTypeSnapshotTests
         }
     }
 
+    // ── Child enumerators (same-store children only) ───────────────────
+
+    private struct ParentChildEnumerator : DagValidator.IChildEnumerator<ParentNode>
+    {
+        public readonly void GetChildren(in ParentNode node, List<int> children)
+        {
+            if (node.LeftParent >= 0) children.Add(node.LeftParent);
+            if (node.RightParent >= 0) children.Add(node.RightParent);
+        }
+    }
+
+    private struct ChildChildEnumerator : DagValidator.IChildEnumerator<ChildNode>
+    {
+        public readonly void GetChildren(in ChildNode node, List<int> children)
+        {
+            if (node.LeftChild >= 0) children.Add(node.LeftChild);
+            if (node.RightChild >= 0) children.Add(node.RightChild);
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static (NodeStore<ParentNode, ParentHandler> parentStore, NodeStore<ChildNode, ChildHandler> childStore)
@@ -65,11 +85,13 @@ public class CrossTypeSnapshotTests
         var childRefCounts = new RefCountTable();
         var childHandler = new ChildHandler(childArena);
         var childStore = new NodeStore<ChildNode, ChildHandler>(childArena, childRefCounts, childHandler);
+        childStore.EnableValidation(new ChildChildEnumerator());
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable();
         var parentHandler = new ParentHandler(parentArena, childStore);
         var parentStore = new NodeStore<ParentNode, ParentHandler>(parentArena, parentRefCounts, parentHandler);
+        parentStore.EnableValidation(new ParentChildEnumerator());
 
         return (parentStore, childStore);
     }

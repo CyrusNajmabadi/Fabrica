@@ -25,12 +25,23 @@ public class NodeStoreTests
         }
     }
 
+    private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
+    {
+        public readonly void GetChildren(in TreeNode node, List<int> children)
+        {
+            if (node.Left >= 0) children.Add(node.Left);
+            if (node.Right >= 0) children.Add(node.Right);
+        }
+    }
+
     private static NodeStore<TreeNode, TreeHandler> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable();
         var handler = new TreeHandler(arena);
-        return new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+        var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+        store.EnableValidation(new TreeChildEnumerator());
+        return store;
     }
 
     private static int AllocNode(NodeStore<TreeNode, TreeHandler> store, int left, int right, int value)
@@ -47,10 +58,9 @@ public class NodeStoreTests
     public void IncrementRoots_BumpsRefcounts()
     {
         var store = CreateStore();
-        store.RefCounts.EnsureCapacity(3);
-        var a = store.Arena.Allocate();
-        var b = store.Arena.Allocate();
-        var c = store.Arena.Allocate();
+        var a = AllocNode(store, -1, -1, 0);
+        var b = AllocNode(store, -1, -1, 0);
+        var c = AllocNode(store, -1, -1, 0);
 
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
@@ -67,8 +77,7 @@ public class NodeStoreTests
     public void IncrementRoots_MultipleTimesStacksRefcounts()
     {
         var store = CreateStore();
-        store.RefCounts.EnsureCapacity(1);
-        var a = store.Arena.Allocate();
+        var a = AllocNode(store, -1, -1, 0);
 
         store.IncrementRoots([a]);
         store.IncrementRoots([a]);
