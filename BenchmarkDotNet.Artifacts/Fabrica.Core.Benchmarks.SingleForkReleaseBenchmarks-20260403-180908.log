@@ -1,0 +1,323 @@
+// Validating benchmarks:
+// ***** BenchmarkRunner: Start   *****
+// ***** Found 3 benchmark(s) in total *****
+// ***** Building 1 exe(s) in Parallel: Start   *****
+// start dotnet  restore --nodeReuse:false /p:UseSharedCompilation=false /p:Deterministic=true /p:Optimize=true /p:ArtifactsPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/" /p:OutDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:OutputPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:PublishDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/publish/" in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1
+// command took 0.62 sec and exited with 0
+// start dotnet  build -c Release --no-restore --nodeReuse:false /p:UseSharedCompilation=false /p:Deterministic=true /p:Optimize=true /p:ArtifactsPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/" /p:OutDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:OutputPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:PublishDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/publish/" --output "/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1
+// command took 3.94 sec and exited with 0
+// ***** Done, took 00:00:04 (4.65 sec)   *****
+// Found 3 benchmarks:
+//   SingleForkReleaseBenchmarks.Fork_SingleRandomLeaf: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+//   SingleForkReleaseBenchmarks.Release_SingleOldRoot: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+//   SingleForkReleaseBenchmarks.ForkThenRelease_SingleRandomLeaf: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+
+// **************************
+// Benchmark: SingleForkReleaseBenchmarks.Fork_SingleRandomLeaf: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 125 126 --benchmarkName "Fabrica.Core.Benchmarks.SingleForkReleaseBenchmarks.Fork_SingleRandomLeaf(TreeDepth: 19)" --job ShortRun --benchmarkId 0 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 65167.00 ns, 65.1670 us/op
+WorkloadJitting  1: 1 op, 733750.00 ns, 733.7500 us/op
+
+OverheadWarmup   1: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   2: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   3: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   4: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   6: 1 op, 41.00 ns, 41.0000 ns/op
+
+OverheadActual   1: 1 op, 209.00 ns, 209.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   6: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   7: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   8: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   9: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  10: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  11: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  12: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  13: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  14: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  15: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  16: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  17: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  18: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  19: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  20: 1 op, 41.00 ns, 41.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 2125.00 ns, 2.1250 us/op
+WorkloadWarmup   2: 1 op, 1250.00 ns, 1.2500 us/op
+WorkloadWarmup   3: 1 op, 1208.00 ns, 1.2080 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 1583.00 ns, 1.5830 us/op
+WorkloadActual   2: 1 op, 1375.00 ns, 1.3750 us/op
+WorkloadActual   3: 1 op, 1250.00 ns, 1.2500 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 1541.00 ns, 1.5410 us/op
+WorkloadResult   2: 1 op, 1333.00 ns, 1.3330 us/op
+WorkloadResult   3: 1 op, 1208.00 ns, 1.2080 us/op
+// GC:  0 0 0 65560 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 84417 has exited with code 0.
+
+Mean = 1.361 μs, StdErr = 0.097 μs (7.14%), N = 3, StdDev = 0.168 μs
+Min = 1.208 μs, Q1 = 1.270 μs, Median = 1.333 μs, Q3 = 1.437 μs, Max = 1.541 μs
+IQR = 0.167 μs, LowerFence = 1.021 μs, UpperFence = 1.687 μs
+ConfidenceInterval = [-1.708 μs; 4.430 μs] (CI 99.9%), Margin = 3.069 μs (225.54% of Mean)
+Skewness = 0.16, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 2 (66.7%) benchmark(s) to run. Estimated finish 2026-04-03 18:09 (0h 0m from now) **
+// **************************
+// Benchmark: SingleForkReleaseBenchmarks.Release_SingleOldRoot: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 125 126 --benchmarkName "Fabrica.Core.Benchmarks.SingleForkReleaseBenchmarks.Release_SingleOldRoot(TreeDepth: 19)" --job ShortRun --benchmarkId 1 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 71416.00 ns, 71.4160 us/op
+WorkloadJitting  1: 1 op, 317500.00 ns, 317.5000 us/op
+
+OverheadWarmup   1: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   2: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   4: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   6: 1 op, 84.00 ns, 84.0000 ns/op
+
+OverheadActual   1: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   6: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   7: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   8: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   9: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  10: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  11: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  12: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  13: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  14: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  15: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  16: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  17: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  18: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  19: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 3667.00 ns, 3.6670 us/op
+WorkloadWarmup   2: 1 op, 2250.00 ns, 2.2500 us/op
+WorkloadWarmup   3: 1 op, 2666.00 ns, 2.6660 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 3083.00 ns, 3.0830 us/op
+WorkloadActual   2: 1 op, 1959.00 ns, 1.9590 us/op
+WorkloadActual   3: 1 op, 2541.00 ns, 2.5410 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 3041.00 ns, 3.0410 us/op
+WorkloadResult   2: 1 op, 1917.00 ns, 1.9170 us/op
+WorkloadResult   3: 1 op, 2499.00 ns, 2.4990 us/op
+// GC:  0 0 0 152 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 84418 has exited with code 0.
+
+Mean = 2.486 μs, StdErr = 0.325 μs (13.06%), N = 3, StdDev = 0.562 μs
+Min = 1.917 μs, Q1 = 2.208 μs, Median = 2.499 μs, Q3 = 2.770 μs, Max = 3.041 μs
+IQR = 0.562 μs, LowerFence = 1.365 μs, UpperFence = 3.613 μs
+ConfidenceInterval = [-7.769 μs; 12.741 μs] (CI 99.9%), Margin = 10.255 μs (412.57% of Mean)
+Skewness = -0.02, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 1 (33.3%) benchmark(s) to run. Estimated finish 2026-04-03 18:09 (0h 0m from now) **
+// **************************
+// Benchmark: SingleForkReleaseBenchmarks.ForkThenRelease_SingleRandomLeaf: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 125 126 --benchmarkName "Fabrica.Core.Benchmarks.SingleForkReleaseBenchmarks.ForkThenRelease_SingleRandomLeaf(TreeDepth: 19)" --job ShortRun --benchmarkId 2 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 69750.00 ns, 69.7500 us/op
+WorkloadJitting  1: 1 op, 945625.00 ns, 945.6250 us/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   6: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   7: 1 op, 42.00 ns, 42.0000 ns/op
+
+OverheadActual   1: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   6: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   7: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   8: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   9: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  10: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  11: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  12: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  13: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  14: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  15: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  16: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  17: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  18: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  19: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 4625.00 ns, 4.6250 us/op
+WorkloadWarmup   2: 1 op, 2791.00 ns, 2.7910 us/op
+WorkloadWarmup   3: 1 op, 3542.00 ns, 3.5420 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 3833.00 ns, 3.8330 us/op
+WorkloadActual   2: 1 op, 2792.00 ns, 2.7920 us/op
+WorkloadActual   3: 1 op, 2916.00 ns, 2.9160 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 3791.00 ns, 3.7910 us/op
+WorkloadResult   2: 1 op, 2750.00 ns, 2.7500 us/op
+WorkloadResult   3: 1 op, 2874.00 ns, 2.8740 us/op
+// GC:  0 0 0 65712 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 84419 has exited with code 0.
+
+Mean = 3.138 μs, StdErr = 0.328 μs (10.46%), N = 3, StdDev = 0.569 μs
+Min = 2.750 μs, Q1 = 2.812 μs, Median = 2.874 μs, Q3 = 3.333 μs, Max = 3.791 μs
+IQR = 0.520 μs, LowerFence = 2.031 μs, UpperFence = 4.113 μs
+ConfidenceInterval = [-7.235 μs; 13.512 μs] (CI 99.9%), Margin = 10.374 μs (330.55% of Mean)
+Skewness = 0.36, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 0 (0.0%) benchmark(s) to run. Estimated finish 2026-04-03 18:09 (0h 0m from now) **
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts/results/Fabrica.Core.Benchmarks.SingleForkReleaseBenchmarks-report.csv
+  BenchmarkDotNet.Artifacts/results/Fabrica.Core.Benchmarks.SingleForkReleaseBenchmarks-report-github.md
+  BenchmarkDotNet.Artifacts/results/Fabrica.Core.Benchmarks.SingleForkReleaseBenchmarks-report.html
+
+// * Detailed results *
+SingleForkReleaseBenchmarks.Fork_SingleRandomLeaf: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 1.361 μs, StdErr = 0.097 μs (7.14%), N = 3, StdDev = 0.168 μs
+Min = 1.208 μs, Q1 = 1.270 μs, Median = 1.333 μs, Q3 = 1.437 μs, Max = 1.541 μs
+IQR = 0.167 μs, LowerFence = 1.021 μs, UpperFence = 1.687 μs
+ConfidenceInterval = [-1.708 μs; 4.430 μs] (CI 99.9%), Margin = 3.069 μs (225.54% of Mean)
+Skewness = 0.16, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[1.117 μs ; 1.424 μs) | @@
+[1.424 μs ; 1.694 μs) | @
+---------------------------------------------------
+
+SingleForkReleaseBenchmarks.Release_SingleOldRoot: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 2.486 μs, StdErr = 0.325 μs (13.06%), N = 3, StdDev = 0.562 μs
+Min = 1.917 μs, Q1 = 2.208 μs, Median = 2.499 μs, Q3 = 2.770 μs, Max = 3.041 μs
+IQR = 0.562 μs, LowerFence = 1.365 μs, UpperFence = 3.613 μs
+ConfidenceInterval = [-7.769 μs; 12.741 μs] (CI 99.9%), Margin = 10.255 μs (412.57% of Mean)
+Skewness = -0.02, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[1.405 μs ; 2.258 μs) | @
+[2.258 μs ; 3.282 μs) | @@
+---------------------------------------------------
+
+SingleForkReleaseBenchmarks.ForkThenRelease_SingleRandomLeaf: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [TreeDepth=19]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 3.138 μs, StdErr = 0.328 μs (10.46%), N = 3, StdDev = 0.569 μs
+Min = 2.750 μs, Q1 = 2.812 μs, Median = 2.874 μs, Q3 = 3.333 μs, Max = 3.791 μs
+IQR = 0.520 μs, LowerFence = 2.031 μs, UpperFence = 4.113 μs
+ConfidenceInterval = [-7.235 μs; 13.512 μs] (CI 99.9%), Margin = 10.374 μs (330.55% of Mean)
+Skewness = 0.36, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[2.233 μs ; 3.329 μs) | @@
+[3.329 μs ; 4.308 μs) | @
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.15.8, macOS Tahoe 26.3.1 (a) (25D771280a) [Darwin 25.3.0]
+Apple M4 Max, 1 CPU, 16 logical and 16 physical cores
+.NET SDK 10.0.102
+  [Host]   : .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+  ShortRun : .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+
+Job=ShortRun  InvocationCount=1  IterationCount=3  
+LaunchCount=1  UnrollFactor=1  WarmupCount=3  
+
+| Method                           | TreeDepth | Mean     | Error     | StdDev    | Ratio | RatioSD | Allocated | Alloc Ratio |
+|--------------------------------- |---------- |---------:|----------:|----------:|------:|--------:|----------:|------------:|
+| Fork_SingleRandomLeaf            | 19        | 1.361 μs |  3.069 μs | 0.1682 μs |  1.01 |    0.15 |   65560 B |       1.000 |
+| Release_SingleOldRoot            | 19        | 2.486 μs | 10.255 μs | 0.5621 μs |  1.85 |    0.41 |     152 B |       0.002 |
+| ForkThenRelease_SingleRandomLeaf | 19        | 3.138 μs | 10.374 μs | 0.5686 μs |  2.33 |    0.44 |   65712 B |       1.002 |
+
+// * Warnings *
+MinIterationTime
+  SingleForkReleaseBenchmarks.Fork_SingleRandomLeaf: ShortRun            -> The minimum observed iteration time is 1.25μs which is very small. It's recommended to increase it to at least 100ms using more operations.
+  SingleForkReleaseBenchmarks.Release_SingleOldRoot: ShortRun            -> The minimum observed iteration time is 1.959μs which is very small. It's recommended to increase it to at least 100ms using more operations.
+  SingleForkReleaseBenchmarks.ForkThenRelease_SingleRandomLeaf: ShortRun -> The minimum observed iteration time is 2.792μs which is very small. It's recommended to increase it to at least 100ms using more operations.
+// * Config Issues *
+
+// * Warnings *
+Configuration
+  Summary -> The exporter MarkdownExporter-github is already present in configuration. There may be unexpected results.
+
+// * Legends *
+  TreeDepth   : Value of the 'TreeDepth' parameter
+  Mean        : Arithmetic mean of all measurements
+  Error       : Half of 99.9% confidence interval
+  StdDev      : Standard deviation of all measurements
+  Ratio       : Mean of the ratio distribution ([Current]/[Baseline])
+  RatioSD     : Standard deviation of the ratio distribution ([Current]/[Baseline])
+  Allocated   : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  Alloc Ratio : Allocated memory ratio distribution ([Current]/[Baseline])
+  1 μs        : 1 Microsecond (0.000001 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:00 (0.45 sec), executed benchmarks: 3
+
+Global total time: 00:00:05 (5.4 sec), executed benchmarks: 3
+// * Artifacts cleanup *
+Artifacts cleanup is finished
