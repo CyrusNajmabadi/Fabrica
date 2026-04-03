@@ -65,6 +65,7 @@ public class CoordinatorBenchmarks
     private ArenaCoordinator<TreeNode> _coordinator = null!;
     private ThreadLocalBuffer<TreeNode> _buffer = null!;
     private ThreadLocalBuffer<TreeNode>[] _bufferArray = null!;
+    private Random _rng = null!;
     private int _rootIndex;
 
     // ── Setup ────────────────────────────────────────────────────────────
@@ -104,6 +105,7 @@ public class CoordinatorBenchmarks
             if (node.Right >= 0) _refCounts.Increment(node.Right);
         }
 
+        _rng = new Random(42);
         _rootIndex = 0;
     }
 
@@ -159,14 +161,13 @@ public class CoordinatorBenchmarks
     [Benchmark(Baseline = true)]
     public int Coordinator_ForkThenRelease()
     {
-        var rng = new Random(42);
         var leafCount = 1 << TreeDepth;
         var handler = new TreeHandler(_arena);
         var root = _rootIndex;
 
         for (var i = 0; i < N; i++)
         {
-            var localRoot = FillBuffer(root, rng.Next(leafCount));
+            var localRoot = FillBuffer(root, _rng.Next(leafCount));
 
             _coordinator.MergeBuffer(_buffer);
             var newRoot = _coordinator.GetGlobalIndex(localRoot);
@@ -188,13 +189,12 @@ public class CoordinatorBenchmarks
     [Benchmark]
     public int Coordinator_MergeOnly()
     {
-        var rng = new Random(42);
         var leafCount = 1 << TreeDepth;
         var root = _rootIndex;
 
         for (var i = 0; i < N; i++)
         {
-            var localRoot = FillBuffer(root, rng.Next(leafCount));
+            var localRoot = FillBuffer(root, _rng.Next(leafCount));
 
             _coordinator.MergeBuffer(_buffer);
             var newRoot = _coordinator.GetGlobalIndex(localRoot);
@@ -213,14 +213,13 @@ public class CoordinatorBenchmarks
     [Benchmark]
     public int BufferFill_Only()
     {
-        var rng = new Random(42);
         var leafCount = 1 << TreeDepth;
         var root = _rootIndex;
         var lastLocal = 0;
 
         for (var i = 0; i < N; i++)
         {
-            lastLocal = FillBuffer(root, rng.Next(leafCount));
+            lastLocal = FillBuffer(root, _rng.Next(leafCount));
         }
 
         return lastLocal;
