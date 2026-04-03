@@ -30,6 +30,11 @@ namespace Fabrica.Core.Memory;
 /// PORTABILITY
 ///   No GC reliance. All storage is arrays of value types and an array of array references (the directory). In Rust/C++
 ///   this maps to <c>Vec&lt;Box&lt;[T]&gt;&gt;</c> or equivalent. No finalizers, no weak references.
+///
+/// PERFORMANCE (see benchmarks/results/ for full tables)
+///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.7ns sequential, ~0.9ns random (zero-allocation).
+///   Free-list reuse is ~1.5–2x bump at small N, scaling to ~10x at 100K due to Stack&lt;int&gt; overhead. Steady-state
+///   interleaved alloc/free: ~6.8ns/op at 100K entries.
 /// </summary>
 internal sealed class SlabArena<T> where T : struct
 {
