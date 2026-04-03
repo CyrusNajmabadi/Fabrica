@@ -237,6 +237,18 @@ public class SlabArenaTests
     }
 
     [Fact]
+    public void Allocate_PastDirectoryEnd_Crashes()
+    {
+        var arena = CreateTinyArena(directoryLength: 2, slabShift: 1);
+
+        // slabShift=1 → slabLength=2, directoryLength=2 → 4 total entries
+        for (var i = 0; i < 4; i++)
+            arena.Allocate();
+
+        Assert.ThrowsAny<Exception>(() => arena.Allocate());
+    }
+
+    [Fact]
     public void SlabsOnlyAllocatedOnDemand()
     {
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
