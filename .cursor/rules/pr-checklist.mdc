@@ -1,0 +1,57 @@
+---
+description: Quality checklist for pull requests — accumulated lessons from prior PRs
+alwaysApply: true
+---
+
+# PR Quality Checklist
+
+Process and quality items to follow for every PR. Complements the style, portability, allocation,
+and project-structure rules defined in sibling rule files.
+
+## Implementation
+
+- **Safe first, then unsafe.** Implement with safe code. Benchmark it. Then explore
+  `Unsafe.Add` / `MemoryMarshal` optimizations in release builds (`#if !DEBUG`). Document the
+  before/after numbers. Only keep the unsafe path if it measurably helps.
+- **Struct generic callbacks.** Use `where T : struct, IFoo` for hot-path callbacks — no
+  interface dispatch, no boxing. Follow the `IRefCountHandler` / `IArenaNode` pattern.
+- **SingleThreadedOwner.** Add debug-time thread ownership assertions on types designed for
+  single-threaded use. Catches cross-thread misuse without runtime cost in release.
+- **TestAccessor pattern.** Expose internals to tests via a nested `TestAccessor` struct
+  returned by `GetTestAccessor()`. Never widen visibility of the type itself.
+- **Internal visibility.** Keep building-block types `internal`. Only promote to `public` when
+  required by another assembly.
+
+## Allocations
+
+- **No allocations in hot loops.** Do not `new` objects inside frequently-called methods. Use
+  fields for reusable scratch space (arrays, lists, stacks). Verify with `[MemoryDiagnoser]`
+  in benchmarks.
+- **EnsureCapacity upfront.** Pre-allocate slab/array capacity before entering hot loops to
+  avoid mid-loop growth checks and array copies.
+
+## Code Quality
+
+- **Reuse existing types.** Before creating a new collection or helper, check if
+  `UnsafeStack<T>`, `UnsafeSlabDirectory<T>`, `SlabSizeHelper<T>`, or similar already solve
+  the need.
+- **Avoid code duplication.** Extract shared logic into private helpers or shared internal types.
+  Large copy-pasted blocks across types are not acceptable.
+- **dotnet format.** Run `dotnet format --verify-no-changes` after every substantive change. Fix
+  violations immediately — do not leave them for a later pass.
+
+## Testing
+
+- **Comprehensive tests.** Cover edge cases and permutations. Use `[Theory]` with `[InlineData]`
+  for parameterized variations. Prefer programmatic generation of test cases over hand-coded
+  permutations.
+- **Benchmarks.** Use production-default parameters. Run with BenchmarkDotNet and
+  `[MemoryDiagnoser]`. Record results in `benchmarks/results/<date>/`. Add a brief summary in
+  source doc comments pointing to the results directory.
+
+## Documentation
+
+- **Research and plans.** Write research docs in `research/<date>/`, plans in `plans/<date>/`.
+  Do this for every non-trivial PR.
+- **Portability notes.** On new types, include a brief `PORTABILITY` section in the doc comment
+  explaining how the type maps to Rust/C++.
