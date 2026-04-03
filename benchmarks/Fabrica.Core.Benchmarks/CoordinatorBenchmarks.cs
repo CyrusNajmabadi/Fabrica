@@ -6,8 +6,11 @@ namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
 /// Benchmarks for the <see cref="ArenaCoordinator{TNode}"/> pipeline measuring the full merge path: buffer
-/// creation → merge (allocate globals, fixup, increment children) → release processing (cascade-free).
+/// fill → merge (allocate globals, fixup, increment children) → release processing (cascade-free).
 /// Compares coordinator overhead against the raw arena+refcount operations measured by other benchmarks.
+///
+/// The buffer and single-element array are created once in setup and reused via <see cref="ThreadLocalBuffer{T}.Clear"/>
+/// across all N iterations — matching the production pattern where each worker holds a persistent buffer.
 /// </summary>
 [ShortRunJob]
 [MemoryDiagnoser]
@@ -60,39 +63,41 @@ public class CoordinatorBenchmarks
     private UnsafeSlabArena<TreeNode> _arena = null!;
     private RefCountTable _refCounts = null!;
     private ArenaCoordinator<TreeNode> _coordinator = null!;
+    private ThreadLocalBuffer<TreeNode> _buffer = null!;
+    private ThreadLocalBuffer<TreeNode>[] _bufferArray = null!;
     private int _rootIndex;
-    private int _nodeCount;
 
     // ── Setup ────────────────────────────────────────────────────────────
 
     [IterationSetup]
     public void Setup()
     {
-        _nodeCount = (1 << (TreeDepth + 1)) - 1;
+        var nodeCount = (1 << (TreeDepth + 1)) - 1;
         _arena = new UnsafeSlabArena<TreeNode>();
         _refCounts = new RefCountTable();
         _coordinator = new ArenaCoordinator<TreeNode>(_arena, _refCounts);
+        _buffer = new ThreadLocalBuffer<TreeNode>();
+        _bufferArray = [_buffer];
 
-        var maxCapacity = _nodeCount + (N * (TreeDepth + 1)) + 1024;
+        var maxCapacity = nodeCount + (N * (TreeDepth + 1)) + 1024;
         _refCounts.EnsureCapacity(maxCapacity);
 
-        // Build the initial tree directly in the arena (bypassing the coordinator for setup speed).
-        for (var i = 0; i < _nodeCount; i++)
+        for (var i = 0; i < nodeCount; i++)
             _arena.Allocate();
 
-        for (var i = 0; i < _nodeCount; i++)
+        for (var i = 0; i < nodeCount; i++)
         {
             var left = (2 * i) + 1;
             var right = (2 * i) + 2;
             _arena[i] = new TreeNode
             {
-                Left = left < _nodeCount ? left : -1,
-                Right = right < _nodeCount ? right : -1
+                Left = left < nodeCount ? left : -1,
+                Right = right < nodeCount ? right : -1
             };
         }
 
         _refCounts.Increment(0);
-        for (var i = 0; i < _nodeCount; i++)
+        for (var i = 0; i < nodeCount; i++)
         {
             ref readonly var node = ref _arena[i];
             if (node.Left >= 0) _refCounts.Increment(node.Left);
@@ -102,11 +107,11 @@ public class CoordinatorBenchmarks
         _rootIndex = 0;
     }
 
-    // ── Path-copy through coordinator ────────────────────────────────────
+    // ── Path-copy into reusable buffer ───────────────────────────────────
 
-    private (int newRoot, ThreadLocalBuffer<TreeNode> buffer) PathCopyViaBuffer(int currentRoot, int leafAddress)
+    private int FillBuffer(int currentRoot, int leafAddress)
     {
-        var buffer = new ThreadLocalBuffer<TreeNode>(TreeDepth + 2);
+        _buffer.Clear();
 
         Span<int> pathNodes = stackalloc int[TreeDepth + 1];
         Span<bool> wentLeft = stackalloc bool[TreeDepth];
@@ -120,8 +125,7 @@ public class CoordinatorBenchmarks
             pathNodes[level + 1] = goLeft ? node.Left : node.Right;
         }
 
-        // Build spine from leaf to root.
-        var newLeaf = buffer.Append(new TreeNode { Left = -1, Right = -1 });
+        var newLeaf = _buffer.Append(new TreeNode { Left = -1, Right = -1 });
 
         var childOnPath = newLeaf;
         for (var level = TreeDepth - 1; level >= 0; level--)
@@ -139,17 +143,18 @@ public class CoordinatorBenchmarks
                 right = ArenaIndex.TagLocal(childOnPath);
             }
 
-            childOnPath = buffer.Append(new TreeNode { Left = left, Right = right });
+            childOnPath = _buffer.Append(new TreeNode { Left = left, Right = right });
         }
 
-        return (childOnPath, buffer);
+        return childOnPath;
     }
 
     // ═══════════════════════ Coordinator benchmarks ═══════════════════════
 
     /// <summary>
-    /// Full coordinator pipeline: N fork-then-release cycles. Each cycle creates a buffer, merges via
-    /// coordinator, increments the new root, then releases the old root. Divide Mean by N for per-change cost.
+    /// Full coordinator pipeline: N fork-then-release cycles using a single reusable buffer. Each cycle clears
+    /// the buffer, fills it with a path-copy spine, merges, increments the new root, then releases the old root.
+    /// Divide Mean by N for per-change cost.
     /// </summary>
     [Benchmark(Baseline = true)]
     public int Coordinator_ForkThenRelease()
@@ -161,15 +166,14 @@ public class CoordinatorBenchmarks
 
         for (var i = 0; i < N; i++)
         {
-            var leaf = rng.Next(leafCount);
-            var (localRoot, buffer) = PathCopyViaBuffer(root, leaf);
+            var localRoot = FillBuffer(root, rng.Next(leafCount));
 
-            _coordinator.MergeBuffer(buffer);
+            _coordinator.MergeBuffer(_buffer);
             var newRoot = _coordinator.GetGlobalIndex(localRoot);
             _refCounts.Increment(newRoot);
 
-            buffer.LogRelease(root);
-            _coordinator.ProcessReleases([buffer], handler);
+            _buffer.LogRelease(root);
+            _coordinator.ProcessReleases(_bufferArray, handler);
 
             root = newRoot;
         }
@@ -178,7 +182,7 @@ public class CoordinatorBenchmarks
     }
 
     /// <summary>
-    /// Buffer merge only (no releases): N fork cycles creating and merging buffers. Measures the pure merge
+    /// Buffer merge only (no releases): N fork cycles using a single reusable buffer. Measures the pure merge
     /// pipeline cost. Divide Mean by N for per-merge cost.
     /// </summary>
     [Benchmark]
@@ -190,10 +194,9 @@ public class CoordinatorBenchmarks
 
         for (var i = 0; i < N; i++)
         {
-            var leaf = rng.Next(leafCount);
-            var (localRoot, buffer) = PathCopyViaBuffer(root, leaf);
+            var localRoot = FillBuffer(root, rng.Next(leafCount));
 
-            _coordinator.MergeBuffer(buffer);
+            _coordinator.MergeBuffer(_buffer);
             var newRoot = _coordinator.GetGlobalIndex(localRoot);
             _refCounts.Increment(newRoot);
 
@@ -204,8 +207,8 @@ public class CoordinatorBenchmarks
     }
 
     /// <summary>
-    /// Measures raw buffer fill throughput: N buffer creations (no merge, no coordinator). Isolates the cost of
-    /// the ThreadLocalBuffer append path. Divide Mean by N for per-buffer cost.
+    /// Raw buffer fill throughput: N fill cycles using a single reusable buffer (no merge, no coordinator).
+    /// Isolates the cost of the ThreadLocalBuffer append path. Divide Mean by N for per-fill cost.
     /// </summary>
     [Benchmark]
     public int BufferFill_Only()
@@ -217,9 +220,7 @@ public class CoordinatorBenchmarks
 
         for (var i = 0; i < N; i++)
         {
-            var leaf = rng.Next(leafCount);
-            var (localRoot, _) = PathCopyViaBuffer(root, leaf);
-            lastLocal = localRoot;
+            lastLocal = FillBuffer(root, rng.Next(leafCount));
         }
 
         return lastLocal;
