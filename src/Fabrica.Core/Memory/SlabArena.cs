@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Fabrica.Core.Memory;
 
@@ -32,9 +33,9 @@ namespace Fabrica.Core.Memory;
 ///   this maps to <c>Vec&lt;Box&lt;[T]&gt;&gt;</c> or equivalent. No finalizers, no weak references.
 ///
 /// PERFORMANCE (see benchmarks/results/ for full tables)
-///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.7ns sequential, ~0.9ns random (zero-allocation).
-///   Free-list reuse is ~1.5–2x bump at small N, scaling to ~10x at 100K due to Stack&lt;int&gt; overhead. Steady-state
-///   interleaved alloc/free: ~6.8ns/op at 100K entries.
+///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.8ns sequential, ~1ns random (zero-allocation).
+///   Free-list reuse (via FastStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
+///   alloc/free: ~4.3ns/op at 100K entries.
 /// </summary>
 internal sealed class SlabArena<T> where T : struct
 {
@@ -47,7 +48,7 @@ internal sealed class SlabArena<T> where T : struct
 
     private int _highWater;
     private int _count;
-    private readonly Stack<int> _freeList = new();
+    private readonly FastStack<int> _freeList = new();
 
     // ── Debug thread-ownership tracking ───────────────────────────────────
 
@@ -97,7 +98,7 @@ internal sealed class SlabArena<T> where T : struct
         get
         {
             Debug.Assert(index >= 0 && index < _highWater, $"Index {index} is out of range [0, {_highWater}).");
-            return ref _directory[index >> _slabShift][index & _slabMask];
+            return ref this.GetEntry(index);
         }
     }
 
@@ -119,7 +120,7 @@ internal sealed class SlabArena<T> where T : struct
         else
         {
             index = _highWater++;
-            _directory[index >> _slabShift] ??= new T[_slabLength];
+            this.EnsureSlab(index);
         }
 
         _count++;
@@ -138,6 +139,32 @@ internal sealed class SlabArena<T> where T : struct
 #endif
         _freeList.Push(index);
         _count--;
+    }
+
+    // ── Internals ─────────────────────────────────────────────────────────
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ref T GetEntry(int index)
+    {
+        var slabIndex = index >> _slabShift;
+        var offset = index & _slabMask;
+
+        Debug.Assert((uint)slabIndex < (uint)_directory.Length, $"Slab index {slabIndex} out of directory bounds [0, {_directory.Length}).");
+        ref var slab = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_directory), slabIndex);
+
+        Debug.Assert(slab is not null, $"Slab at index {slabIndex} is null.");
+        Debug.Assert((uint)offset < (uint)slab!.Length, $"Offset {offset} out of slab bounds [0, {slab.Length}).");
+        return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(slab), offset);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void EnsureSlab(int index)
+    {
+        var slabIndex = index >> _slabShift;
+
+        Debug.Assert((uint)slabIndex < (uint)_directory.Length, $"Slab index {slabIndex} out of directory bounds [0, {_directory.Length}).");
+        ref var slab = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_directory), slabIndex);
+        slab ??= new T[_slabLength];
     }
 
     // ── Test accessor ─────────────────────────────────────────────────────

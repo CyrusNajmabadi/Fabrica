@@ -236,6 +236,7 @@ public class SlabArenaTests
         Assert.NotNull(ta.Directory[2]);
     }
 
+#if DEBUG
     [Fact]
     public void Allocate_PastDirectoryEnd_Crashes()
     {
@@ -245,8 +246,10 @@ public class SlabArenaTests
         for (var i = 0; i < 4; i++)
             arena.Allocate();
 
+        using var listener = new AssertThrowsListener();
         Assert.ThrowsAny<Exception>(() => arena.Allocate());
     }
+#endif
 
     [Fact]
     public void SlabsOnlyAllocatedOnDemand()
