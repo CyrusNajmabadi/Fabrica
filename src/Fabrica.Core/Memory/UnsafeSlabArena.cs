@@ -44,7 +44,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     private readonly UnsafeSlabDirectory<T> _directory;
     private int _highWater;
     private int _count;
-    private readonly UnsafeStack<int> _freeList = new();
+    private readonly UnsafeStack<Handle<T>> _freeList = new();
 
     private SingleThreadedOwner _owner;
 
@@ -64,51 +64,52 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     // ── Public API ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns a reference to the entry at the given index. The caller must ensure the index was returned by
+    /// Returns a reference to the entry at the given handle. The caller must ensure the handle was returned by
     /// <see cref="Allocate"/> and has not been freed. No bounds checking is performed in release builds.
     /// </summary>
-    public ref T this[int index]
+    public ref T this[Handle<T> handle]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-            Debug.Assert(index >= 0 && index < _highWater, $"Index {index} is out of range [0, {_highWater}).");
-            return ref _directory[index];
+            Debug.Assert(handle.Index >= 0 && handle.Index < _highWater, $"Index {handle.Index} is out of range [0, {_highWater}).");
+            return ref _directory[handle.Index];
         }
     }
 
     /// <summary>
-    /// Allocates an entry and returns its index. Reuses a freed entry (LIFO) when available, otherwise bumps the
+    /// Allocates an entry and returns its handle. Reuses a freed entry (LIFO) when available, otherwise bumps the
     /// high-water mark and allocates a new slab if needed. The returned entry contains <c>default(T)</c> if freshly
     /// allocated, or the previous occupant's data if reused from the free list — callers must initialise it.
     /// </summary>
-    public int Allocate()
+    public Handle<T> Allocate()
     {
         _owner.AssertOwnerThread();
-        int index;
+        Handle<T> handle;
         if (_freeList.TryPop(out var freed))
         {
-            index = freed;
+            handle = freed;
         }
         else
         {
-            index = _highWater++;
+            var index = _highWater++;
             _directory.EnsureSlab(index);
+            handle = new Handle<T>(index);
         }
 
         _count++;
-        return index;
+        return handle;
     }
 
     /// <summary>
     /// Returns an entry to the free list for future reuse. The caller is responsible for ensuring the entry is no longer
     /// referenced. Does not clear the entry data — callers (or the coordinator) must handle cleanup.
     /// </summary>
-    public void Free(int index)
+    public void Free(Handle<T> handle)
     {
         _owner.AssertOwnerThread();
-        Debug.Assert(index >= 0 && index < _highWater, $"Free index {index} is out of range [0, {_highWater}).");
-        _freeList.Push(index);
+        Debug.Assert(handle.Index >= 0 && handle.Index < _highWater, $"Free index {handle.Index} is out of range [0, {_highWater}).");
+        _freeList.Push(handle);
         _count--;
     }
 

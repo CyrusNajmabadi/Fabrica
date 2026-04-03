@@ -5,7 +5,7 @@ using Fabrica.Core.Memory;
 namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
-/// Benchmarks for the combined <see cref="UnsafeSlabArena{T}"/> + <see cref="RefCountTable"/> system exercising
+/// Benchmarks for the combined <see cref="UnsafeSlabArena{T}"/> + <see cref="RefCountTable{T}"/> system exercising
 /// realistic persistent/functional tree workloads: building a ~1M-node binary tree, then simulating the
 /// producer/consumer pattern of forking new versions (path-copy) and releasing old roots.
 /// </summary>
@@ -18,50 +18,50 @@ public class PersistentTreeBenchmarks
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public int Left;
-        public int Right;
+        public Handle<TreeNode> Left { get; set; }
+        public Handle<TreeNode> Right { get; set; }
     }
 
     // ── Cascade handler ──────────────────────────────────────────────────
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable.IRefCountHandler
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
     {
-        public void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
-            ref readonly var node = ref arena[index];
-            if (node.Left >= 0) table.Decrement(node.Left, this);
-            if (node.Right >= 0) table.Decrement(node.Right, this);
-            arena.Free(index);
+            ref readonly var node = ref arena[handle];
+            if (node.Left.IsValid) table.Decrement(node.Left, this);
+            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            arena.Free(handle);
         }
     }
 
     // ── Parameters ───────────────────────────────────────────────────────
 
     [Params(19)]
-    public int TreeDepth;
+    public int TreeDepth { get; set; }
 
     [Params(1_000, 10_000, 50_000)]
-    public int ChangeCount;
+    public int ChangeCount { get; set; }
 
     // ── State ────────────────────────────────────────────────────────────
 
     private UnsafeSlabArena<TreeNode> _arena = null!;
-    private RefCountTable _refCounts = null!;
-    private int _rootIndex;
+    private RefCountTable<TreeNode> _refCounts = null!;
+    private Handle<TreeNode> _root;
     private int _nodeCount;
 
-    private int[] _burstRoots = null!;
+    private Handle<TreeNode>[] _burstRoots = null!;
 
     // ── Setup (rebuilds the tree before each BDN iteration) ──────────────
 
     [IterationSetup]
     public void Setup()
     {
-        _nodeCount = (1 << (TreeDepth + 1)) - 1;
+        _nodeCount = (1 << (this.TreeDepth + 1)) - 1;
         _arena = new UnsafeSlabArena<TreeNode>();
-        _refCounts = new RefCountTable();
+        _refCounts = new RefCountTable<TreeNode>();
 
-        var maxCapacity = _nodeCount + (ChangeCount * (TreeDepth + 1)) + 1024;
+        var maxCapacity = _nodeCount + (this.ChangeCount * (this.TreeDepth + 1)) + 1024;
         _refCounts.EnsureCapacity(maxCapacity);
 
         for (var i = 0; i < _nodeCount; i++)
@@ -71,51 +71,51 @@ public class PersistentTreeBenchmarks
         {
             var left = (2 * i) + 1;
             var right = (2 * i) + 2;
-            _arena[i] = new TreeNode
+            _arena[new Handle<TreeNode>(i)] = new TreeNode
             {
-                Left = left < _nodeCount ? left : -1,
-                Right = right < _nodeCount ? right : -1
+                Left = left < _nodeCount ? new Handle<TreeNode>(left) : Handle<TreeNode>.None,
+                Right = right < _nodeCount ? new Handle<TreeNode>(right) : Handle<TreeNode>.None
             };
         }
 
-        _refCounts.Increment(0);
+        _refCounts.Increment(new Handle<TreeNode>(0));
         for (var i = 0; i < _nodeCount; i++)
         {
-            ref readonly var node = ref _arena[i];
-            if (node.Left >= 0) _refCounts.Increment(node.Left);
-            if (node.Right >= 0) _refCounts.Increment(node.Right);
+            ref readonly var node = ref _arena[new Handle<TreeNode>(i)];
+            if (node.Left.IsValid) _refCounts.Increment(node.Left);
+            if (node.Right.IsValid) _refCounts.Increment(node.Right);
         }
 
-        _rootIndex = 0;
-        _burstRoots = new int[ChangeCount + 1];
+        _root = new Handle<TreeNode>(0);
+        _burstRoots = new Handle<TreeNode>[this.ChangeCount + 1];
     }
 
     // ── Path-copy: create a new version by modifying one leaf ────────────
 
-    private int PathCopy(int currentRoot, int leafAddress)
+    private Handle<TreeNode> PathCopy(Handle<TreeNode> currentRoot, int leafAddress)
     {
-        Span<int> pathNodes = stackalloc int[TreeDepth + 1];
-        Span<bool> wentLeft = stackalloc bool[TreeDepth];
+        Span<Handle<TreeNode>> pathNodes = stackalloc Handle<TreeNode>[this.TreeDepth + 1];
+        Span<bool> wentLeft = stackalloc bool[this.TreeDepth];
 
         pathNodes[0] = currentRoot;
-        for (var level = 0; level < TreeDepth; level++)
+        for (var level = 0; level < this.TreeDepth; level++)
         {
             ref readonly var node = ref _arena[pathNodes[level]];
-            var goLeft = ((leafAddress >> (TreeDepth - 1 - level)) & 1) == 0;
+            var goLeft = ((leafAddress >> (this.TreeDepth - 1 - level)) & 1) == 0;
             wentLeft[level] = goLeft;
             pathNodes[level + 1] = goLeft ? node.Left : node.Right;
         }
 
         var newLeaf = _arena.Allocate();
-        _arena[newLeaf] = new TreeNode { Left = -1, Right = -1 };
+        _arena[newLeaf] = new TreeNode { Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
 
         var childOnPath = newLeaf;
-        for (var level = TreeDepth - 1; level >= 0; level--)
+        for (var level = this.TreeDepth - 1; level >= 0; level--)
         {
             ref readonly var orig = ref _arena[pathNodes[level]];
             var newIdx = _arena.Allocate();
 
-            int left, right;
+            Handle<TreeNode> left, right;
             if (wentLeft[level])
             {
                 left = childOnPath;
@@ -128,8 +128,8 @@ public class PersistentTreeBenchmarks
             }
 
             _arena[newIdx] = new TreeNode { Left = left, Right = right };
-            if (left >= 0) _refCounts.Increment(left);
-            if (right >= 0) _refCounts.Increment(right);
+            if (left.IsValid) _refCounts.Increment(left);
+            if (right.IsValid) _refCounts.Increment(right);
 
             childOnPath = newIdx;
         }
@@ -148,19 +148,19 @@ public class PersistentTreeBenchmarks
     public int Interleaved_RandomLeaf()
     {
         var rng = new Random(42);
-        var leafCount = 1 << TreeDepth;
+        var leafCount = 1 << this.TreeDepth;
         var handler = new TreeHandler(_arena);
-        var root = _rootIndex;
+        var root = _root;
 
-        for (var i = 0; i < ChangeCount; i++)
+        for (var i = 0; i < this.ChangeCount; i++)
         {
             var leaf = rng.Next(leafCount);
-            var newRoot = PathCopy(root, leaf);
+            var newRoot = this.PathCopy(root, leaf);
             _refCounts.Decrement(root, handler);
             root = newRoot;
         }
 
-        return root;
+        return root.Index;
     }
 
     /// <summary>
@@ -171,21 +171,21 @@ public class PersistentTreeBenchmarks
     public int Burst_AllChangesThenRelease()
     {
         var rng = new Random(42);
-        var leafCount = 1 << TreeDepth;
+        var leafCount = 1 << this.TreeDepth;
         var handler = new TreeHandler(_arena);
         var roots = _burstRoots;
-        roots[0] = _rootIndex;
+        roots[0] = _root;
 
-        for (var i = 0; i < ChangeCount; i++)
+        for (var i = 0; i < this.ChangeCount; i++)
         {
             var leaf = rng.Next(leafCount);
-            roots[i + 1] = PathCopy(roots[i], leaf);
+            roots[i + 1] = this.PathCopy(roots[i], leaf);
         }
 
-        for (var i = 0; i < ChangeCount; i++)
+        for (var i = 0; i < this.ChangeCount; i++)
             _refCounts.Decrement(roots[i], handler);
 
-        return roots[ChangeCount];
+        return roots[this.ChangeCount].Index;
     }
 
     /// <summary>
@@ -195,38 +195,38 @@ public class PersistentTreeBenchmarks
     [Benchmark]
     public int Windowed_ProducerAheadBy100()
     {
-        const int window = 100;
+        const int Window = 100;
         var rng = new Random(42);
-        var leafCount = 1 << TreeDepth;
+        var leafCount = 1 << this.TreeDepth;
         var handler = new TreeHandler(_arena);
 
         var roots = _burstRoots;
-        roots[0] = _rootIndex;
+        roots[0] = _root;
         var produced = 0;
         var consumed = 0;
 
-        while (produced < ChangeCount)
+        while (produced < this.ChangeCount)
         {
-            var batchEnd = Math.Min(produced + window, ChangeCount);
+            var batchEnd = Math.Min(produced + Window, this.ChangeCount);
             for (var i = produced; i < batchEnd; i++)
             {
                 var leaf = rng.Next(leafCount);
-                roots[i + 1] = PathCopy(roots[i], leaf);
+                roots[i + 1] = this.PathCopy(roots[i], leaf);
             }
 
             produced = batchEnd;
 
-            var releaseEnd = produced - window;
+            var releaseEnd = produced - Window;
             if (releaseEnd < 0) releaseEnd = 0;
             for (var i = consumed; i < releaseEnd; i++)
                 _refCounts.Decrement(roots[i], handler);
             consumed = Math.Max(consumed, releaseEnd);
         }
 
-        for (var i = consumed; i < ChangeCount; i++)
+        for (var i = consumed; i < this.ChangeCount; i++)
             _refCounts.Decrement(roots[i], handler);
 
-        return roots[ChangeCount];
+        return roots[this.ChangeCount].Index;
     }
 }
 
@@ -245,62 +245,59 @@ public class SingleForkReleaseBenchmarks
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public int Left;
-        public int Right;
+        public Handle<TreeNode> Left { get; set; }
+        public Handle<TreeNode> Right { get; set; }
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable.IRefCountHandler
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
     {
-        public void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
-            ref readonly var node = ref arena[index];
-            if (node.Left >= 0) table.Decrement(node.Left, this);
-            if (node.Right >= 0) table.Decrement(node.Right, this);
-            arena.Free(index);
+            ref readonly var node = ref arena[handle];
+            if (node.Left.IsValid) table.Decrement(node.Left, this);
+            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            arena.Free(handle);
         }
     }
 
     [Params(19)]
-    public int TreeDepth;
+    public int TreeDepth { get; set; }
 
     [Params(1_000)]
-    public int N;
+    public int N { get; set; }
 
     private UnsafeSlabArena<TreeNode> _arena = null!;
-    private RefCountTable _refCounts = null!;
-    private int _rootIndex;
+    private RefCountTable<TreeNode> _refCounts = null!;
+    private Handle<TreeNode> _root;
     private int _nodeCount;
 
-    private int[] _preForkedRoots = null!;
+    private Handle<TreeNode>[] _preForkedRoots = null!;
 
     [IterationSetup(Targets = [nameof(Fork_Only), nameof(ForkThenRelease)])]
-    public void SetupForFork()
-    {
-        BuildTree();
-    }
+    public void SetupForFork() => this.BuildTree();
 
     [IterationSetup(Target = nameof(Release_Only))]
     public void SetupForRelease()
     {
-        BuildTree();
+        this.BuildTree();
 
         var rng = new Random(42);
-        var leafCount = 1 << TreeDepth;
-        _preForkedRoots = new int[N + 1];
-        _preForkedRoots[0] = _rootIndex;
-        for (var i = 0; i < N; i++)
+        var leafCount = 1 << this.TreeDepth;
+        _preForkedRoots = new Handle<TreeNode>[this.N + 1];
+        _preForkedRoots[0] = _root;
+        for (var i = 0; i < this.N; i++)
         {
             var leaf = rng.Next(leafCount);
-            _preForkedRoots[i + 1] = PathCopy(_preForkedRoots[i], leaf);
+            _preForkedRoots[i + 1] = this.PathCopy(_preForkedRoots[i], leaf);
         }
     }
 
     private void BuildTree()
     {
-        _nodeCount = (1 << (TreeDepth + 1)) - 1;
+        _nodeCount = (1 << (this.TreeDepth + 1)) - 1;
         _arena = new UnsafeSlabArena<TreeNode>();
-        _refCounts = new RefCountTable();
-        _refCounts.EnsureCapacity(_nodeCount + (N * (TreeDepth + 1)) + 1024);
+        _refCounts = new RefCountTable<TreeNode>();
+        _refCounts.EnsureCapacity(_nodeCount + (this.N * (this.TreeDepth + 1)) + 1024);
 
         for (var i = 0; i < _nodeCount; i++)
             _arena.Allocate();
@@ -309,48 +306,48 @@ public class SingleForkReleaseBenchmarks
         {
             var left = (2 * i) + 1;
             var right = (2 * i) + 2;
-            _arena[i] = new TreeNode
+            _arena[new Handle<TreeNode>(i)] = new TreeNode
             {
-                Left = left < _nodeCount ? left : -1,
-                Right = right < _nodeCount ? right : -1
+                Left = left < _nodeCount ? new Handle<TreeNode>(left) : Handle<TreeNode>.None,
+                Right = right < _nodeCount ? new Handle<TreeNode>(right) : Handle<TreeNode>.None
             };
         }
 
-        _refCounts.Increment(0);
+        _refCounts.Increment(new Handle<TreeNode>(0));
         for (var i = 0; i < _nodeCount; i++)
         {
-            ref readonly var node = ref _arena[i];
-            if (node.Left >= 0) _refCounts.Increment(node.Left);
-            if (node.Right >= 0) _refCounts.Increment(node.Right);
+            ref readonly var node = ref _arena[new Handle<TreeNode>(i)];
+            if (node.Left.IsValid) _refCounts.Increment(node.Left);
+            if (node.Right.IsValid) _refCounts.Increment(node.Right);
         }
 
-        _rootIndex = 0;
+        _root = new Handle<TreeNode>(0);
     }
 
-    private int PathCopy(int currentRoot, int leafAddress)
+    private Handle<TreeNode> PathCopy(Handle<TreeNode> currentRoot, int leafAddress)
     {
-        Span<int> pathNodes = stackalloc int[TreeDepth + 1];
-        Span<bool> wentLeft = stackalloc bool[TreeDepth];
+        Span<Handle<TreeNode>> pathNodes = stackalloc Handle<TreeNode>[this.TreeDepth + 1];
+        Span<bool> wentLeft = stackalloc bool[this.TreeDepth];
 
         pathNodes[0] = currentRoot;
-        for (var level = 0; level < TreeDepth; level++)
+        for (var level = 0; level < this.TreeDepth; level++)
         {
             ref readonly var node = ref _arena[pathNodes[level]];
-            var goLeft = ((leafAddress >> (TreeDepth - 1 - level)) & 1) == 0;
+            var goLeft = ((leafAddress >> (this.TreeDepth - 1 - level)) & 1) == 0;
             wentLeft[level] = goLeft;
             pathNodes[level + 1] = goLeft ? node.Left : node.Right;
         }
 
         var newLeaf = _arena.Allocate();
-        _arena[newLeaf] = new TreeNode { Left = -1, Right = -1 };
+        _arena[newLeaf] = new TreeNode { Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
 
         var childOnPath = newLeaf;
-        for (var level = TreeDepth - 1; level >= 0; level--)
+        for (var level = this.TreeDepth - 1; level >= 0; level--)
         {
             ref readonly var orig = ref _arena[pathNodes[level]];
             var newIdx = _arena.Allocate();
 
-            int left, right;
+            Handle<TreeNode> left, right;
             if (wentLeft[level])
             {
                 left = childOnPath;
@@ -363,8 +360,8 @@ public class SingleForkReleaseBenchmarks
             }
 
             _arena[newIdx] = new TreeNode { Left = left, Right = right };
-            if (left >= 0) _refCounts.Increment(left);
-            if (right >= 0) _refCounts.Increment(right);
+            if (left.IsValid) _refCounts.Increment(left);
+            if (right.IsValid) _refCounts.Increment(right);
 
             childOnPath = newIdx;
         }
@@ -383,16 +380,16 @@ public class SingleForkReleaseBenchmarks
     public int Fork_Only()
     {
         var rng = new Random(42);
-        var leafCount = 1 << TreeDepth;
-        var root = _rootIndex;
+        var leafCount = 1 << this.TreeDepth;
+        var root = _root;
 
-        for (var i = 0; i < N; i++)
+        for (var i = 0; i < this.N; i++)
         {
             var leaf = rng.Next(leafCount);
-            root = PathCopy(root, leaf);
+            root = this.PathCopy(root, leaf);
         }
 
-        return root;
+        return root.Index;
     }
 
     /// <summary>
@@ -403,9 +400,9 @@ public class SingleForkReleaseBenchmarks
     public int Release_Only()
     {
         var handler = new TreeHandler(_arena);
-        for (var i = 0; i < N; i++)
+        for (var i = 0; i < this.N; i++)
             _refCounts.Decrement(_preForkedRoots[i], handler);
-        return _preForkedRoots[N];
+        return _preForkedRoots[this.N].Index;
     }
 
     /// <summary>
@@ -416,25 +413,25 @@ public class SingleForkReleaseBenchmarks
     public int ForkThenRelease()
     {
         var rng = new Random(42);
-        var leafCount = 1 << TreeDepth;
+        var leafCount = 1 << this.TreeDepth;
         var handler = new TreeHandler(_arena);
-        var root = _rootIndex;
+        var root = _root;
 
-        for (var i = 0; i < N; i++)
+        for (var i = 0; i < this.N; i++)
         {
             var leaf = rng.Next(leafCount);
-            var newRoot = PathCopy(root, leaf);
+            var newRoot = this.PathCopy(root, leaf);
             _refCounts.Decrement(root, handler);
             root = newRoot;
         }
 
-        return root;
+        return root.Index;
     }
 }
 
 /// <summary>
 /// Raw allocation/release throughput: 1M elements through <see cref="UnsafeSlabArena{T}"/> and
-/// <see cref="RefCountTable"/> with no tree structure (baseline overhead measurement).
+/// <see cref="RefCountTable{T}"/> with no tree structure (baseline overhead measurement).
 /// </summary>
 [ShortRunJob]
 [MemoryDiagnoser]
@@ -443,75 +440,75 @@ public class RawAllocReleaseBenchmarks
     [StructLayout(LayoutKind.Sequential, Size = 64)]
     private struct Node
     {
-        public long Value;
+        public long Value { get; set; }
     }
 
-    private struct NoChildHandler(UnsafeSlabArena<Node> arena) : RefCountTable.IRefCountHandler
+    private struct NoChildHandler(UnsafeSlabArena<Node> arena) : RefCountTable<Node>.IRefCountHandler
     {
-        public void OnFreed(int index, RefCountTable table) => arena.Free(index);
+        public readonly void OnFreed(Handle<Node> handle, RefCountTable<Node> table) => arena.Free(handle);
     }
 
     [Params(100_000, 1_000_000)]
-    public int N;
+    public int N { get; set; }
 
     [Benchmark]
     public int ArenaOnly_AllocThenFree()
     {
         var arena = new UnsafeSlabArena<Node>();
-        for (var i = 0; i < N; i++)
+        for (var i = 0; i < this.N; i++)
             arena.Allocate();
-        for (var i = N - 1; i >= 0; i--)
-            arena.Free(i);
-        return arena.Allocate();
+        for (var i = this.N - 1; i >= 0; i--)
+            arena.Free(new Handle<Node>(i));
+        return arena.Allocate().Index;
     }
 
     [Benchmark]
     public int ArenaAndRefCount_AllocThenFree()
     {
         var arena = new UnsafeSlabArena<Node>();
-        var rc = new RefCountTable();
-        rc.EnsureCapacity(N);
+        var rc = new RefCountTable<Node>();
+        rc.EnsureCapacity(this.N);
 
-        for (var i = 0; i < N; i++)
+        for (var i = 0; i < this.N; i++)
         {
             arena.Allocate();
-            rc.Increment(i);
+            rc.Increment(new Handle<Node>(i));
         }
 
         var handler = new NoChildHandler(arena);
-        for (var i = N - 1; i >= 0; i--)
-            rc.Decrement(i, handler);
+        for (var i = this.N - 1; i >= 0; i--)
+            rc.Decrement(new Handle<Node>(i), handler);
 
-        return arena.Allocate();
+        return arena.Allocate().Index;
     }
 
     [Benchmark(Baseline = true)]
     public int ArenaAndRefCount_SteadyState()
     {
         var arena = new UnsafeSlabArena<Node>();
-        var rc = new RefCountTable();
-        rc.EnsureCapacity(N);
+        var rc = new RefCountTable<Node>();
+        rc.EnsureCapacity(this.N);
         var handler = new NoChildHandler(arena);
 
-        for (var i = 0; i < N; i++)
+        for (var i = 0; i < this.N; i++)
         {
             arena.Allocate();
-            rc.Increment(i);
+            rc.Increment(new Handle<Node>(i));
         }
 
-        for (var i = N - 1; i >= 0; i--)
-            rc.Decrement(i, handler);
+        for (var i = this.N - 1; i >= 0; i--)
+            rc.Decrement(new Handle<Node>(i), handler);
 
-        var last = 0;
-        for (var i = 0; i < N; i++)
+        Handle<Node> last = default;
+        for (var i = 0; i < this.N; i++)
         {
             last = arena.Allocate();
             rc.Increment(last);
         }
 
-        for (var i = 0; i < N; i++)
-            rc.Decrement(i, handler);
+        for (var i = 0; i < this.N; i++)
+            rc.Decrement(new Handle<Node>(i), handler);
 
-        return last;
+        return last.Index;
     }
 }

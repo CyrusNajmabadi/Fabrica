@@ -6,7 +6,7 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Bundles the three components needed to fully manage a single node type's lifecycle: storage
-/// (<see cref="UnsafeSlabArena{T}"/>), reference counts (<see cref="RefCountTable"/>), and a
+/// (<see cref="UnsafeSlabArena{T}"/>), reference counts (<see cref="RefCountTable{T}"/>), and a
 /// cascade-free handler (<typeparamref name="THandler"/>). One instance per node type, shared
 /// across all snapshots.
 ///
@@ -24,7 +24,7 @@ namespace Fabrica.Core.Memory;
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>NodeStore</c>),
 ///   <typeparamref name="THandler"/> captures references to those other stores. When
-///   <see cref="RefCountTable.IRefCountHandler.OnFreed"/> fires, the handler decrements children in
+///   <see cref="RefCountTable{T}.IRefCountHandler.OnFreed"/> fires, the handler decrements children in
 ///   whatever stores they belong to.
 ///
 /// THREAD MODEL
@@ -36,15 +36,15 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, RefCountTable refCounts, THandler handler)
+internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, THandler handler)
     where TNode : struct
-    where THandler : struct, RefCountTable.IRefCountHandler
+    where THandler : struct, RefCountTable<TNode>.IRefCountHandler
 {
     private readonly THandler _handler = handler;
     private SingleThreadedOwner _owner;
 
 #if DEBUG
-    private Dictionary<int, int>? _trackedRootCounts;
+    private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
     private Action? _runValidation;
 #endif
 
@@ -52,16 +52,16 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     public UnsafeSlabArena<TNode> Arena { get; } = arena;
 
     /// <summary>Parallel refcount array — index <c>i</c> holds the refcount for the node at arena index <c>i</c>.</summary>
-    public RefCountTable RefCounts { get; } = refCounts;
+    public RefCountTable<TNode> RefCounts { get; } = refCounts;
 
     // ── Root operations ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Increments the refcount for each root index. Called when a snapshot holding these roots is published
-    /// (e.g., enqueued into the PCQ). The caller must have called <see cref="RefCountTable.EnsureCapacity"/>
+    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published
+    /// (e.g., enqueued into the PCQ). The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
     /// for the index range beforehand.
     /// </summary>
-    public void IncrementRoots(ReadOnlySpan<int> roots)
+    public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         _owner.AssertOwnerThread();
         this.RefCounts.IncrementBatch(roots);
@@ -69,12 +69,12 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     }
 
     /// <summary>
-    /// Decrements the refcount for each root index and triggers cascade-free for any that hit zero.
+    /// Decrements the refcount for each root handle and triggers cascade-free for any that hit zero.
     /// Called when a snapshot holding these roots is released (e.g., retired by the consumer after
     /// processing). Uses the stored <typeparamref name="THandler"/> for cascade — no caller involvement
     /// needed.
     /// </summary>
-    public void DecrementRoots(ReadOnlySpan<int> roots)
+    public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         _owner.AssertOwnerThread();
         this.TrackBeforeDecrement(roots);
@@ -104,19 +104,19 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     }
 
 #if DEBUG
-    private int[] ExpandTrackedRoots()
+    private Handle<TNode>[] ExpandTrackedRoots()
     {
         var counts = _trackedRootCounts!;
         var total = 0;
         foreach (var count in counts.Values)
             total += count;
 
-        var result = new int[total];
+        var result = new Handle<TNode>[total];
         var pos = 0;
-        foreach (var (index, count) in counts)
+        foreach (var (handle, count) in counts)
         {
             for (var i = 0; i < count; i++)
-                result[pos++] = index;
+                result[pos++] = handle;
         }
 
         return result;
@@ -124,7 +124,7 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
 #endif
 
     [Conditional("DEBUG")]
-    private void TrackAndValidateAfterIncrement(ReadOnlySpan<int> roots)
+    private void TrackAndValidateAfterIncrement(ReadOnlySpan<Handle<TNode>> roots)
     {
 #if DEBUG
         if (_trackedRootCounts == null)
@@ -141,7 +141,7 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     }
 
     [Conditional("DEBUG")]
-    private void TrackBeforeDecrement(ReadOnlySpan<int> roots)
+    private void TrackBeforeDecrement(ReadOnlySpan<Handle<TNode>> roots)
     {
 #if DEBUG
         if (_trackedRootCounts == null)

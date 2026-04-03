@@ -15,44 +15,48 @@ public class CrossTypeSnapshotTests
     [StructLayout(LayoutKind.Sequential)]
     private struct ParentNode
     {
-        public int LeftParent { get; set; }
-        public int RightParent { get; set; }
-        public int ChildRef { get; set; }
+        public Handle<ParentNode> LeftParent { get; set; }
+        public Handle<ParentNode> RightParent { get; set; }
+        public Handle<ChildNode> ChildRef { get; set; }
     }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ChildNode
     {
-        public int LeftChild { get; set; }
-        public int RightChild { get; set; }
+        public Handle<ChildNode> LeftChild { get; set; }
+        public Handle<ChildNode> RightChild { get; set; }
         public int Value { get; set; }
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────
 
-    private struct ChildHandler(UnsafeSlabArena<ChildNode> arena) : RefCountTable.IRefCountHandler
+    private struct ChildHandler(UnsafeSlabArena<ChildNode> arena) : RefCountTable<ChildNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
         {
-            ref readonly var node = ref arena[index];
-            if (node.LeftChild >= 0) table.Decrement(node.LeftChild, this);
-            if (node.RightChild >= 0) table.Decrement(node.RightChild, this);
-            arena.Free(index);
+            ref readonly var node = ref arena[handle];
+            if (node.LeftChild.IsValid)
+                table.Decrement(node.LeftChild, this);
+            if (node.RightChild.IsValid)
+                table.Decrement(node.RightChild, this);
+            arena.Free(handle);
         }
     }
 
     private struct ParentHandler(
         UnsafeSlabArena<ParentNode> parentArena,
-        NodeStore<ChildNode, ChildHandler> childStore) : RefCountTable.IRefCountHandler
+        NodeStore<ChildNode, ChildHandler> childStore) : RefCountTable<ParentNode>.IRefCountHandler
     {
-        public readonly void OnFreed(int index, RefCountTable table)
+        public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
         {
-            ref readonly var node = ref parentArena[index];
-            if (node.LeftParent >= 0) table.Decrement(node.LeftParent, this);
-            if (node.RightParent >= 0) table.Decrement(node.RightParent, this);
-            if (node.ChildRef >= 0)
+            ref readonly var node = ref parentArena[handle];
+            if (node.LeftParent.IsValid)
+                table.Decrement(node.LeftParent, this);
+            if (node.RightParent.IsValid)
+                table.Decrement(node.RightParent, this);
+            if (node.ChildRef.IsValid)
                 childStore.RefCounts.Decrement(node.ChildRef, childStore.GetTestAccessor().Handler);
-            parentArena.Free(index);
+            parentArena.Free(handle);
         }
     }
 
@@ -60,19 +64,23 @@ public class CrossTypeSnapshotTests
 
     private struct ParentChildEnumerator : DagValidator.IChildEnumerator<ParentNode>
     {
-        public readonly void GetChildren(in ParentNode node, List<int> children)
+        public readonly void GetChildren(in ParentNode node, List<Handle<ParentNode>> children)
         {
-            if (node.LeftParent >= 0) children.Add(node.LeftParent);
-            if (node.RightParent >= 0) children.Add(node.RightParent);
+            if (node.LeftParent.IsValid)
+                children.Add(node.LeftParent);
+            if (node.RightParent.IsValid)
+                children.Add(node.RightParent);
         }
     }
 
     private struct ChildChildEnumerator : DagValidator.IChildEnumerator<ChildNode>
     {
-        public readonly void GetChildren(in ChildNode node, List<int> children)
+        public readonly void GetChildren(in ChildNode node, List<Handle<ChildNode>> children)
         {
-            if (node.LeftChild >= 0) children.Add(node.LeftChild);
-            if (node.RightChild >= 0) children.Add(node.RightChild);
+            if (node.LeftChild.IsValid)
+                children.Add(node.LeftChild);
+            if (node.RightChild.IsValid)
+                children.Add(node.RightChild);
         }
     }
 
@@ -82,13 +90,13 @@ public class CrossTypeSnapshotTests
         CreateStores()
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
-        var childRefCounts = new RefCountTable();
+        var childRefCounts = new RefCountTable<ChildNode>();
         var childHandler = new ChildHandler(childArena);
         var childStore = new NodeStore<ChildNode, ChildHandler>(childArena, childRefCounts, childHandler);
         childStore.EnableValidation(new ChildChildEnumerator());
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
-        var parentRefCounts = new RefCountTable();
+        var parentRefCounts = new RefCountTable<ParentNode>();
         var parentHandler = new ParentHandler(parentArena, childStore);
         var parentStore = new NodeStore<ParentNode, ParentHandler>(parentArena, parentRefCounts, parentHandler);
         parentStore.EnableValidation(new ParentChildEnumerator());
@@ -96,28 +104,44 @@ public class CrossTypeSnapshotTests
         return (parentStore, childStore);
     }
 
-    private static int AllocChild(NodeStore<ChildNode, ChildHandler> store, int left, int right, int value)
+    private static Handle<ChildNode> AllocChild(
+        NodeStore<ChildNode, ChildHandler> store,
+        Handle<ChildNode> left,
+        Handle<ChildNode> right,
+        int value)
     {
-        var index = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(index + 1);
-        store.Arena[index] = new ChildNode { LeftChild = left, RightChild = right, Value = value };
-        if (left >= 0) store.RefCounts.Increment(left);
-        if (right >= 0) store.RefCounts.Increment(right);
-        return index;
+        var handle = store.Arena.Allocate();
+        store.RefCounts.EnsureCapacity(handle.Index + 1);
+        store.Arena[handle] = new ChildNode { LeftChild = left, RightChild = right, Value = value };
+        if (left.IsValid)
+            store.RefCounts.Increment(left);
+        if (right.IsValid)
+            store.RefCounts.Increment(right);
+        return handle;
     }
 
-    private static int AllocParent(
+    private static Handle<ParentNode> AllocParent(
         NodeStore<ParentNode, ParentHandler> parentStore,
         NodeStore<ChildNode, ChildHandler> childStore,
-        int leftParent, int rightParent, int childRef)
+        Handle<ParentNode> leftParent,
+        Handle<ParentNode> rightParent,
+        Handle<ChildNode> childRef)
     {
-        var index = parentStore.Arena.Allocate();
-        parentStore.RefCounts.EnsureCapacity(index + 1);
-        parentStore.Arena[index] = new ParentNode { LeftParent = leftParent, RightParent = rightParent, ChildRef = childRef };
-        if (leftParent >= 0) parentStore.RefCounts.Increment(leftParent);
-        if (rightParent >= 0) parentStore.RefCounts.Increment(rightParent);
-        if (childRef >= 0) childStore.RefCounts.Increment(childRef);
-        return index;
+        var handle = parentStore.Arena.Allocate();
+        parentStore.RefCounts.EnsureCapacity(handle.Index + 1);
+        parentStore.Arena[handle] = new ParentNode
+        {
+            LeftParent = leftParent,
+            RightParent = rightParent,
+            ChildRef = childRef,
+        };
+        if (leftParent.IsValid)
+            parentStore.RefCounts.Increment(leftParent);
+        if (rightParent.IsValid)
+            parentStore.RefCounts.Increment(rightParent);
+        if (childRef.IsValid)
+            childStore.RefCounts.Increment(childRef);
+        return handle;
     }
 
     // ── Tests ────────────────────────────────────────────────────────────
@@ -128,12 +152,17 @@ public class CrossTypeSnapshotTests
         var (parentStore, childStore) = CreateStores();
 
         // Child tree: childRoot → (childA, childB)
-        var childA = AllocChild(childStore, -1, -1, 1);
-        var childB = AllocChild(childStore, -1, -1, 2);
+        var childA = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var childB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var childRoot = AllocChild(childStore, childA, childB, 0);
 
         // Parent node references childRoot
-        var parentRoot = AllocParent(parentStore, childStore, -1, -1, childRoot);
+        var parentRoot = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            childRoot);
 
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         parentSlice.AddRoot(parentRoot);
@@ -157,11 +186,21 @@ public class CrossTypeSnapshotTests
     {
         var (parentStore, childStore) = CreateStores();
 
-        var childLeaf = AllocChild(childStore, -1, -1, 42);
+        var childLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 42);
 
         // Two parent nodes both reference the same child
-        var parent1 = AllocParent(parentStore, childStore, -1, -1, childLeaf);
-        var parent2 = AllocParent(parentStore, childStore, -1, -1, childLeaf);
+        var parent1 = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            childLeaf);
+        var parent2 = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            childLeaf);
 
         var slice1 = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         slice1.AddRoot(parent1);
@@ -185,8 +224,13 @@ public class CrossTypeSnapshotTests
     {
         var (parentStore, childStore) = CreateStores();
 
-        var childNode = AllocChild(childStore, -1, -1, 99);
-        var parentNode = AllocParent(parentStore, childStore, -1, -1, childNode);
+        var childNode = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 99);
+        var parentNode = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            childNode);
 
         // Parent holds childNode via cross-type reference
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
@@ -214,11 +258,16 @@ public class CrossTypeSnapshotTests
     {
         var (parentStore, childStore) = CreateStores();
 
-        var childA = AllocChild(childStore, -1, -1, 1);
-        var childB = AllocChild(childStore, -1, -1, 2);
+        var childA = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var childB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var childRoot = AllocChild(childStore, childA, childB, 0);
 
-        var parentNode = AllocParent(parentStore, childStore, -1, -1, childRoot);
+        var parentNode = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            childRoot);
 
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         parentSlice.AddRoot(parentNode);
@@ -262,15 +311,20 @@ public class CrossTypeSnapshotTests
 
         // Child tree:  cRoot → (cA, cB)
         // Parent tree: pRoot → pLeaf, pRoot.ChildRef → cRoot
-        var cA = AllocChild(childStore, -1, -1, 1);
-        var cB = AllocChild(childStore, -1, -1, 2);
+        var cA = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var cRoot = AllocChild(childStore, cA, cB, 0);
 
-        var pLeaf = AllocParent(parentStore, childStore, -1, -1, -1);
-        var pRoot = AllocParent(parentStore, childStore, pLeaf, -1, cRoot);
+        var pLeaf = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            Handle<ChildNode>.None);
+        var pRoot = AllocParent(parentStore, childStore, pLeaf, Handle<ParentNode>.None, cRoot);
 
         // Extra standalone child root (not referenced by any parent)
-        var cStandalone = AllocChild(childStore, -1, -1, 99);
+        var cStandalone = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 99);
 
         // Composite snapshot: parent slice has pRoot, child slice has cRoot + cStandalone
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
@@ -306,8 +360,13 @@ public class CrossTypeSnapshotTests
     {
         var (parentStore, childStore) = CreateStores();
 
-        var cLeaf = AllocChild(childStore, -1, -1, 1);
-        var pNode = AllocParent(parentStore, childStore, -1, -1, cLeaf);
+        var cLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var pNode = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            cLeaf);
 
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         parentSlice.AddRoot(pNode);
@@ -349,16 +408,31 @@ public class CrossTypeSnapshotTests
         //    pRoot1 → pRoot1 children: none, ChildRef → shared
         //    pRoot2 → pRoot2 children: none, ChildRef → shared  (overlapping)
         //    pRoot3 → pRoot3 children: none, ChildRef → exclusive
-        var cA = AllocChild(childStore, -1, -1, 1);
-        var cB = AllocChild(childStore, -1, -1, 2);
+        var cA = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var shared = AllocChild(childStore, cA, cB, 10);
 
-        var cC = AllocChild(childStore, -1, -1, 3);
-        var exclusive = AllocChild(childStore, cC, -1, 20);
+        var cC = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 3);
+        var exclusive = AllocChild(childStore, cC, Handle<ChildNode>.None, 20);
 
-        var pRoot1 = AllocParent(parentStore, childStore, -1, -1, shared);
-        var pRoot2 = AllocParent(parentStore, childStore, -1, -1, shared);
-        var pRoot3 = AllocParent(parentStore, childStore, -1, -1, exclusive);
+        var pRoot1 = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            shared);
+        var pRoot2 = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            shared);
+        var pRoot3 = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            exclusive);
 
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         parentSlice.AddRoot(pRoot1);
@@ -391,23 +465,30 @@ public class CrossTypeSnapshotTests
     [InlineData(2, 0, 1)]
     [InlineData(2, 1, 0)]
     public void ThreeCompositeSnapshots_SharedChildSubtree_AllReleaseOrders(
-        int first, int second, int third)
+        int first,
+        int second,
+        int third)
     {
         var (parentStore, childStore) = CreateStores();
 
         // Shared child subtree across all three snapshots
-        var cA = AllocChild(childStore, -1, -1, 1);
-        var cB = AllocChild(childStore, -1, -1, 2);
+        var cA = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var sharedChild = AllocChild(childStore, cA, cB, 0);
 
-        var parentRoots = new int[3];
+        var parentRoots = new Handle<ParentNode>[3];
         var parentSlices = new SnapshotSlice<ParentNode, ParentHandler>[3];
         var childSlices = new SnapshotSlice<ChildNode, ChildHandler>[3];
 
         for (var i = 0; i < 3; i++)
         {
             // Each snapshot has its own parent root pointing at the shared child
-            parentRoots[i] = AllocParent(parentStore, childStore, -1, -1, sharedChild);
+            parentRoots[i] = AllocParent(
+                parentStore,
+                childStore,
+                Handle<ParentNode>.None,
+                Handle<ParentNode>.None,
+                sharedChild);
 
             parentSlices[i] = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
             parentSlices[i].AddRoot(parentRoots[i]);
@@ -447,17 +528,22 @@ public class CrossTypeSnapshotTests
         var (parentStore, childStore) = CreateStores();
 
         // Deep child tree: cRoot → (cMid → (cLeaf1, cLeaf2), cLeaf3)
-        var cLeaf1 = AllocChild(childStore, -1, -1, 1);
-        var cLeaf2 = AllocChild(childStore, -1, -1, 2);
+        var cLeaf1 = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cLeaf2 = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var cMid = AllocChild(childStore, cLeaf1, cLeaf2, 10);
-        var cLeaf3 = AllocChild(childStore, -1, -1, 3);
+        var cLeaf3 = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 3);
         var cRoot = AllocChild(childStore, cMid, cLeaf3, 0);
 
         // Parent tree: pRoot → (pMid → pLeaf), pRoot.ChildRef → cRoot
         //              pMid.ChildRef → cMid (points into middle of child tree)
-        var pLeaf = AllocParent(parentStore, childStore, -1, -1, -1);
-        var pMid = AllocParent(parentStore, childStore, pLeaf, -1, cMid);
-        var pRoot = AllocParent(parentStore, childStore, pMid, -1, cRoot);
+        var pLeaf = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            Handle<ChildNode>.None);
+        var pMid = AllocParent(parentStore, childStore, pLeaf, Handle<ParentNode>.None, cMid);
+        var pRoot = AllocParent(parentStore, childStore, pMid, Handle<ParentNode>.None, cRoot);
 
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         parentSlice.AddRoot(pRoot);
@@ -491,11 +577,16 @@ public class CrossTypeSnapshotTests
         // Child tree:  cRoot → (cMid → (cLeaf, -), -)
         // Parent points at cMid (not the root)
         // Child slice roots cLeaf directly
-        var cLeaf = AllocChild(childStore, -1, -1, 1);
-        var cMid = AllocChild(childStore, cLeaf, -1, 10);
-        var cRoot = AllocChild(childStore, cMid, -1, 0);
+        var cLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cMid = AllocChild(childStore, cLeaf, Handle<ChildNode>.None, 10);
+        var cRoot = AllocChild(childStore, cMid, Handle<ChildNode>.None, 0);
 
-        var pRoot = AllocParent(parentStore, childStore, -1, -1, cMid);
+        var pRoot = AllocParent(
+            parentStore,
+            childStore,
+            Handle<ParentNode>.None,
+            Handle<ParentNode>.None,
+            cMid);
 
         var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
         parentSlice.AddRoot(pRoot);

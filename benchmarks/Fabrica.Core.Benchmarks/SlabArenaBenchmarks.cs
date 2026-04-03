@@ -42,30 +42,30 @@ public class UnsafeSlabArenaBenchmarks
     public int Allocate_Small()
     {
         var arena = new UnsafeSlabArena<Small>();
-        var last = 0;
+        var last = Handle<Small>.None;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
-        return last;
+        return last.Index;
     }
 
     [Benchmark]
     public int Allocate_Medium()
     {
         var arena = new UnsafeSlabArena<Medium>();
-        var last = 0;
+        var last = Handle<Medium>.None;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
-        return last;
+        return last.Index;
     }
 
     [Benchmark]
     public int Allocate_Large()
     {
         var arena = new UnsafeSlabArena<Large>();
-        var last = 0;
+        var last = Handle<Large>.None;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
-        return last;
+        return last.Index;
     }
 
     [Benchmark]
@@ -75,8 +75,8 @@ public class UnsafeSlabArenaBenchmarks
         for (var i = 0; i < N; i++)
             arena.Allocate();
         for (var i = N - 1; i >= 0; i--)
-            arena.Free(i);
-        return arena.Allocate();
+            arena.Free(new Handle<Small>(i));
+        return arena.Allocate().Index;
     }
 
     // ═══════════════════════════ Free-list reuse ═════════════════════════
@@ -88,51 +88,51 @@ public class UnsafeSlabArenaBenchmarks
         for (var i = 0; i < N; i++)
             arena.Allocate();
         for (var i = N - 1; i >= 0; i--)
-            arena.Free(i);
+            arena.Free(new Handle<Medium>(i));
 
-        var last = 0;
+        var last = Handle<Medium>.None;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
-        return last;
+        return last.Index;
     }
 
     [Benchmark]
     public int Allocate_FromFreeList_RandomOrder()
     {
         var arena = new UnsafeSlabArena<Medium>();
-        var indices = new int[N];
+        var handles = new Handle<Medium>[N];
         for (var i = 0; i < N; i++)
-            indices[i] = arena.Allocate();
+            handles[i] = arena.Allocate();
 
         var rng = new Random(42);
-        rng.Shuffle(indices);
+        rng.Shuffle(handles);
         for (var i = 0; i < N; i++)
-            arena.Free(indices[i]);
+            arena.Free(handles[i]);
 
-        var last = 0;
+        var last = Handle<Medium>.None;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
-        return last;
+        return last.Index;
     }
 
     // ═══════════════════════════ Indexed access ═══════════════════════════
 
     private UnsafeSlabArena<Medium>? _readArena;
-    private int[]? _sequentialIndices;
-    private int[]? _randomIndices;
+    private Handle<Medium>[]? _sequentialIndices;
+    private Handle<Medium>[]? _randomIndices;
 
     [GlobalSetup(Targets = [nameof(Read_Sequential), nameof(Read_Random)])]
     public void SetupReads()
     {
         _readArena = new UnsafeSlabArena<Medium>();
-        _sequentialIndices = new int[N];
+        _sequentialIndices = new Handle<Medium>[N];
         for (var i = 0; i < N; i++)
         {
             _sequentialIndices[i] = _readArena.Allocate();
             _readArena[_sequentialIndices[i]] = new Medium { Value = i };
         }
 
-        _randomIndices = (int[])_sequentialIndices.Clone();
+        _randomIndices = (Handle<Medium>[])_sequentialIndices.Clone();
         var rng = new Random(42);
         rng.Shuffle(_randomIndices);
     }
@@ -166,13 +166,11 @@ public class UnsafeSlabArenaBenchmarks
     {
         var arena = new UnsafeSlabArena<Medium>();
 
-        // Warm up: fill half
         var half = N / 2;
         for (var i = 0; i < half; i++)
             arena.Allocate();
 
-        // Steady state: allocate one, free one, repeatedly
-        var last = 0;
+        var last = Handle<Medium>.None;
         for (var i = 0; i < N; i++)
         {
             last = arena.Allocate();
@@ -180,7 +178,7 @@ public class UnsafeSlabArenaBenchmarks
             arena.Free(last);
         }
 
-        return last;
+        return last.Index;
     }
 
     [Benchmark]
@@ -188,23 +186,23 @@ public class UnsafeSlabArenaBenchmarks
     {
         var arena = new UnsafeSlabArena<Medium>();
         var batchSize = Math.Max(N / 10, 1);
-        var batchIndices = new int[batchSize];
-        var last = 0;
+        var batchHandles = new Handle<Medium>[batchSize];
+        var last = Handle<Medium>.None;
 
         for (var batch = 0; batch < 10; batch++)
         {
             for (var i = 0; i < batchSize; i++)
             {
-                batchIndices[i] = arena.Allocate();
-                arena[batchIndices[i]] = new Medium { Value = i };
-                last = batchIndices[i];
+                batchHandles[i] = arena.Allocate();
+                arena[batchHandles[i]] = new Medium { Value = i };
+                last = batchHandles[i];
             }
 
             for (var i = 0; i < batchSize; i++)
-                arena.Free(batchIndices[i]);
+                arena.Free(batchHandles[i]);
         }
 
-        return last;
+        return last.Index;
     }
 
     // ═══════════════════════════ Baselines (comparison) ═══════════════════

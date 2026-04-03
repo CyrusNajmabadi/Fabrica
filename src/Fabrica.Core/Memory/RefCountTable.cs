@@ -6,8 +6,8 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Parallel refcount array with O(1) indexed access, single-threaded mutation, and iterative cascade-free.
-/// Designed as a companion to <see cref="UnsafeSlabArena{T}"/>: each arena index maps to a refcount at the same
-/// index in this table.
+/// Generic on <typeparamref name="T"/> to prevent accidental cross-type index misuse: a
+/// <c>RefCountTable&lt;MeshNode&gt;</c> only accepts <see cref="Handle{T}"/> of <c>MeshNode</c>.
 ///
 /// STORAGE
 ///   Uses <see cref="UnsafeSlabDirectory{T}"/> of <c>int</c> for the same two-level slab structure and O(1)
@@ -42,22 +42,22 @@ namespace Fabrica.Core.Memory;
 ///   Sequential increment: ~0.8 ns/op. Cascade-free (binary tree): ~2.4 ns/op. Steady-state inc/dec: ~2.5 ns/op.
 ///   See benchmarks/results/ for full tables.
 /// </summary>
-internal sealed class RefCountTable
+internal sealed class RefCountTable<T> where T : struct
 {
     private const int DefaultDirectoryLength = 65_536;
 
     private readonly UnsafeSlabDirectory<int> _directory;
 
     /// <summary>
-    /// Indices whose refcount reached zero during a decrement cascade, pending processing (the handler's
+    /// Handles whose refcount reached zero during a decrement cascade, pending processing (the handler's
     /// <see cref="IRefCountHandler.OnFreed"/> callback). Reused across cascade operations to avoid allocation.
     /// </summary>
-    private readonly UnsafeStack<int> _cascadePending = new();
+    private readonly UnsafeStack<Handle<T>> _cascadePending = new();
 
     /// <summary>
     /// True while a decrement cascade is being processed. When a <see cref="Decrement{THandler}"/> call hits
     /// zero during an active cascade (e.g., a child decrement within <see cref="IRefCountHandler.OnFreed"/>,
-    /// or a cross-table A→B→A bounce), the index is pushed onto <see cref="_cascadePending"/> and the caller
+    /// or a cross-table A→B→A bounce), the handle is pushed onto <see cref="_cascadePending"/> and the caller
     /// returns immediately — the outer cascade loop will process it.
     /// </summary>
     private bool _cascadeActive;
@@ -93,39 +93,39 @@ internal sealed class RefCountTable
 
     // ── Core operations ──────────────────────────────────────────────────
 
-    /// <summary>Returns the current refcount for the given index.</summary>
+    /// <summary>Returns the current refcount for the given handle.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int GetCount(int index)
-        => _directory[index];
+    public int GetCount(Handle<T> handle)
+        => _directory[handle.Index];
 
-    /// <summary>Increments the refcount at the given index. The caller must have called <see cref="EnsureCapacity"/>
+    /// <summary>Increments the refcount at the given handle. The caller must have called <see cref="EnsureCapacity"/>
     /// for this index range beforehand.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Increment(int index)
+    public void Increment(Handle<T> handle)
     {
         _owner.AssertOwnerThread();
-        _directory[index]++;
+        _directory[handle.Index]++;
     }
 
     /// <summary>
-    /// Decrements the refcount at the given index. If it reaches zero, the index is added to the cascade
-    /// pending stack. If no cascade is already active, starts the cascade loop which pops pending indices and
+    /// Decrements the refcount at the given handle. If it reaches zero, the handle is added to the cascade
+    /// pending stack. If no cascade is already active, starts the cascade loop which pops pending handles and
     /// calls <see cref="IRefCountHandler.OnFreed"/> for each. The handler is responsible for decrementing
     /// child refcounts (by calling <see cref="Decrement{THandler}"/> for each child) and freeing the node.
     ///
     /// Re-entrant calls (from within a handler, or from cross-table cascades) push onto the existing pending
     /// stack instead of starting a nested loop, keeping call-stack depth bounded.
     /// </summary>
-    public void Decrement<THandler>(int index, THandler handler)
+    public void Decrement<THandler>(Handle<T> handle, THandler handler)
         where THandler : struct, IRefCountHandler
     {
         _owner.AssertOwnerThread();
-        Debug.Assert(_directory[index] > 0, $"Decrement on index {index} with refcount already at {_directory[index]}.");
+        Debug.Assert(_directory[handle.Index] > 0, $"Decrement on index {handle.Index} with refcount already at {_directory[handle.Index]}.");
 
-        if (--_directory[index] != 0)
+        if (--_directory[handle.Index] != 0)
             return;
 
-        _cascadePending.Push(index);
+        _cascadePending.Push(handle);
 
         if (!_cascadeActive)
             this.RunCascade(handler);
@@ -133,31 +133,31 @@ internal sealed class RefCountTable
 
     // ── Bulk operations ──────────────────────────────────────────────────
 
-    /// <summary>Increments refcounts for all indices in the span. The caller must have called
+    /// <summary>Increments refcounts for all handles in the span. The caller must have called
     /// <see cref="EnsureCapacity"/> for the full range beforehand.</summary>
-    public void IncrementBatch(ReadOnlySpan<int> indices)
+    public void IncrementBatch(ReadOnlySpan<Handle<T>> handles)
     {
         _owner.AssertOwnerThread();
-        for (var i = 0; i < indices.Length; i++)
-            _directory[indices[i]]++;
+        for (var i = 0; i < handles.Length; i++)
+            _directory[handles[i].Index]++;
     }
 
     /// <summary>
-    /// Decrements refcounts for all indices in the span, then cascades any that hit zero. Must not be called
+    /// Decrements refcounts for all handles in the span, then cascades any that hit zero. Must not be called
     /// during an active cascade (i.e., not re-entrant — batch operations are top-level coordinator calls).
     /// </summary>
-    public void DecrementBatch<THandler>(ReadOnlySpan<int> indices, THandler handler)
+    public void DecrementBatch<THandler>(ReadOnlySpan<Handle<T>> handles, THandler handler)
         where THandler : struct, IRefCountHandler
     {
         _owner.AssertOwnerThread();
         Debug.Assert(!_cascadeActive, "DecrementBatch must not be called during an active cascade.");
 
-        for (var i = 0; i < indices.Length; i++)
+        for (var i = 0; i < handles.Length; i++)
         {
-            var index = indices[i];
+            var index = handles[i].Index;
             Debug.Assert(_directory[index] > 0, $"DecrementBatch on index {index} with refcount already at {_directory[index]}.");
             if (--_directory[index] == 0)
-                _cascadePending.Push(index);
+                _cascadePending.Push(handles[i]);
         }
 
         this.RunCascade(handler);
@@ -185,11 +185,11 @@ internal sealed class RefCountTable
     /// Handles a node whose refcount reached zero. The implementation is responsible for both decrementing
     /// child refcounts (by calling <see cref="Decrement{THandler}"/> for each child) and freeing the node
     /// (e.g., returning the index to the arena's free list). The <paramref name="table"/> parameter enables
-    /// the handler to call <see cref="Decrement{THandler}"/> for child indices.
+    /// the handler to call <see cref="Decrement{THandler}"/> for child handles.
     /// </summary>
     public interface IRefCountHandler
     {
-        void OnFreed(int index, RefCountTable table);
+        void OnFreed(Handle<T> handle, RefCountTable<T> table);
     }
 
     // ── Test accessor ─────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ internal sealed class RefCountTable
     internal TestAccessor GetTestAccessor()
         => new(this);
 
-    internal readonly struct TestAccessor(RefCountTable table)
+    internal readonly struct TestAccessor(RefCountTable<T> table)
     {
         public int[][] Directory => table._directory.RawArray;
         public int DirectoryLength => table._directory.DirectoryLength;
