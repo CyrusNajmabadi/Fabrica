@@ -1,0 +1,38 @@
+---
+description: Design for portability to non-GC languages (Rust, C++)
+alwaysApply: true
+---
+
+# Portability
+
+Fabrica should be straightforward to port to Rust or C++. Design around explicit lifetime
+management; treat .NET's GC as a convenience, not a foundation.
+
+## Principles
+
+- **Explicit ownership.** At any point it should be clear who owns an object — who creates it,
+  who may mutate it, and who is responsible for returning or releasing it.
+- **Minimize shared mutable state.** Prefer per-thread data and fork-join boundaries. Where
+  sharing is necessary, use portable synchronization (atomics, fences), not .NET-specific memory
+  model assumptions.
+- **Explicit pooling and reset.** Use `IAllocator<T>` and object pools with explicit `Return()`
+  calls. Avoid relying on finalizers or GC for resource lifecycle.
+
+## GC Usage Policy
+
+The GC may be used sparingly where the alternative would be disproportionately complex, but each
+use must be documented:
+
+- Add a comment at the site explaining what the GC is doing (e.g., collecting an orphaned ring
+  buffer after a deque resize).
+- In that same comment, describe how a non-GC implementation would handle it (e.g., epoch-based
+  reclamation, reference-counted buffer, arena release).
+- The surrounding code structure should not need to change for the non-GC port — only the
+  cleanup mechanism.
+
+## Anti-patterns
+
+- Do not rely on finalizers or `IDisposable` cleanup for correctness on hot paths.
+- Do not use `WeakReference` or `ConditionalWeakTable` as part of core data flow.
+- Do not design APIs that assume the caller can "just forget" a reference and let the GC sort
+  it out, unless the GC-assisted spot is documented as above.
