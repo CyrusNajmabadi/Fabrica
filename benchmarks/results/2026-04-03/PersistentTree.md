@@ -4,6 +4,25 @@
 **Machine:** Apple M4 Max, .NET 10, Release build
 **Tree:** depth-19 complete binary tree (~1M nodes, 8-byte TreeNode structs)
 
+## Single Fork / Release Cost (isolated)
+
+Measured over 1,000 iterations on a depth-19 (~1M node) tree. Each fork creates a 20-node spine
+(20 allocs + 40 refcount increments). Each release cascade-frees 20 old spine nodes.
+
+| Operation       | Total (1K ops) | Per-op  | Notes                                       |
+|-----------------|---------------:|--------:|---------------------------------------------|
+| **Fork only**   |      356 µs    | ~356 ns | 20 allocs + 40 rc increments + tree walk     |
+| **Release only**|      999 µs    | ~999 ns | 20 cascade frees + 40 rc decrements          |
+| **Fork+Release**|    1,133 µs    | ~1.1 µs | Full version change (fork then release)      |
+
+**Key insight:** Fork is ~3x cheaper than release. The fork walks down the tree (cache-sequential),
+allocates from the free list, and increments refcounts. The release triggers a cascade through the
+worklist, calling `OnFreed` for each spine node, which reads each node's children, decrements their
+refcounts, and frees the node — more pointer-chasing and branching.
+
+Combined fork+release (~1.1 µs) is slightly cheaper than the sum of parts (~1.35 µs) due to cache
+effects: the fork warms the spine into L1/L2, making the subsequent release's reads faster.
+
 ## Raw Allocation/Release (UnsafeSlabArena + RefCountTable)
 
 | Method                         | N       | Mean      | StdDev    | Ratio | Allocated | Alloc Ratio |
