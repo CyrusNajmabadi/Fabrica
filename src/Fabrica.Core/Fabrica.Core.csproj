@@ -9,5 +9,6 @@
 		<InternalsVisibleTo Include="Fabrica.Core.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Pipeline.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Engine.Tests" />
+		<InternalsVisibleTo Include="Fabrica.Core.Benchmarks" />
 	</ItemGroup>
 </Project>
