@@ -37,11 +37,15 @@ internal sealed class ArenaCoordinator<TNode>(UnsafeSlabArena<TNode> arena, RefC
     private readonly UnsafeSlabArena<TNode> _arena = arena;
     private readonly RefCountTable _refCounts = refCounts;
 
+    /// <summary>Maps local buffer index → global arena index for the most recently merged buffer. Indexed by
+    /// local index during fixup. Grows to accommodate the largest buffer seen; never shrinks.</summary>
     private int[] _localToGlobalMap = new int[256];
     private int _lastMapCount;
 
+    /// <summary>Collects all global indices to release across all buffers before passing them as a contiguous
+    /// span to <see cref="RefCountTable.DecrementBatch{THandler}"/>. Grows to accommodate the total release
+    /// count; never shrinks.</summary>
     private int[] _releaseBatch = new int[256];
-    private int _releaseBatchCount;
 
     private SingleThreadedOwner _owner;
 
@@ -82,7 +86,7 @@ internal sealed class ArenaCoordinator<TNode>(UnsafeSlabArena<TNode> arena, RefC
                 maxGlobalIndex = globalIndex;
         }
 
-        // Phase 2: Ensure refcount table has capacity for the new high-water mark.
+        // Phase 2: EnsureCapacity takes a count (not a max index), so +1 to cover index 0..maxGlobalIndex.
         _refCounts.EnsureCapacity(maxGlobalIndex + 1);
 
         // Phase 3: Copy, fixup, and increment children.
@@ -120,29 +124,52 @@ internal sealed class ArenaCoordinator<TNode>(UnsafeSlabArena<TNode> arena, RefC
     {
         _owner.AssertOwnerThread();
 
-        _releaseBatchCount = 0;
+        // Pre-compute total release count across all buffers so we can ensure the batch array is large enough
+        // in one shot, avoiding repeated growth checks in the drain loop.
+        var totalReleases = 0;
+        for (var b = 0; b < buffers.Length; b++)
+            totalReleases += buffers[b].ReleaseCount;
+
+        if (totalReleases == 0)
+            return;
+
+        EnsureArrayCapacity(ref _releaseBatch, totalReleases);
+
+        // Drain each buffer's release log into the contiguous batch array. After this loop every buffer's
+        // release log is empty and _releaseBatch[0..totalReleases) holds all indices to decrement.
+        var writePos = 0;
         for (var b = 0; b < buffers.Length; b++)
         {
             while (buffers[b].TryPopRelease(out var index))
-            {
-                EnsureArrayCapacity(ref _releaseBatch, _releaseBatchCount + 1);
-                _releaseBatch[_releaseBatchCount++] = index;
-            }
+                _releaseBatch[writePos++] = index;
         }
 
-        if (_releaseBatchCount > 0)
-            _refCounts.DecrementBatch(
-                new ReadOnlySpan<int>(_releaseBatch, 0, _releaseBatchCount), handler);
+        // Batch-decrement: decrements all indices first, then runs a single cascade-free pass for any that
+        // hit zero. This is more efficient than individual Decrement calls because it avoids starting and
+        // stopping the cascade loop per release.
+        _refCounts.DecrementBatch(
+            new ReadOnlySpan<int>(_releaseBatch, 0, writePos), handler);
     }
 
     /// <summary>
-    /// Convenience method: merges all buffers, then processes all releases. For callers that don't need to
-    /// inspect per-buffer mappings between merges.
+    /// Convenience method: merges all buffers, then processes all releases. Pre-sizes internal arrays based on
+    /// the total work across all buffers to minimize growth during the merge loop.
     /// </summary>
     public void Merge<THandler>(ThreadLocalBuffer<TNode>[] buffers, THandler handler)
         where THandler : struct, RefCountTable.IRefCountHandler
     {
         _owner.AssertOwnerThread();
+
+        // Pre-size the local-to-global map for the largest buffer so MergeBuffer never needs to grow it.
+        var maxBufferCount = 0;
+        for (var b = 0; b < buffers.Length; b++)
+        {
+            if (buffers[b].Count > maxBufferCount)
+                maxBufferCount = buffers[b].Count;
+        }
+
+        if (maxBufferCount > 0)
+            EnsureArrayCapacity(ref _localToGlobalMap, maxBufferCount);
 
         for (var b = 0; b < buffers.Length; b++)
             this.MergeBuffer(buffers[b]);
@@ -182,6 +209,5 @@ internal sealed class ArenaCoordinator<TNode>(UnsafeSlabArena<TNode> arena, RefC
     {
         public int[] LocalToGlobalMap => coordinator._localToGlobalMap;
         public int LastMapCount => coordinator._lastMapCount;
-        public int ReleaseBatchCount => coordinator._releaseBatchCount;
     }
 }

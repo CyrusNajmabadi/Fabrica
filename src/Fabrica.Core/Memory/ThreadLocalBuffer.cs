@@ -109,6 +109,14 @@ internal sealed class ThreadLocalBuffer<T> where T : struct
         get => _nodes.AsSpan(0, _count);
     }
 
+    /// <summary>Number of entries in the release log. The coordinator uses this to pre-size its release batch
+    /// array before draining.</summary>
+    public int ReleaseCount
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _releaseLog.Count;
+    }
+
     /// <summary>Pops one entry from the release log. Returns <c>false</c> when the log is empty. The coordinator
     /// calls this in a loop to collect all releases without allocating a delegate or intermediate list.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
