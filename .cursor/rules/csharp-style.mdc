@@ -1,0 +1,52 @@
+---
+description: C# code style conventions for the Fabrica codebase
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# C# Style
+
+## Formatting
+
+- The `.editorconfig` is authoritative. Run `dotnet format --verify-no-changes` in both Debug and
+  Release configurations — some analyzers are configuration-specific.
+- Methods and constructors using expression body (`=>`) must have the arrow on its own line,
+  indented one level (4 spaces) from the member declaration.
+
+## Naming (from .editorconfig)
+
+- Instance fields: `_camelCase` (private/internal)
+- Properties and methods: `PascalCase`
+- Local variables and parameters: `camelCase`
+- Do not use `this.` for fields. Do use `this.` for properties, methods, and events.
+
+## Fields vs Properties
+
+- Prefer private fields. Avoid exposing non-private fields.
+- To expose state, use a property. For simple data with no invariants, use an auto-property.
+- For state requiring volatile/atomic access, encapsulate the operation inside a property or
+  method rather than forcing callers to remember `Volatile.Read`/`Interlocked.*` at every call
+  site.
+- This is a general preference, not an absolute rule — if wrapping would make things very
+  contorted, a non-private field is acceptable.
+
+## Testing
+
+- Use `[Fact]` for single tests, `[Theory]` with `[InlineData]` for parameterized tests.
+- Pass `TestContext.Current.CancellationToken` to any `Wait()` or blocking call on the test
+  thread (xUnit analyzer xUnit1051 enforces this).
+- Use `Trait("Category", "Stress")` for stress tests.
+- Debug-only tests should be wrapped in `#if DEBUG` / `#endif`.
+
+## Debug Injection Pattern
+
+For testing concurrent code, add `#if DEBUG` callback properties (e.g., `DebugBeforeRentCas`)
+that fire at specific interleaving points. Tests set these to inject deterministic races. Always
+null-check and invoke: `this.DebugBeforeXxx?.Invoke();`. Pair with a `TestAccessor` struct for
+exposing internal state to tests.
+
+## Allocations
+
+- See `lambda-allocations.mdc` for hot-path allocation rules.
+- Prefer `where TAllocator : struct, IAllocator<TJob>` over `new()` constraints for poolable
+  types — enables JIT specialization and explicit reset logic.

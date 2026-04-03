@@ -1,0 +1,16 @@
+---
+description: Store research and investigations in research/ organized by date
+alwaysApply: true
+---
+
+# Research
+
+When conducting research, technical investigations, or literature surveys:
+
+- Store all research in `research/<YYYY-MM-DD>/` using today's date.
+- Use kebab-case markdown filenames (e.g., `research/2026-04-03/deferred-reference-counting.md`).
+- Include citations with URLs for all claims — papers, official docs, blog posts.
+- When multiple topics are researched, create one file per topic, plus a
+  `synthesis-and-recommendations.md` that ties them together and indexes all files.
+- Research documents capture external findings. Plans capture internal design decisions. Keep them
+  in their respective directories.
