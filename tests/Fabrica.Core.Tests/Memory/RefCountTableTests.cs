@@ -588,9 +588,13 @@ public class RefCountTableTests
 
         public MultiTableContext(int nodesPerTable = 8)
         {
+            const int SlabShift = 3;
+            var slabLength = 1 << SlabShift;
+            var directoryLength = Math.Max(4, (nodesPerTable + slabLength - 1) / slabLength);
+
             for (var t = 0; t < 3; t++)
             {
-                this.Tables[t] = CreateTinyTable(directoryLength: 4, slabShift: 3);
+                this.Tables[t] = CreateTinyTable(directoryLength: directoryLength, slabShift: SlabShift);
                 this.Tables[t].EnsureCapacity(nodesPerTable);
             }
         }
@@ -1310,6 +1314,397 @@ public class RefCountTableTests
         Assert.Equal(3, ctx.Freed[A].Count);
         Assert.Equal(6, ctx.Freed[B].Count);
         Assert.Equal(6, ctx.Freed[C].Count);
+    }
+
+    // ── Persistent tree harness ──────────────────────────────────────────
+    // Programmatic infrastructure for building persistent binary trees with path-copy sharing,
+    // adding roots at any node, releasing in any order, and verifying refcounts via a computed
+    // reference model (topological propagation from active roots).
+
+    private sealed class PersistentTreeHarness(MultiTableContext ctx)
+    {
+        private readonly MultiTableContext _ctx = ctx;
+        private readonly List<(int t, int i)> _allNodes = [];
+        private readonly Dictionary<(int t, int i), List<(int t, int i)>> _children = [];
+        private readonly List<(int t, int i)> _activeRoots = [];
+        private int _nextIndex;
+
+        public (int t, int i) AllocNode(int tableId)
+        {
+            var node = (tableId, _nextIndex++);
+            _allNodes.Add(node);
+            return node;
+        }
+
+        public void AddEdge((int t, int i) parent, (int t, int i) child)
+        {
+            if (!_children.TryGetValue(parent, out var list))
+            {
+                list = [];
+                _children[parent] = list;
+            }
+
+            list.Add(child);
+            _ctx.AddEdge(parent.t, parent.i, child.t, child.i);
+            _ctx.Tables[child.t].Increment(child.i);
+        }
+
+        public void AddRoot((int t, int i) node)
+        {
+            _activeRoots.Add(node);
+            _ctx.Tables[node.t].Increment(node.i);
+        }
+
+        public void ReleaseRoot((int t, int i) node)
+        {
+            Assert.True(_activeRoots.Remove(node), $"Root ({node.t},{node.i}) not found");
+            _ctx.Decrement(node.t, node.i);
+        }
+
+        /// <summary>Builds a complete binary tree of the given depth, distributing nodes round-robin across 3 tables.
+        /// Returns heap-order array: node i has children at 2i+1 and 2i+2.</summary>
+        public (int t, int i)[] BuildCompleteBinaryTree(int depth)
+        {
+            var count = (1 << (depth + 1)) - 1;
+            var nodes = new (int t, int i)[count];
+
+            for (var n = 0; n < count; n++)
+                nodes[n] = this.AllocNode(n % 3);
+
+            for (var n = 0; n < count; n++)
+            {
+                var left = (2 * n) + 1;
+                var right = (2 * n) + 2;
+                if (left < count) this.AddEdge(nodes[n], nodes[left]);
+                if (right < count) this.AddEdge(nodes[n], nodes[right]);
+            }
+
+            return nodes;
+        }
+
+        /// <summary>Creates a new version by path-copying from root to the given heap-order position.
+        /// New nodes are created along the path; children not on the path are shared from the original.
+        /// Returns a new tree array (clone of source with path positions replaced by new nodes).</summary>
+        public (int t, int i)[] PathCopy((int t, int i)[] tree, int targetPosition)
+        {
+            Assert.True(targetPosition >= 0 && targetPosition < tree.Length);
+
+            var path = new List<int>();
+            var pos = targetPosition;
+            while (pos > 0)
+            {
+                path.Add(pos);
+                pos = (pos - 1) / 2;
+            }
+
+            path.Add(0);
+            path.Reverse();
+
+            var newTree = ((int t, int i)[])tree.Clone();
+            foreach (var p in path)
+                newTree[p] = this.AllocNode(_nextIndex % 3);
+
+            foreach (var p in path)
+            {
+                var left = (2 * p) + 1;
+                var right = (2 * p) + 2;
+                if (left < tree.Length) this.AddEdge(newTree[p], newTree[left]);
+                if (right < tree.Length) this.AddEdge(newTree[p], newTree[right]);
+            }
+
+            return newTree;
+        }
+
+        /// <summary>Verifies all actual refcounts match expected values computed from the current active roots
+        /// and topology via topological propagation.</summary>
+        public void Verify()
+        {
+            var expected = this.ComputeExpected();
+            foreach (var node in _allNodes)
+            {
+                var exp = expected.GetValueOrDefault(node);
+                var actual = _ctx.Tables[node.t].GetCount(node.i);
+                Assert.Equal(exp, actual);
+            }
+        }
+
+        private Dictionary<(int t, int i), int> ComputeExpected()
+        {
+            var rc = new Dictionary<(int t, int i), int>();
+
+            foreach (var root in _activeRoots)
+                rc[root] = rc.GetValueOrDefault(root) + 1;
+
+            foreach (var node in this.TopoSort())
+            {
+                if (rc.GetValueOrDefault(node) <= 0) continue;
+                if (!_children.TryGetValue(node, out var ch)) continue;
+                foreach (var child in ch)
+                    rc[child] = rc.GetValueOrDefault(child) + 1;
+            }
+
+            return rc;
+        }
+
+        private List<(int t, int i)> TopoSort()
+        {
+            var visited = new HashSet<(int t, int i)>();
+            var order = new List<(int t, int i)>();
+            foreach (var node in _allNodes)
+                this.TopoVisit(node, visited, order);
+            order.Reverse();
+            return order;
+        }
+
+        private void TopoVisit((int t, int i) node, HashSet<(int t, int i)> visited, List<(int t, int i)> order)
+        {
+            if (!visited.Add(node)) return;
+            if (_children.TryGetValue(node, out var ch))
+                foreach (var child in ch)
+                    this.TopoVisit(child, visited, order);
+            order.Add(node);
+        }
+    }
+
+    // ── Permutation helpers ──────────────────────────────────────────────
+
+    private static IEnumerable<int[]> AllPermutations(int n)
+    {
+        var perm = new int[n];
+        for (var i = 0; i < n; i++) perm[i] = i;
+        do
+        {
+            yield return (int[])perm.Clone();
+        }
+        while (NextPermutation(perm));
+    }
+
+    private static bool NextPermutation(int[] arr)
+    {
+        var n = arr.Length;
+        var i = n - 2;
+        while (i >= 0 && arr[i] >= arr[i + 1]) i--;
+        if (i < 0) return false;
+        var j = n - 1;
+        while (arr[j] <= arr[i]) j--;
+        (arr[i], arr[j]) = (arr[j], arr[i]);
+        Array.Reverse(arr, i + 1, n - i - 1);
+        return true;
+    }
+
+    private static IEnumerable<int[]> SampledPermutations(int n, int count, int seed)
+    {
+        var forward = new int[n];
+        var reverse = new int[n];
+        for (var i = 0; i < n; i++)
+        {
+            forward[i] = i;
+            reverse[i] = n - 1 - i;
+        }
+
+        yield return forward;
+        yield return reverse;
+
+        var rng = new Random(seed);
+        for (var i = 0; i < count - 2; i++)
+        {
+            var perm = (int[])forward.Clone();
+            rng.Shuffle(perm);
+            yield return perm;
+        }
+    }
+
+    public static IEnumerable<object[]> PermutationsOf4()
+    {
+        foreach (var perm in AllPermutations(4))
+            yield return [perm];
+    }
+
+    public static IEnumerable<object[]> PermutationsOf5()
+    {
+        foreach (var perm in AllPermutations(5))
+            yield return [perm];
+    }
+
+    public static IEnumerable<object[]> SampledPermutationsOf6()
+    {
+        foreach (var perm in SampledPermutations(6, 50, seed: 42))
+            yield return [perm];
+    }
+
+    // ── Programmatic persistent tree tests ───────────────────────────────
+
+    [Theory]
+    [MemberData(nameof(PermutationsOf4))]
+    public void Persistent_Depth3_FourVersions_AllReleaseOrders(int[] order)
+    {
+        var ctx = new MultiTableContext(nodesPerTable: 64);
+        var h = new PersistentTreeHarness(ctx);
+
+        var v1 = h.BuildCompleteBinaryTree(3); // 15 nodes
+        h.AddRoot(v1[0]);
+
+        var v2 = h.PathCopy(v1, 3);  // modify left-left leaf
+        h.AddRoot(v2[0]);
+
+        var v3 = h.PathCopy(v1, 5);  // modify right-left leaf
+        h.AddRoot(v3[0]);
+
+        var v4 = h.PathCopy(v2, 10); // modify right-side leaf from V2
+        h.AddRoot(v4[0]);
+
+        h.Verify();
+
+        var roots = new[] { v1[0], v2[0], v3[0], v4[0] };
+        foreach (var idx in order)
+        {
+            h.ReleaseRoot(roots[idx]);
+            h.Verify();
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(PermutationsOf5))]
+    public void Persistent_Depth3_FiveRootsWithInterior_AllReleaseOrders(int[] order)
+    {
+        var ctx = new MultiTableContext(nodesPerTable: 64);
+        var h = new PersistentTreeHarness(ctx);
+
+        var v1 = h.BuildCompleteBinaryTree(3);
+        h.AddRoot(v1[0]);
+
+        var v2 = h.PathCopy(v1, 4);
+        h.AddRoot(v2[0]);
+
+        var v3 = h.PathCopy(v1, 6);
+        h.AddRoot(v3[0]);
+
+        h.AddRoot(v1[1]);  // interior root: left subtree of V1
+        h.AddRoot(v2[2]);  // interior root: right subtree of V2
+
+        h.Verify();
+
+        var roots = new[] { v1[0], v2[0], v3[0], v1[1], v2[2] };
+        foreach (var idx in order)
+        {
+            h.ReleaseRoot(roots[idx]);
+            h.Verify();
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(PermutationsOf4))]
+    public void Persistent_Depth3_ChainedPathCopies_AllReleaseOrders(int[] order)
+    {
+        var ctx = new MultiTableContext(nodesPerTable: 64);
+        var h = new PersistentTreeHarness(ctx);
+
+        // Each version is a path-copy of the previous — chained modifications
+        var v1 = h.BuildCompleteBinaryTree(3);
+        h.AddRoot(v1[0]);
+
+        var v2 = h.PathCopy(v1, 3);
+        h.AddRoot(v2[0]);
+
+        var v3 = h.PathCopy(v2, 6);
+        h.AddRoot(v3[0]);
+
+        var v4 = h.PathCopy(v3, 4);
+        h.AddRoot(v4[0]);
+
+        h.Verify();
+
+        var roots = new[] { v1[0], v2[0], v3[0], v4[0] };
+        foreach (var idx in order)
+        {
+            h.ReleaseRoot(roots[idx]);
+            h.Verify();
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(SampledPermutationsOf6))]
+    public void Persistent_Depth4_SixVersions_SampledOrders(int[] order)
+    {
+        var ctx = new MultiTableContext(nodesPerTable: 128);
+        var h = new PersistentTreeHarness(ctx);
+
+        var v1 = h.BuildCompleteBinaryTree(4); // 31 nodes
+        h.AddRoot(v1[0]);
+
+        var v2 = h.PathCopy(v1, 15); // leftmost leaf (depth 4)
+        h.AddRoot(v2[0]);
+
+        var v3 = h.PathCopy(v1, 22); // middle-right leaf
+        h.AddRoot(v3[0]);
+
+        var v4 = h.PathCopy(v2, 30); // rightmost leaf from V2
+        h.AddRoot(v4[0]);
+
+        var v5 = h.PathCopy(v3, 7);  // interior node from V3
+        h.AddRoot(v5[0]);
+
+        h.AddRoot(v1[1]);            // interior root: left subtree of V1
+
+        h.Verify();
+
+        var roots = new[] { v1[0], v2[0], v3[0], v4[0], v5[0], v1[1] };
+        foreach (var idx in order)
+        {
+            h.ReleaseRoot(roots[idx]);
+            h.Verify();
+        }
+    }
+
+    [Fact]
+    public void Persistent_InterleavedAddAndRelease()
+    {
+        var ctx = new MultiTableContext(nodesPerTable: 64);
+        var h = new PersistentTreeHarness(ctx);
+
+        // Build original and add root
+        var v1 = h.BuildCompleteBinaryTree(3);
+        h.AddRoot(v1[0]);
+        h.Verify();
+
+        // Create V2, add root
+        var v2 = h.PathCopy(v1, 5);
+        h.AddRoot(v2[0]);
+        h.Verify();
+
+        // Release V1 — V2's shared subtrees survive
+        h.ReleaseRoot(v1[0]);
+        h.Verify();
+
+        // Create V3 from V2 (still alive)
+        var v3 = h.PathCopy(v2, 3);
+        h.AddRoot(v3[0]);
+        h.Verify();
+
+        // Add interior root to V2's right subtree — keeps it alive independently
+        h.AddRoot(v2[2]);
+        h.Verify();
+
+        // Release V2 — interior root keeps right subtree alive
+        h.ReleaseRoot(v2[0]);
+        h.Verify();
+
+        // Create V4 from V3 (still alive)
+        var v4 = h.PathCopy(v3, 6);
+        h.AddRoot(v4[0]);
+        h.Verify();
+
+        // Release V3
+        h.ReleaseRoot(v3[0]);
+        h.Verify();
+
+        // Release interior root
+        h.ReleaseRoot(v2[2]);
+        h.Verify();
+
+        // Release V4 — everything should clean up
+        h.ReleaseRoot(v4[0]);
+        h.Verify();
     }
 
     // ═══════════════════════════ Cascade state ════════════════════════════
