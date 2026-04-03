@@ -20,6 +20,16 @@ alwaysApply: false
 - Local variables and parameters: `camelCase`
 - Do not use `this.` qualification except to resolve ambiguity.
 
+## Fields vs Properties
+
+- Prefer private fields. Avoid exposing non-private fields.
+- To expose state, use a property. For simple data with no invariants, use an auto-property.
+- For state requiring volatile/atomic access, encapsulate the operation inside a property or
+  method rather than forcing callers to remember `Volatile.Read`/`Interlocked.*` at every call
+  site.
+- This is a general preference, not an absolute rule — if wrapping would make things very
+  contorted, a non-private field is acceptable.
+
 ## Testing
 
 - Use `[Fact]` for single tests, `[Theory]` with `[InlineData]` for parameterized tests.
