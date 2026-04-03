@@ -5,12 +5,12 @@ using Fabrica.Core.Memory;
 namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
-/// Benchmarks for <see cref="SlabArena{T}"/> measuring core operations, access patterns, and steady-state workloads
+/// Benchmarks for <see cref="UnsafeSlabArena{T}"/> measuring core operations, access patterns, and steady-state workloads
 /// at production-default parameters (real directory size, real LOH-aware slab lengths).
 /// </summary>
 [ShortRunJob]
 [MemoryDiagnoser]
-public class SlabArenaBenchmarks
+public class UnsafeSlabArenaBenchmarks
 {
     // ── Payload types (varying sizes to exercise different slab lengths) ──
 
@@ -41,7 +41,7 @@ public class SlabArenaBenchmarks
     [Benchmark(Baseline = true)]
     public int Allocate_Small()
     {
-        var arena = new SlabArena<Small>();
+        var arena = new UnsafeSlabArena<Small>();
         var last = 0;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
@@ -51,7 +51,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int Allocate_Medium()
     {
-        var arena = new SlabArena<Medium>();
+        var arena = new UnsafeSlabArena<Medium>();
         var last = 0;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
@@ -61,7 +61,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int Allocate_Large()
     {
-        var arena = new SlabArena<Large>();
+        var arena = new UnsafeSlabArena<Large>();
         var last = 0;
         for (var i = 0; i < N; i++)
             last = arena.Allocate();
@@ -71,7 +71,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int AllocateAndFree_Small()
     {
-        var arena = new SlabArena<Small>();
+        var arena = new UnsafeSlabArena<Small>();
         for (var i = 0; i < N; i++)
             arena.Allocate();
         for (var i = N - 1; i >= 0; i--)
@@ -84,7 +84,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int Allocate_FromFreeList()
     {
-        var arena = new SlabArena<Medium>();
+        var arena = new UnsafeSlabArena<Medium>();
         for (var i = 0; i < N; i++)
             arena.Allocate();
         for (var i = N - 1; i >= 0; i--)
@@ -99,7 +99,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int Allocate_FromFreeList_RandomOrder()
     {
-        var arena = new SlabArena<Medium>();
+        var arena = new UnsafeSlabArena<Medium>();
         var indices = new int[N];
         for (var i = 0; i < N; i++)
             indices[i] = arena.Allocate();
@@ -117,14 +117,14 @@ public class SlabArenaBenchmarks
 
     // ═══════════════════════════ Indexed access ═══════════════════════════
 
-    private SlabArena<Medium>? _readArena;
+    private UnsafeSlabArena<Medium>? _readArena;
     private int[]? _sequentialIndices;
     private int[]? _randomIndices;
 
     [GlobalSetup(Targets = [nameof(Read_Sequential), nameof(Read_Random)])]
     public void SetupReads()
     {
-        _readArena = new SlabArena<Medium>();
+        _readArena = new UnsafeSlabArena<Medium>();
         _sequentialIndices = new int[N];
         for (var i = 0; i < N; i++)
         {
@@ -164,7 +164,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int SteadyState_Interleaved()
     {
-        var arena = new SlabArena<Medium>();
+        var arena = new UnsafeSlabArena<Medium>();
 
         // Warm up: fill half
         var half = N / 2;
@@ -186,7 +186,7 @@ public class SlabArenaBenchmarks
     [Benchmark]
     public int SteadyState_BulkAllocThenBulkFree()
     {
-        var arena = new SlabArena<Medium>();
+        var arena = new UnsafeSlabArena<Medium>();
         var batchSize = Math.Max(N / 10, 1);
         var batchIndices = new int[batchSize];
         var last = 0;

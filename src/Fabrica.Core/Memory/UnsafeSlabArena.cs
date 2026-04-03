@@ -36,7 +36,7 @@ namespace Fabrica.Core.Memory;
 ///   Free-list reuse (via UnsafeStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
 ///   alloc/free: ~4.3ns/op at 100K entries.
 /// </summary>
-internal sealed class SlabArena<T> where T : struct
+internal sealed class UnsafeSlabArena<T> where T : struct
 {
     private const int DefaultDirectoryLength = 65_536;
 
@@ -58,7 +58,7 @@ internal sealed class SlabArena<T> where T : struct
         else
             Debug.Assert(
                 _ownerThreadId == current,
-                $"SlabArena<{typeof(T).Name}> mutating operation called from thread {current} " +
+                $"UnsafeSlabArena<{typeof(T).Name}> mutating operation called from thread {current} " +
                 $"but owner is thread {_ownerThreadId}. Mutating operations are single-threaded.");
     }
 #endif
@@ -66,14 +66,14 @@ internal sealed class SlabArena<T> where T : struct
     // ── Constructors ──────────────────────────────────────────────────────
 
     /// <summary>Creates an arena with the default directory length and LOH-aware slab sizing.</summary>
-    public SlabArena()
+    public UnsafeSlabArena()
         : this(DefaultDirectoryLength, SlabSizeHelper<T>.SlabShift)
     {
     }
 
     /// <summary>Creates an arena with caller-specified directory length and slab shift. Intended for tests that need small
     /// parameters to exercise edge cases without allocating large amounts of memory.</summary>
-    internal SlabArena(int directoryLength, int slabShift)
+    internal UnsafeSlabArena(int directoryLength, int slabShift)
         => _directory = new UnsafeSlabDirectory<T>(directoryLength, slabShift);
 
     // ── Public API ────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ internal sealed class SlabArena<T> where T : struct
     internal TestAccessor GetTestAccessor()
         => new(this);
 
-    internal readonly struct TestAccessor(SlabArena<T> arena)
+    internal readonly struct TestAccessor(UnsafeSlabArena<T> arena)
     {
         public T[][] Directory => arena._directory.RawArray;
         public int DirectoryLength => arena._directory.DirectoryLength;
