@@ -101,7 +101,11 @@ public sealed class PinnedVersions
             throw new InvalidOperationException("Attempted to unpin a position for an owner that is not currently pinned.");
 
         if (owners.IsEmpty)
+        {
+            // GC-RELIANCE: TryRemove drops the last strong reference to the inner map allocated in Pin/GetOrAdd; the GC collects
+            // that ConcurrentDictionary when unreachable. In Rust/C++: remove the key and drop the nested owner map explicitly.
             _pinned.TryRemove(new KeyValuePair<long, ConcurrentDictionary<IPinOwner, byte>>(position, owners));
+        }
     }
 
     public bool IsPinned(long position)

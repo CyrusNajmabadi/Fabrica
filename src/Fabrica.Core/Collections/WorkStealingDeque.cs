@@ -280,6 +280,9 @@ public sealed class WorkStealingDeque<T>
             newBuffer.Items[index & newBuffer.Mask] = oldBuffer.Items[index & oldBuffer.Mask];
 
         // Release fence: ensures all item copies are visible before thieves can observe the new buffer reference.
+        // GC-RELIANCE: This write drops the deque's last strong reference to oldBuffer; the GC collects it once no in-flight steal
+        // still holds a loaded pointer to that RingBuffer. In Rust/C++: defer freeing the old buffer (epoch-based reclamation or
+        // hazard pointers) until no thief can Volatile.Read the previous _buffer, or use Arc/RC on the buffer.
         Volatile.Write(ref _buffer, newBuffer);
         return newBuffer;
     }
