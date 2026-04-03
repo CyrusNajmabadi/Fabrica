@@ -1,0 +1,1106 @@
+// Validating benchmarks:
+// ***** BenchmarkRunner: Start   *****
+// ***** Found 12 benchmark(s) in total *****
+// ***** Building 1 exe(s) in Parallel: Start   *****
+// start dotnet  restore --nodeReuse:false /p:UseSharedCompilation=false /p:Deterministic=true /p:Optimize=true /p:ArtifactsPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/" /p:OutDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:OutputPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:PublishDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/publish/" in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1
+// command took 0.69 sec and exited with 0
+// start dotnet  build -c Release --no-restore --nodeReuse:false /p:UseSharedCompilation=false /p:Deterministic=true /p:Optimize=true /p:ArtifactsPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/" /p:OutDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:OutputPath="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" /p:PublishDir="/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/publish/" --output "/Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0/" in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1
+// command took 4.34 sec and exited with 0
+// ***** Done, took 00:00:05 (5.14 sec)   *****
+// Found 12 benchmarks:
+//   VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+//   VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+//   VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+//   VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+//   VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+//   VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+//   VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+//   VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+//   VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+//   VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+//   VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+//   VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+
+// **************************
+// Benchmark: VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.IncrementChildren_Direct(N: 1000)" --job ShortRun --benchmarkId 0 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 88750.00 ns, 88.7500 us/op
+WorkloadJitting  1: 1 op, 239750.00 ns, 239.7500 us/op
+
+OverheadWarmup   1: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   5: 1 op, 0.00 ns, 0.0000 ns/op
+
+OverheadActual   1: 1 op, 250.00 ns, 250.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadActual   6: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   7: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  10: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  11: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  12: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  13: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  14: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  15: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  16: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  17: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  18: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  19: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  20: 1 op, 0.00 ns, 0.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 19584.00 ns, 19.5840 us/op
+WorkloadWarmup   2: 1 op, 20500.00 ns, 20.5000 us/op
+WorkloadWarmup   3: 1 op, 22041.00 ns, 22.0410 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 20541.00 ns, 20.5410 us/op
+WorkloadActual   2: 1 op, 21083.00 ns, 21.0830 us/op
+WorkloadActual   3: 1 op, 20542.00 ns, 20.5420 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 20499.00 ns, 20.4990 us/op
+WorkloadResult   2: 1 op, 21041.00 ns, 21.0410 us/op
+WorkloadResult   3: 1 op, 20500.00 ns, 20.5000 us/op
+// GC:  0 0 0 0 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24495 has exited with code 0.
+
+Mean = 20.680 us, StdErr = 0.181 us (0.87%), N = 3, StdDev = 0.313 us
+Min = 20.499 us, Q1 = 20.500 us, Median = 20.500 us, Q3 = 20.770 us, Max = 21.041 us
+IQR = 0.271 us, LowerFence = 20.093 us, UpperFence = 21.177 us
+ConfidenceInterval = [14.976 us; 26.384 us] (CI 99.9%), Margin = 5.704 us (27.58% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 11 (91.7%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.IncrementChildren_Visitor(N: 1000)" --job ShortRun --benchmarkId 1 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 75250.00 ns, 75.2500 us/op
+WorkloadJitting  1: 1 op, 327834.00 ns, 327.8340 us/op
+
+OverheadWarmup   1: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadWarmup   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   6: 1 op, 208.00 ns, 208.0000 ns/op
+
+OverheadActual   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   3: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual   4: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   6: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   7: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   8: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   9: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  10: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  11: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  12: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  13: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  14: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  15: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  16: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  17: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  18: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  19: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 22167.00 ns, 22.1670 us/op
+WorkloadWarmup   2: 1 op, 22333.00 ns, 22.3330 us/op
+WorkloadWarmup   3: 1 op, 22583.00 ns, 22.5830 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 22958.00 ns, 22.9580 us/op
+WorkloadActual   2: 1 op, 22167.00 ns, 22.1670 us/op
+WorkloadActual   3: 1 op, 20958.00 ns, 20.9580 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 22916.00 ns, 22.9160 us/op
+WorkloadResult   2: 1 op, 22125.00 ns, 22.1250 us/op
+WorkloadResult   3: 1 op, 20916.00 ns, 20.9160 us/op
+// GC:  0 0 0 0 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24496 has exited with code 0.
+
+Mean = 21.986 us, StdErr = 0.582 us (2.65%), N = 3, StdDev = 1.007 us
+Min = 20.916 us, Q1 = 21.520 us, Median = 22.125 us, Q3 = 22.520 us, Max = 22.916 us
+IQR = 1.000 us, LowerFence = 20.020 us, UpperFence = 24.020 us
+ConfidenceInterval = [3.610 us; 40.362 us] (CI 99.9%), Margin = 18.376 us (83.58% of Mean)
+Skewness = -0.14, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 10 (83.3%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.CascadeDecrement_Direct(N: 1000)" --job ShortRun --benchmarkId 2 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 72666.00 ns, 72.6660 us/op
+WorkloadJitting  1: 1 op, 667708.00 ns, 667.7080 us/op
+
+OverheadWarmup   1: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   3: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   4: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadWarmup   5: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   6: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   7: 1 op, 42.00 ns, 42.0000 ns/op
+
+OverheadActual   1: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   2: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   3: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   4: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   5: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   6: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   7: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  10: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  11: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  12: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  13: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  14: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  15: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  16: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  17: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  18: 1 op, 208.00 ns, 208.0000 ns/op
+OverheadActual  19: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 89750.00 ns, 89.7500 us/op
+WorkloadWarmup   2: 1 op, 107458.00 ns, 107.4580 us/op
+WorkloadWarmup   3: 1 op, 100292.00 ns, 100.2920 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 100417.00 ns, 100.4170 us/op
+WorkloadActual   2: 1 op, 105833.00 ns, 105.8330 us/op
+WorkloadActual   3: 1 op, 109459.00 ns, 109.4590 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 100375.00 ns, 100.3750 us/op
+WorkloadResult   2: 1 op, 105791.00 ns, 105.7910 us/op
+WorkloadResult   3: 1 op, 109417.00 ns, 109.4170 us/op
+// GC:  0 0 0 16416 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24498 has exited with code 0.
+
+Mean = 105.194 us, StdErr = 2.627 us (2.50%), N = 3, StdDev = 4.550 us
+Min = 100.375 us, Q1 = 103.083 us, Median = 105.791 us, Q3 = 107.604 us, Max = 109.417 us
+IQR = 4.521 us, LowerFence = 96.302 us, UpperFence = 114.385 us
+ConfidenceInterval = [22.177 us; 188.211 us] (CI 99.9%), Margin = 83.017 us (78.92% of Mean)
+Skewness = -0.13, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 9 (75.0%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.CascadeDecrement_Visitor(N: 1000)" --job ShortRun --benchmarkId 3 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 90791.00 ns, 90.7910 us/op
+WorkloadJitting  1: 1 op, 705333.00 ns, 705.3330 us/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   3: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   4: 1 op, 166.00 ns, 166.0000 ns/op
+OverheadWarmup   5: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   6: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadWarmup   7: 1 op, 41.00 ns, 41.0000 ns/op
+
+OverheadActual   1: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   2: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadActual   3: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   5: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   6: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual   7: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  10: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  11: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  12: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  13: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  14: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  15: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  16: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  17: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  18: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  19: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 106458.00 ns, 106.4580 us/op
+WorkloadWarmup   2: 1 op, 103625.00 ns, 103.6250 us/op
+WorkloadWarmup   3: 1 op, 106291.00 ns, 106.2910 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 103917.00 ns, 103.9170 us/op
+WorkloadActual   2: 1 op, 103417.00 ns, 103.4170 us/op
+WorkloadActual   3: 1 op, 102084.00 ns, 102.0840 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 103875.00 ns, 103.8750 us/op
+WorkloadResult   2: 1 op, 103375.00 ns, 103.3750 us/op
+WorkloadResult   3: 1 op, 102042.00 ns, 102.0420 us/op
+// GC:  0 0 0 16416 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24499 has exited with code 0.
+
+Mean = 103.097 us, StdErr = 0.547 us (0.53%), N = 3, StdDev = 0.948 us
+Min = 102.042 us, Q1 = 102.709 us, Median = 103.375 us, Q3 = 103.625 us, Max = 103.875 us
+IQR = 0.916 us, LowerFence = 101.334 us, UpperFence = 105.000 us
+ConfidenceInterval = [85.811 us; 120.384 us] (CI 99.9%), Margin = 17.286 us (16.77% of Mean)
+Skewness = -0.27, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 8 (66.7%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.IncrementChildren_Direct(N: 10000)" --job ShortRun --benchmarkId 4 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 75667.00 ns, 75.6670 us/op
+WorkloadJitting  1: 1 op, 672833.00 ns, 672.8330 us/op
+
+OverheadWarmup   1: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   5: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   6: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   7: 1 op, 125.00 ns, 125.0000 ns/op
+
+OverheadActual   1: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   4: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   6: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   7: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   8: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   9: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  10: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  11: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  12: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  13: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  14: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  15: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  16: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  17: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  18: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  19: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 48166.00 ns, 48.1660 us/op
+WorkloadWarmup   2: 1 op, 54917.00 ns, 54.9170 us/op
+WorkloadWarmup   3: 1 op, 49334.00 ns, 49.3340 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 46084.00 ns, 46.0840 us/op
+WorkloadActual   2: 1 op, 48917.00 ns, 48.9170 us/op
+WorkloadActual   3: 1 op, 51584.00 ns, 51.5840 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 46042.00 ns, 46.0420 us/op
+WorkloadResult   2: 1 op, 48875.00 ns, 48.8750 us/op
+WorkloadResult   3: 1 op, 51542.00 ns, 51.5420 us/op
+// GC:  0 0 0 0 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24500 has exited with code 0.
+
+Mean = 48.820 us, StdErr = 1.588 us (3.25%), N = 3, StdDev = 2.750 us
+Min = 46.042 us, Q1 = 47.459 us, Median = 48.875 us, Q3 = 50.209 us, Max = 51.542 us
+IQR = 2.750 us, LowerFence = 43.334 us, UpperFence = 54.334 us
+ConfidenceInterval = [-1.358 us; 98.998 us] (CI 99.9%), Margin = 50.178 us (102.78% of Mean)
+Skewness = -0.02, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 7 (58.3%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.IncrementChildren_Visitor(N: 10000)" --job ShortRun --benchmarkId 5 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 74083.00 ns, 74.0830 us/op
+WorkloadJitting  1: 1 op, 943917.00 ns, 943.9170 us/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   4: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   5: 1 op, 42.00 ns, 42.0000 ns/op
+
+OverheadActual   1: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   4: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   6: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   7: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  10: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  11: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  12: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  13: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  14: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  15: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  16: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  17: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  18: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  19: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  20: 1 op, 41.00 ns, 41.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 51917.00 ns, 51.9170 us/op
+WorkloadWarmup   2: 1 op, 47166.00 ns, 47.1660 us/op
+WorkloadWarmup   3: 1 op, 46333.00 ns, 46.3330 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 46833.00 ns, 46.8330 us/op
+WorkloadActual   2: 1 op, 46459.00 ns, 46.4590 us/op
+WorkloadActual   3: 1 op, 51917.00 ns, 51.9170 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 46792.00 ns, 46.7920 us/op
+WorkloadResult   2: 1 op, 46418.00 ns, 46.4180 us/op
+WorkloadResult   3: 1 op, 51876.00 ns, 51.8760 us/op
+// GC:  0 0 0 0 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24502 has exited with code 0.
+
+Mean = 48.362 us, StdErr = 1.760 us (3.64%), N = 3, StdDev = 3.049 us
+Min = 46.418 us, Q1 = 46.605 us, Median = 46.792 us, Q3 = 49.334 us, Max = 51.876 us
+IQR = 2.729 us, LowerFence = 42.511 us, UpperFence = 53.428 us
+ConfidenceInterval = [-7.262 us; 103.986 us] (CI 99.9%), Margin = 55.624 us (115.02% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 6 (50.0%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.CascadeDecrement_Direct(N: 10000)" --job ShortRun --benchmarkId 6 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 67625.00 ns, 67.6250 us/op
+WorkloadJitting  1: 1 op, 1549416.00 ns, 1.5494 ms/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   4: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   5: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   6: 1 op, 41.00 ns, 41.0000 ns/op
+
+OverheadActual   1: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   2: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   3: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   6: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   7: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  10: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  11: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  12: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  13: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  14: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  15: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  16: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  17: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  18: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  19: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  20: 1 op, 41.00 ns, 41.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 121750.00 ns, 121.7500 us/op
+WorkloadWarmup   2: 1 op, 121625.00 ns, 121.6250 us/op
+WorkloadWarmup   3: 1 op, 129125.00 ns, 129.1250 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 133250.00 ns, 133.2500 us/op
+WorkloadActual   2: 1 op, 135500.00 ns, 135.5000 us/op
+WorkloadActual   3: 1 op, 128417.00 ns, 128.4170 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 133209.00 ns, 133.2090 us/op
+WorkloadResult   2: 1 op, 135459.00 ns, 135.4590 us/op
+WorkloadResult   3: 1 op, 128376.00 ns, 128.3760 us/op
+// GC:  0 0 0 262368 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24503 has exited with code 0.
+
+Mean = 132.348 us, StdErr = 2.090 us (1.58%), N = 3, StdDev = 3.619 us
+Min = 128.376 us, Q1 = 130.792 us, Median = 133.209 us, Q3 = 134.334 us, Max = 135.459 us
+IQR = 3.542 us, LowerFence = 125.480 us, UpperFence = 139.646 us
+ConfidenceInterval = [66.321 us; 198.375 us] (CI 99.9%), Margin = 66.027 us (49.89% of Mean)
+Skewness = -0.22, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 5 (41.7%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.CascadeDecrement_Visitor(N: 10000)" --job ShortRun --benchmarkId 7 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 69417.00 ns, 69.4170 us/op
+WorkloadJitting  1: 1 op, 1678250.00 ns, 1.6783 ms/op
+
+OverheadWarmup   1: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   3: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   4: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   6: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   7: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   8: 1 op, 125.00 ns, 125.0000 ns/op
+
+OverheadActual   1: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   5: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   6: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   7: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   8: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual   9: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadActual  10: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  11: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  12: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  13: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  14: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  15: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  16: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  17: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  18: 1 op, 167.00 ns, 167.0000 ns/op
+OverheadActual  19: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  20: 1 op, 0.00 ns, 0.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 139667.00 ns, 139.6670 us/op
+WorkloadWarmup   2: 1 op, 137333.00 ns, 137.3330 us/op
+WorkloadWarmup   3: 1 op, 138708.00 ns, 138.7080 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 140334.00 ns, 140.3340 us/op
+WorkloadActual   2: 1 op, 139708.00 ns, 139.7080 us/op
+WorkloadActual   3: 1 op, 138959.00 ns, 138.9590 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 140292.50 ns, 140.2925 us/op
+WorkloadResult   2: 1 op, 139666.50 ns, 139.6665 us/op
+WorkloadResult   3: 1 op, 138917.50 ns, 138.9175 us/op
+// GC:  0 0 0 262368 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24504 has exited with code 0.
+
+Mean = 139.625 us, StdErr = 0.397 us (0.28%), N = 3, StdDev = 0.688 us
+Min = 138.917 us, Q1 = 139.292 us, Median = 139.667 us, Q3 = 139.980 us, Max = 140.292 us
+IQR = 0.688 us, LowerFence = 138.261 us, UpperFence = 141.011 us
+ConfidenceInterval = [127.066 us; 152.185 us] (CI 99.9%), Margin = 12.559 us (8.99% of Mean)
+Skewness = -0.06, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 4 (33.3%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.IncrementChildren_Direct(N: 100000)" --job ShortRun --benchmarkId 8 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 66750.00 ns, 66.7500 us/op
+WorkloadJitting  1: 1 op, 851125.00 ns, 851.1250 us/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   4: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   5: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   6: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   7: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   8: 1 op, 42.00 ns, 42.0000 ns/op
+
+OverheadActual   1: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   6: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   7: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   8: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   9: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  10: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  11: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  12: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  13: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  14: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  15: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  16: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  17: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  18: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  19: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 213291.00 ns, 213.2910 us/op
+WorkloadWarmup   2: 1 op, 216500.00 ns, 216.5000 us/op
+WorkloadWarmup   3: 1 op, 196625.00 ns, 196.6250 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 233208.00 ns, 233.2080 us/op
+WorkloadActual   2: 1 op, 210875.00 ns, 210.8750 us/op
+WorkloadActual   3: 1 op, 210875.00 ns, 210.8750 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 233166.50 ns, 233.1665 us/op
+WorkloadResult   2: 1 op, 210833.50 ns, 210.8335 us/op
+WorkloadResult   3: 1 op, 210833.50 ns, 210.8335 us/op
+// GC:  0 0 0 0 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24505 has exited with code 0.
+
+Mean = 218.278 us, StdErr = 7.444 us (3.41%), N = 3, StdDev = 12.894 us
+Min = 210.833 us, Q1 = 210.833 us, Median = 210.833 us, Q3 = 222.000 us, Max = 233.167 us
+IQR = 11.166 us, LowerFence = 194.084 us, UpperFence = 238.750 us
+ConfidenceInterval = [-16.956 us; 453.512 us] (CI 99.9%), Margin = 235.234 us (107.77% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 3 (25.0%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.IncrementChildren_Visitor(N: 100000)" --job ShortRun --benchmarkId 9 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 74750.00 ns, 74.7500 us/op
+WorkloadJitting  1: 1 op, 1003833.00 ns, 1.0038 ms/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   6: 1 op, 42.00 ns, 42.0000 ns/op
+
+OverheadActual   1: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   2: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   3: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   5: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   6: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   7: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  10: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  11: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  12: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  13: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  14: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  15: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  16: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  17: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  18: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  19: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  20: 1 op, 41.00 ns, 41.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 207458.00 ns, 207.4580 us/op
+WorkloadWarmup   2: 1 op, 213708.00 ns, 213.7080 us/op
+WorkloadWarmup   3: 1 op, 212167.00 ns, 212.1670 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 200916.00 ns, 200.9160 us/op
+WorkloadActual   2: 1 op, 209708.00 ns, 209.7080 us/op
+WorkloadActual   3: 1 op, 215458.00 ns, 215.4580 us/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 200874.00 ns, 200.8740 us/op
+WorkloadResult   2: 1 op, 209666.00 ns, 209.6660 us/op
+WorkloadResult   3: 1 op, 215416.00 ns, 215.4160 us/op
+// GC:  0 0 0 0 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24506 has exited with code 0.
+
+Mean = 208.652 us, StdErr = 4.228 us (2.03%), N = 3, StdDev = 7.324 us
+Min = 200.874 us, Q1 = 205.270 us, Median = 209.666 us, Q3 = 212.541 us, Max = 215.416 us
+IQR = 7.271 us, LowerFence = 194.363 us, UpperFence = 223.447 us
+ConfidenceInterval = [75.038 us; 342.266 us] (CI 99.9%), Margin = 133.614 us (64.04% of Mean)
+Skewness = -0.14, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 2 (16.7%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.CascadeDecrement_Direct(N: 100000)" --job ShortRun --benchmarkId 10 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 67417.00 ns, 67.4170 us/op
+WorkloadJitting  1: 1 op, 2514167.00 ns, 2.5142 ms/op
+
+OverheadWarmup   1: 1 op, 208.00 ns, 208.0000 ns/op
+OverheadWarmup   2: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadWarmup   3: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   4: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   5: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   6: 1 op, 83.00 ns, 83.0000 ns/op
+
+OverheadActual   1: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   3: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual   6: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   7: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   8: 1 op, 209.00 ns, 209.0000 ns/op
+OverheadActual   9: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadActual  10: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  11: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  12: 1 op, 209.00 ns, 209.0000 ns/op
+OverheadActual  13: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  14: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  15: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  16: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  17: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  18: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  19: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  20: 1 op, 0.00 ns, 0.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 1027458.00 ns, 1.0275 ms/op
+WorkloadWarmup   2: 1 op, 1053083.00 ns, 1.0531 ms/op
+WorkloadWarmup   3: 1 op, 997667.00 ns, 997.6670 us/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 963792.00 ns, 963.7920 us/op
+WorkloadActual   2: 1 op, 1023125.00 ns, 1.0231 ms/op
+WorkloadActual   3: 1 op, 1042708.00 ns, 1.0427 ms/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 963729.50 ns, 963.7295 us/op
+WorkloadResult   2: 1 op, 1023062.50 ns, 1.0231 ms/op
+WorkloadResult   3: 1 op, 1042645.50 ns, 1.0426 ms/op
+// GC:  0 0 0 2097520 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24507 has exited with code 0.
+
+Mean = 1.010 ms, StdErr = 0.024 ms (2.35%), N = 3, StdDev = 0.041 ms
+Min = 0.964 ms, Q1 = 0.993 ms, Median = 1.023 ms, Q3 = 1.033 ms, Max = 1.043 ms
+IQR = 0.039 ms, LowerFence = 0.934 ms, UpperFence = 1.092 ms
+ConfidenceInterval = [0.260 ms; 1.759 ms] (CI 99.9%), Margin = 0.750 ms (74.24% of Mean)
+Skewness = -0.29, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 1 (8.3%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// **************************
+// Benchmark: VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+// *** Execute ***
+// Launch: 1 / 1
+// Execute: dotnet Fabrica.Core.Benchmarks-ShortRun-1.dll --anonymousPipes 134 135 --benchmarkName "Fabrica.Core.Benchmarks.VisitorPatternBenchmarks.CascadeDecrement_Visitor(N: 100000)" --job ShortRun --benchmarkId 11 in /Users/cyrus.najmabadi/github/Fabrica/benchmarks/Fabrica.Core.Benchmarks/bin/Release/net10.0/Fabrica.Core.Benchmarks-ShortRun-1/bin/Release/net10.0
+// Failed to set up high priority (Permission denied). In order to run benchmarks with high priority, make sure you have the right permissions.
+// BeforeAnythingElse
+
+// Benchmark Process Environment Information:
+// BenchmarkDotNet v0.15.8
+// Runtime=.NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+// GC=Concurrent Workstation
+// HardwareIntrinsics=ArmBase+AdvSimd,AES,CRC32,DP,RDM,SHA1,SHA256 VectorSize=128
+// Job: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3)
+
+OverheadJitting  1: 1 op, 74250.00 ns, 74.2500 us/op
+WorkloadJitting  1: 1 op, 2726208.00 ns, 2.7262 ms/op
+
+OverheadWarmup   1: 1 op, 84.00 ns, 84.0000 ns/op
+OverheadWarmup   2: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadWarmup   3: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadWarmup   4: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadWarmup   5: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadWarmup   6: 1 op, 84.00 ns, 84.0000 ns/op
+
+OverheadActual   1: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual   2: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   3: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   4: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   5: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual   6: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual   7: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   8: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual   9: 1 op, 125.00 ns, 125.0000 ns/op
+OverheadActual  10: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  11: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  12: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  13: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  14: 1 op, 42.00 ns, 42.0000 ns/op
+OverheadActual  15: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  16: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  17: 1 op, 83.00 ns, 83.0000 ns/op
+OverheadActual  18: 1 op, 41.00 ns, 41.0000 ns/op
+OverheadActual  19: 1 op, 0.00 ns, 0.0000 ns/op
+OverheadActual  20: 1 op, 42.00 ns, 42.0000 ns/op
+
+WorkloadWarmup   1: 1 op, 1115500.00 ns, 1.1155 ms/op
+WorkloadWarmup   2: 1 op, 1207000.00 ns, 1.2070 ms/op
+WorkloadWarmup   3: 1 op, 1038000.00 ns, 1.0380 ms/op
+
+// BeforeActualRun
+WorkloadActual   1: 1 op, 1087292.00 ns, 1.0873 ms/op
+WorkloadActual   2: 1 op, 1087458.00 ns, 1.0875 ms/op
+WorkloadActual   3: 1 op, 1121834.00 ns, 1.1218 ms/op
+
+// AfterActualRun
+WorkloadResult   1: 1 op, 1087250.00 ns, 1.0873 ms/op
+WorkloadResult   2: 1 op, 1087416.00 ns, 1.0874 ms/op
+WorkloadResult   3: 1 op, 1121792.00 ns, 1.1218 ms/op
+// GC:  0 0 0 2097520 1
+// Threading:  0 0 1
+
+// AfterAll
+// Benchmark Process 24508 has exited with code 0.
+
+Mean = 1.099 ms, StdErr = 0.011 ms (1.05%), N = 3, StdDev = 0.020 ms
+Min = 1.087 ms, Q1 = 1.087 ms, Median = 1.087 ms, Q3 = 1.105 ms, Max = 1.122 ms
+IQR = 0.017 ms, LowerFence = 1.061 ms, UpperFence = 1.131 ms
+ConfidenceInterval = [0.736 ms; 1.462 ms] (CI 99.9%), Margin = 0.363 ms (33.03% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+
+// ** Remained 0 (0.0%) benchmark(s) to run. Estimated finish 2026-04-04 1:53 (0h 0m from now) **
+// ***** BenchmarkRunner: Finish  *****
+
+// * Export *
+  BenchmarkDotNet.Artifacts/results/Fabrica.Core.Benchmarks.VisitorPatternBenchmarks-report.csv
+  BenchmarkDotNet.Artifacts/results/Fabrica.Core.Benchmarks.VisitorPatternBenchmarks-report-github.md
+  BenchmarkDotNet.Artifacts/results/Fabrica.Core.Benchmarks.VisitorPatternBenchmarks-report.html
+
+// * Detailed results *
+VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 20.680 us, StdErr = 0.181 us (0.87%), N = 3, StdDev = 0.313 us
+Min = 20.499 us, Q1 = 20.500 us, Median = 20.500 us, Q3 = 20.770 us, Max = 21.041 us
+IQR = 0.271 us, LowerFence = 20.093 us, UpperFence = 21.177 us
+ConfidenceInterval = [14.976 us; 26.384 us] (CI 99.9%), Margin = 5.704 us (27.58% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[20.485 us ; 21.055 us) | @@@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 21.986 us, StdErr = 0.582 us (2.65%), N = 3, StdDev = 1.007 us
+Min = 20.916 us, Q1 = 21.520 us, Median = 22.125 us, Q3 = 22.520 us, Max = 22.916 us
+IQR = 1.000 us, LowerFence = 20.020 us, UpperFence = 24.020 us
+ConfidenceInterval = [3.610 us; 40.362 us] (CI 99.9%), Margin = 18.376 us (83.58% of Mean)
+Skewness = -0.14, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[19.999 us ; 21.604 us) | @
+[21.604 us ; 23.437 us) | @@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 105.194 us, StdErr = 2.627 us (2.50%), N = 3, StdDev = 4.550 us
+Min = 100.375 us, Q1 = 103.083 us, Median = 105.791 us, Q3 = 107.604 us, Max = 109.417 us
+IQR = 4.521 us, LowerFence = 96.302 us, UpperFence = 114.385 us
+ConfidenceInterval = [22.177 us; 188.211 us] (CI 99.9%), Margin = 83.017 us (78.92% of Mean)
+Skewness = -0.13, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[ 96.234 us ; 103.463 us) | @
+[103.463 us ; 111.745 us) | @@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=1000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 103.097 us, StdErr = 0.547 us (0.53%), N = 3, StdDev = 0.948 us
+Min = 102.042 us, Q1 = 102.709 us, Median = 103.375 us, Q3 = 103.625 us, Max = 103.875 us
+IQR = 0.916 us, LowerFence = 101.334 us, UpperFence = 105.000 us
+ConfidenceInterval = [85.811 us; 120.384 us] (CI 99.9%), Margin = 17.286 us (16.77% of Mean)
+Skewness = -0.27, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[101.180 us ; 104.737 us) | @@@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 48.820 us, StdErr = 1.588 us (3.25%), N = 3, StdDev = 2.750 us
+Min = 46.042 us, Q1 = 47.459 us, Median = 48.875 us, Q3 = 50.209 us, Max = 51.542 us
+IQR = 2.750 us, LowerFence = 43.334 us, UpperFence = 54.334 us
+ConfidenceInterval = [-1.358 us; 98.998 us] (CI 99.9%), Margin = 50.178 us (102.78% of Mean)
+Skewness = -0.02, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[43.539 us ; 47.706 us) | @
+[47.706 us ; 52.711 us) | @@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 48.362 us, StdErr = 1.760 us (3.64%), N = 3, StdDev = 3.049 us
+Min = 46.418 us, Q1 = 46.605 us, Median = 46.792 us, Q3 = 49.334 us, Max = 51.876 us
+IQR = 2.729 us, LowerFence = 42.511 us, UpperFence = 53.428 us
+ConfidenceInterval = [-7.262 us; 103.986 us] (CI 99.9%), Margin = 55.624 us (115.02% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[46.372 us ; 51.922 us) | @@@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 132.348 us, StdErr = 2.090 us (1.58%), N = 3, StdDev = 3.619 us
+Min = 128.376 us, Q1 = 130.792 us, Median = 133.209 us, Q3 = 134.334 us, Max = 135.459 us
+IQR = 3.542 us, LowerFence = 125.480 us, UpperFence = 139.646 us
+ConfidenceInterval = [66.321 us; 198.375 us] (CI 99.9%), Margin = 66.027 us (49.89% of Mean)
+Skewness = -0.22, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[125.082 us ; 131.040 us) | @
+[131.040 us ; 138.753 us) | @@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=10000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 139.625 us, StdErr = 0.397 us (0.28%), N = 3, StdDev = 0.688 us
+Min = 138.917 us, Q1 = 139.292 us, Median = 139.667 us, Q3 = 139.980 us, Max = 140.292 us
+IQR = 0.688 us, LowerFence = 138.261 us, UpperFence = 141.011 us
+ConfidenceInterval = [127.066 us; 152.185 us] (CI 99.9%), Margin = 12.559 us (8.99% of Mean)
+Skewness = -0.06, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[138.291 us ; 140.919 us) | @@@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 218.278 us, StdErr = 7.444 us (3.41%), N = 3, StdDev = 12.894 us
+Min = 210.833 us, Q1 = 210.833 us, Median = 210.833 us, Q3 = 222.000 us, Max = 233.167 us
+IQR = 11.166 us, LowerFence = 194.084 us, UpperFence = 238.750 us
+ConfidenceInterval = [-16.956 us; 453.512 us] (CI 99.9%), Margin = 235.234 us (107.77% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[210.266 us ; 233.734 us) | @@@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 208.652 us, StdErr = 4.228 us (2.03%), N = 3, StdDev = 7.324 us
+Min = 200.874 us, Q1 = 205.270 us, Median = 209.666 us, Q3 = 212.541 us, Max = 215.416 us
+IQR = 7.271 us, LowerFence = 194.363 us, UpperFence = 223.447 us
+ConfidenceInterval = [75.038 us; 342.266 us] (CI 99.9%), Margin = 133.614 us (64.04% of Mean)
+Skewness = -0.14, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[194.209 us ; 205.876 us) | @
+[205.876 us ; 219.206 us) | @@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 1.010 ms, StdErr = 0.024 ms (2.35%), N = 3, StdDev = 0.041 ms
+Min = 0.964 ms, Q1 = 0.993 ms, Median = 1.023 ms, Q3 = 1.033 ms, Max = 1.043 ms
+IQR = 0.039 ms, LowerFence = 0.934 ms, UpperFence = 1.092 ms
+ConfidenceInterval = [0.260 ms; 1.759 ms] (CI 99.9%), Margin = 0.750 ms (74.24% of Mean)
+Skewness = -0.29, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[0.926 ms ; 0.995 ms) | @
+[0.995 ms ; 1.080 ms) | @@
+---------------------------------------------------
+
+VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun(InvocationCount=1, IterationCount=3, LaunchCount=1, UnrollFactor=1, WarmupCount=3) [N=100000]
+Runtime = .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a; GC = Concurrent Workstation
+Mean = 1.099 ms, StdErr = 0.011 ms (1.05%), N = 3, StdDev = 0.020 ms
+Min = 1.087 ms, Q1 = 1.087 ms, Median = 1.087 ms, Q3 = 1.105 ms, Max = 1.122 ms
+IQR = 0.017 ms, LowerFence = 1.061 ms, UpperFence = 1.131 ms
+ConfidenceInterval = [0.736 ms; 1.462 ms] (CI 99.9%), Margin = 0.363 ms (33.03% of Mean)
+Skewness = 0.38, Kurtosis = 0.67, MValue = 2
+-------------------- Histogram --------------------
+[1.086 ms ; 1.123 ms) | @@@
+---------------------------------------------------
+
+// * Summary *
+
+BenchmarkDotNet v0.15.8, macOS Tahoe 26.3.1 (a) (25D771280a) [Darwin 25.3.0]
+Apple M4 Max, 1 CPU, 16 logical and 16 physical cores
+.NET SDK 10.0.102
+  [Host]   : .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+  ShortRun : .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+
+Job=ShortRun  InvocationCount=1  IterationCount=3  
+LaunchCount=1  UnrollFactor=1  WarmupCount=3  
+
+| Method                    | N      | Mean        | Error      | StdDev    | Ratio | RatioSD | Allocated | Alloc Ratio |
+|-------------------------- |------- |------------:|-----------:|----------:|------:|--------:|----------:|------------:|
+| IncrementChildren_Direct  | 1000   |    20.68 us |   5.704 us |  0.313 us |  1.00 |    0.02 |         - |          NA |
+| IncrementChildren_Visitor | 1000   |    21.99 us |  18.376 us |  1.007 us |  1.06 |    0.04 |         - |          NA |
+| CascadeDecrement_Direct   | 1000   |   105.19 us |  83.017 us |  4.550 us |  5.09 |    0.20 |   16416 B |          NA |
+| CascadeDecrement_Visitor  | 1000   |   103.10 us |  17.286 us |  0.948 us |  4.99 |    0.08 |   16416 B |          NA |
+|                           |        |             |            |           |       |         |           |             |
+| IncrementChildren_Direct  | 10000  |    48.82 us |  50.178 us |  2.750 us |  1.00 |    0.07 |         - |          NA |
+| IncrementChildren_Visitor | 10000  |    48.36 us |  55.624 us |  3.049 us |  0.99 |    0.07 |         - |          NA |
+| CascadeDecrement_Direct   | 10000  |   132.35 us |  66.027 us |  3.619 us |  2.72 |    0.15 |  262368 B |          NA |
+| CascadeDecrement_Visitor  | 10000  |   139.63 us |  12.559 us |  0.688 us |  2.87 |    0.14 |  262368 B |          NA |
+|                           |        |             |            |           |       |         |           |             |
+| IncrementChildren_Direct  | 100000 |   218.28 us | 235.234 us | 12.894 us |  1.00 |    0.07 |         - |          NA |
+| IncrementChildren_Visitor | 100000 |   208.65 us | 133.614 us |  7.324 us |  0.96 |    0.06 |         - |          NA |
+| CascadeDecrement_Direct   | 100000 | 1,009.81 us | 749.683 us | 41.093 us |  4.64 |    0.28 | 2097520 B |          NA |
+| CascadeDecrement_Visitor  | 100000 | 1,098.82 us | 362.960 us | 19.895 us |  5.05 |    0.26 | 2097520 B |          NA |
+
+// * Warnings *
+MinIterationTime
+  VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun  -> The minimum observed iteration time is 20.541us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun -> The minimum observed iteration time is 20.958us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun   -> The minimum observed iteration time is 100.417us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun  -> The minimum observed iteration time is 102.084us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun  -> The minimum observed iteration time is 46.084us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun -> The minimum observed iteration time is 46.459us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun   -> The minimum observed iteration time is 128.417us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun  -> The minimum observed iteration time is 138.959us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.IncrementChildren_Direct: ShortRun  -> The minimum observed iteration time is 210.875us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.IncrementChildren_Visitor: ShortRun -> The minimum observed iteration time is 200.916us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.CascadeDecrement_Direct: ShortRun   -> The minimum observed iteration time is 963.792us which is very small. It's recommended to increase it to at least 100ms using more operations.
+  VisitorPatternBenchmarks.CascadeDecrement_Visitor: ShortRun  -> The minimum observed iteration time is 1.087ms which is very small. It's recommended to increase it to at least 100ms using more operations.
+// * Config Issues *
+
+// * Warnings *
+Configuration
+  Summary -> The exporter MarkdownExporter-github is already present in configuration. There may be unexpected results.
+
+// * Legends *
+  N           : Value of the 'N' parameter
+  Mean        : Arithmetic mean of all measurements
+  Error       : Half of 99.9% confidence interval
+  StdDev      : Standard deviation of all measurements
+  Ratio       : Mean of the ratio distribution ([Current]/[Baseline])
+  RatioSD     : Standard deviation of the ratio distribution ([Current]/[Baseline])
+  Allocated   : Allocated memory per single operation (managed only, inclusive, 1KB = 1024B)
+  Alloc Ratio : Allocated memory ratio distribution ([Current]/[Baseline])
+  1 us        : 1 Microsecond (0.000001 sec)
+
+// * Diagnostic Output - MemoryDiagnoser *
+
+
+// ***** BenchmarkRunner: End *****
+Run time: 00:00:01 (1.58 sec), executed benchmarks: 12
+
+Global total time: 00:00:06 (6.97 sec), executed benchmarks: 12
+// * Artifacts cleanup *
+Artifacts cleanup is finished

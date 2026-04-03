@@ -1,10 +1,10 @@
 namespace Fabrica.Core.Memory;
 
 /// <summary>
-/// Enumerates ALL children of a node (same-type and cross-type), dispatching each to an
-/// <see cref="IChildAction"/> callback. Implementations encode the structure of a specific node
-/// type — which fields are child handles and which <see cref="RefCountTable{T}"/> each
-/// belongs to. The action is pluggable: increment, validate, collect, etc.
+/// Enumerates ALL children of a node (same-type and cross-type), dispatching each child's
+/// <see cref="Handle{T}"/> to an <see cref="IChildAction"/> callback. Implementations encode
+/// the structure of a specific node type — which fields are child handles. The action is
+/// pluggable: increment, validate, collect, etc.
 ///
 /// STRUCT GENERIC PATTERN
 ///   Both the enumerator and the action are struct type parameters. The JIT specializes each

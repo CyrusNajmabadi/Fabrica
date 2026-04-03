@@ -6,9 +6,9 @@ using Fabrica.Core.Memory;
 namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
-/// Measures the overhead (if any) of the simplified visitor pattern — where
-/// <see cref="IChildAction.OnChild{TChild}"/> receives only <c>Handle&lt;TChild&gt;</c> and
-/// <c>RefCountTable&lt;TChild&gt;</c> (no THandler, no NodeStore) — vs. hand-rolled direct code.
+/// Measures the overhead (if any) of the visitor pattern — where
+/// <see cref="IChildAction.OnChild{TChild}"/> receives only <c>Handle&lt;TChild&gt;</c> — vs.
+/// hand-rolled direct code.
 ///
 /// The increment path is the primary focus: it's the hot path that the visitor pattern must
 /// handle with zero overhead. The cascade-decrement path uses hand-rolled handlers in both
@@ -47,16 +47,24 @@ public class VisitorPatternBenchmarks
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // VISITOR — simplified IChildAction (no THandler, no NodeStore)
+    // VISITOR — IChildAction receives Handle only
     // ═══════════════════════════════════════════════════════════════════════
 
-    private struct IncrementAction : IChildAction
+    /// <summary>
+    /// Captures the world's refcount tables and increments the appropriate one per child type.
+    /// typeof(TChild) comparisons are JIT constants — dead branches are eliminated entirely.
+    /// </summary>
+    private struct IncrementAction(
+        RefCountTable<ParentNode> parentRC,
+        RefCountTable<ChildNode> childRC) : IChildAction
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnChild<TChild>(Handle<TChild> child, RefCountTable<TChild> refCounts)
-            where TChild : struct
+        public void OnChild<TChild>(Handle<TChild> child) where TChild : struct
         {
-            refCounts.Increment(child);
+            if (typeof(TChild) == typeof(ParentNode))
+                parentRC.Increment(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
+            else if (typeof(TChild) == typeof(ChildNode))
+                childRC.Increment(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
         }
     }
 
@@ -66,9 +74,9 @@ public class VisitorPatternBenchmarks
         public void EnumerateChildren<TAction>(in ParentNode node, in World context, ref TAction action)
             where TAction : struct, IChildAction
         {
-            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent, context.ParentRefCounts);
-            if (node.RightParent.IsValid) action.OnChild(node.RightParent, context.ParentRefCounts);
-            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef, context.ChildRefCounts);
+            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent);
+            if (node.RightParent.IsValid) action.OnChild(node.RightParent);
+            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef);
         }
     }
 
@@ -104,7 +112,7 @@ public class VisitorPatternBenchmarks
         }
     }
 
-    // ── Visitor-composed handler (uses enumerator internally) ────────────
+    // ── Visitor-composed cascade handler ─────────────────────────────────
 
     private struct VisitorChildHandler(UnsafeSlabArena<ChildNode> arena) : RefCountTable<ChildNode>.IRefCountHandler
     {
@@ -212,7 +220,7 @@ public class VisitorPatternBenchmarks
     {
         var parentArena = _world.ParentArena;
         var enumerator = default(ParentNodeEnumerator);
-        var action = new IncrementAction();
+        var action = new IncrementAction(_world.ParentRefCounts, _world.ChildRefCounts);
         var count = 0;
 
         for (var i = 0; i < this.N; i++)
