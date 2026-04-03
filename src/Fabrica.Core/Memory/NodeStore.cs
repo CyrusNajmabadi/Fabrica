@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Threading;
 
@@ -53,6 +54,21 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
 
     /// <summary>Parallel refcount array — index <c>i</c> holds the refcount for the node at arena index <c>i</c>.</summary>
     public RefCountTable<TNode> RefCounts { get; } = refCounts;
+
+    // ── Single-handle operations (used by visitor actions) ─────────────
+
+    /// <summary>Increments the refcount for a single handle. Used by <see cref="IChildAction"/> implementations
+    /// during child enumeration.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void IncrementRefCount(Handle<TNode> handle)
+        => this.RefCounts.Increment(handle);
+
+    /// <summary>Decrements the refcount for a single handle, triggering cascade-free if it hits zero.
+    /// Uses the stored handler — no caller involvement needed. Used by <see cref="IChildAction"/>
+    /// implementations during child enumeration.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void DecrementRefCount(Handle<TNode> handle)
+        => this.RefCounts.Decrement(handle, _handler);
 
     // ── Root operations ──────────────────────────────────────────────────
 
