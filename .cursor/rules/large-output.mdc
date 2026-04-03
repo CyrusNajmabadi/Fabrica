@@ -1,0 +1,31 @@
+---
+description: Rules for handling commands that produce large output
+globs:
+alwaysApply: true
+---
+
+# Large Output Handling
+
+## Never consume large output directly
+
+Commands like `dotnet test`, `dotnet run` (benchmarks), `dotnet build`, CI log fetches, and any tool that may produce more than ~50 lines of output **must not** be read in full. Large output blows the agent's context window and degrades quality for the rest of the conversation.
+
+## Rules
+
+1. **Redirect to a file first.** Pipe output to a temp file, then read only the relevant tail/section:
+   ```bash
+   dotnet test > /tmp/test-output.txt 2>&1
+   # Then read only the last 20 lines to check pass/fail
+   ```
+
+2. **Use `| tail -N`** for commands where you only care about the summary (build results, test results, format checks). Typical values: `tail -10` for build, `tail -15` for test runs.
+
+3. **Never read a multi-hundred-line file in full** just to find one piece of information. Use `tail`, `head`, or grep to extract only what you need.
+
+4. **Benchmark runs** in particular produce massive output. Always use `--artifacts <dir>` to direct results to a known location, then read only the specific result files (e.g., the `-report-github.md` file) — never the console log.
+
+5. **CI log inspection**: Use `gh run view <id> --log-failed` with `| tail -N` to see only the failure. Do not dump full CI logs.
+
+## Why
+
+Agent context is finite and expensive. Every line of spew consumed displaces useful reasoning capacity. A 3000-line benchmark log leaves almost no room for thoughtful analysis of the results.
