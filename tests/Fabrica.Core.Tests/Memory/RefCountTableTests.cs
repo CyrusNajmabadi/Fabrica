@@ -486,9 +486,9 @@ public class RefCountTableTests
             Assert.Equal(0, table.GetCount(i));
     }
 
-    // ═══════════════════════════ Cross-table bounce-back ══════════════════
+    // ═══════════════════════════ Two-table cross-cascade ═════════════════
 
-    private sealed class CrossTableContext
+    private sealed class TwoTableContext
     {
         public RefCountTable TableA { get; set; } = null!;
         public RefCountTable TableB { get; set; } = null!;
@@ -496,32 +496,30 @@ public class RefCountTableTests
         public List<int> FreedB { get; } = [];
     }
 
-    /// <summary>A-node 0 → B-node 0 (cross-table). Tracks A frees.</summary>
-    private readonly struct CrossTableAHandler(CrossTableContext ctx) : RefCountTable.IRefCountHandler
+    private readonly struct TwoTableAHandler(TwoTableContext ctx) : RefCountTable.IRefCountHandler
     {
         public readonly void OnFreed(int index, RefCountTable table)
         {
             ctx.FreedA.Add(index);
             if (index == 0)
-                ctx.TableB.Decrement(0, new CrossTableBHandler(ctx));
+                ctx.TableB.Decrement(0, new TwoTableBHandler(ctx));
         }
     }
 
-    /// <summary>B-node 0 → A-node 1 (cross-table). Tracks B frees.</summary>
-    private readonly struct CrossTableBHandler(CrossTableContext ctx) : RefCountTable.IRefCountHandler
+    private readonly struct TwoTableBHandler(TwoTableContext ctx) : RefCountTable.IRefCountHandler
     {
         public readonly void OnFreed(int index, RefCountTable table)
         {
             ctx.FreedB.Add(index);
             if (index == 0)
-                ctx.TableA.Decrement(1, new CrossTableAHandler(ctx));
+                ctx.TableA.Decrement(1, new TwoTableAHandler(ctx));
         }
     }
 
     [Fact]
-    public void CrossTable_BounceBack_CascadesCorrectly()
+    public void TwoTable_BounceBack_CascadesCorrectly()
     {
-        var ctx = new CrossTableContext
+        var ctx = new TwoTableContext
         {
             TableA = CreateTinyTable(directoryLength: 4, slabShift: 2),
             TableB = CreateTinyTable(directoryLength: 4, slabShift: 2),
@@ -533,7 +531,7 @@ public class RefCountTableTests
         ctx.TableA.Increment(1);
         ctx.TableB.Increment(0);
 
-        ctx.TableA.Decrement(0, new CrossTableAHandler(ctx));
+        ctx.TableA.Decrement(0, new TwoTableAHandler(ctx));
 
         Assert.Equal(0, ctx.TableA.GetCount(0));
         Assert.Equal(0, ctx.TableA.GetCount(1));
@@ -547,9 +545,9 @@ public class RefCountTableTests
     }
 
     [Fact]
-    public void CrossTable_BounceBack_SharedChildSurvives()
+    public void TwoTable_BounceBack_SharedChildSurvives()
     {
-        var ctx = new CrossTableContext
+        var ctx = new TwoTableContext
         {
             TableA = CreateTinyTable(directoryLength: 4, slabShift: 2),
             TableB = CreateTinyTable(directoryLength: 4, slabShift: 2),
@@ -562,7 +560,7 @@ public class RefCountTableTests
         ctx.TableA.Increment(1); // A[1] = 2 (shared)
         ctx.TableB.Increment(0);
 
-        ctx.TableA.Decrement(0, new CrossTableAHandler(ctx));
+        ctx.TableA.Decrement(0, new TwoTableAHandler(ctx));
 
         Assert.Equal(0, ctx.TableA.GetCount(0));
         Assert.Equal(1, ctx.TableA.GetCount(1)); // survived
@@ -572,6 +570,409 @@ public class RefCountTableTests
         Assert.Equal(0, ctx.FreedA[0]);
         Assert.Single(ctx.FreedB);
         Assert.Equal(0, ctx.FreedB[0]);
+    }
+
+    // ═══════════════════════════ Three-table cross-cascade ═══════════════
+
+    // Data-driven infrastructure for cross-table cascade tests with three tables (A=0, B=1, C=2).
+    // Nodes are identified by (tableId, index). Edges define parent→child relationships across tables.
+    // The MultiTableHandler routes OnFreed callbacks and child decrements through the topology map.
+
+    private sealed class MultiTableContext
+    {
+        public const int A = 0, B = 1, C = 2;
+
+        public RefCountTable[] Tables { get; } = new RefCountTable[3];
+        public List<int>[] Freed { get; } = [[], [], []];
+        private readonly Dictionary<int, List<(int tableId, int index)>>[] _edges = [[], [], []];
+
+        public MultiTableContext(int nodesPerTable = 8)
+        {
+            for (var t = 0; t < 3; t++)
+            {
+                this.Tables[t] = CreateTinyTable(directoryLength: 4, slabShift: 3);
+                this.Tables[t].EnsureCapacity(nodesPerTable);
+            }
+        }
+
+        public void AddEdge(int parentTable, int parentIndex, int childTable, int childIndex)
+        {
+            if (!_edges[parentTable].TryGetValue(parentIndex, out var list))
+            {
+                list = [];
+                _edges[parentTable][parentIndex] = list;
+            }
+
+            list.Add((childTable, childIndex));
+        }
+
+        public List<(int tableId, int index)>? GetChildren(int tableId, int index)
+            => _edges[tableId].GetValueOrDefault(index);
+
+        public void Decrement(int tableId, int index)
+            => this.Tables[tableId].Decrement(index, new MultiTableHandler(this, tableId));
+    }
+
+    private readonly struct MultiTableHandler(MultiTableContext ctx, int tableId) : RefCountTable.IRefCountHandler
+    {
+        public readonly void OnFreed(int index, RefCountTable table)
+        {
+            ctx.Freed[tableId].Add(index);
+            var children = ctx.GetChildren(tableId, index);
+            if (children == null) return;
+            foreach (var (childTableId, childIndex) in children)
+                ctx.Tables[childTableId].Decrement(childIndex, new MultiTableHandler(ctx, childTableId));
+        }
+    }
+
+    // ── Data providers ───────────────────────────────────────────────────
+
+    /// <summary>All 21 (origin, childSubset) combinations: 3 origins × 7 non-empty subsets of {A,B,C}.</summary>
+    public static IEnumerable<object[]> AllChildSubsets()
+    {
+        int[][] subsets = [[0], [1], [2], [0, 1], [0, 2], [1, 2], [0, 1, 2]];
+        for (var origin = 0; origin < 3; origin++)
+            foreach (var subset in subsets)
+                yield return [origin, subset];
+    }
+
+    /// <summary>All 6 orderings of a three-table chain: X[0]→Y[0]→Z[0].</summary>
+    public static IEnumerable<object[]> AllThreeTableChainOrders()
+    {
+        yield return [0, 1, 2];
+        yield return [0, 2, 1];
+        yield return [1, 0, 2];
+        yield return [1, 2, 0];
+        yield return [2, 0, 1];
+        yield return [2, 1, 0];
+    }
+
+    // ── Single-hop: every child-set permutation from every origin ────────
+
+    [Theory]
+    [MemberData(nameof(AllChildSubsets))]
+    public void ThreeTable_SingleHop_AllChildSubsets(int origin, int[] childTables)
+    {
+        var ctx = new MultiTableContext();
+        ctx.Tables[origin].Increment(0);
+
+        foreach (var ct in childTables)
+        {
+            ctx.Tables[ct].Increment(1);
+            ctx.AddEdge(origin, 0, ct, 1);
+        }
+
+        ctx.Decrement(origin, 0);
+
+        Assert.Equal(0, ctx.Tables[origin].GetCount(0));
+        Assert.Contains(0, ctx.Freed[origin]);
+
+        foreach (var ct in childTables)
+        {
+            Assert.Equal(0, ctx.Tables[ct].GetCount(1));
+            Assert.Contains(1, ctx.Freed[ct]);
+        }
+
+        for (var t = 0; t < 3; t++)
+        {
+            if (t == origin || childTables.Contains(t))
+                continue;
+            Assert.Empty(ctx.Freed[t]);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(AllChildSubsets))]
+    public void ThreeTable_SingleHop_SharedChildren_Survive(int origin, int[] childTables)
+    {
+        var ctx = new MultiTableContext();
+        ctx.Tables[origin].Increment(0);
+
+        foreach (var ct in childTables)
+        {
+            ctx.Tables[ct].Increment(1);
+            ctx.Tables[ct].Increment(1); // rc=2: shared by another parent
+            ctx.AddEdge(origin, 0, ct, 1);
+        }
+
+        // Phase 1: cascade from root — children survive with rc=1
+        ctx.Decrement(origin, 0);
+
+        Assert.Equal(0, ctx.Tables[origin].GetCount(0));
+        Assert.Contains(0, ctx.Freed[origin]);
+
+        foreach (var ct in childTables)
+        {
+            Assert.Equal(1, ctx.Tables[ct].GetCount(1));
+            Assert.DoesNotContain(1, ctx.Freed[ct]);
+        }
+
+        // Phase 2: explicitly free each child
+        foreach (var ct in childTables)
+            ctx.Decrement(ct, 1);
+
+        foreach (var ct in childTables)
+        {
+            Assert.Equal(0, ctx.Tables[ct].GetCount(1));
+            Assert.Contains(1, ctx.Freed[ct]);
+        }
+    }
+
+    // ── Chain through all three tables ───────────────────────────────────
+
+    [Theory]
+    [MemberData(nameof(AllThreeTableChainOrders))]
+    public void ThreeTable_Chain_AllOrders(int first, int second, int third)
+    {
+        var ctx = new MultiTableContext();
+
+        ctx.Tables[first].Increment(0);
+        ctx.Tables[second].Increment(0);
+        ctx.Tables[third].Increment(0);
+
+        ctx.AddEdge(first, 0, second, 0);
+        ctx.AddEdge(second, 0, third, 0);
+
+        ctx.Decrement(first, 0);
+
+        Assert.Equal(0, ctx.Tables[first].GetCount(0));
+        Assert.Equal(0, ctx.Tables[second].GetCount(0));
+        Assert.Equal(0, ctx.Tables[third].GetCount(0));
+
+        Assert.Contains(0, ctx.Freed[first]);
+        Assert.Contains(0, ctx.Freed[second]);
+        Assert.Contains(0, ctx.Freed[third]);
+    }
+
+    // ── Named topology tests ─────────────────────────────────────────────
+
+    [Fact]
+    public void ThreeTable_Chain_LoopBackToOriginTable()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
+        var ctx = new MultiTableContext();
+
+        // A[0] → B[0] → C[0] → A[1]
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[C].Increment(0);
+        ctx.Tables[A].Increment(1);
+
+        ctx.AddEdge(A, 0, B, 0);
+        ctx.AddEdge(B, 0, C, 0);
+        ctx.AddEdge(C, 0, A, 1);
+
+        ctx.Decrement(A, 0);
+
+        Assert.Equal(0, ctx.Tables[A].GetCount(0));
+        Assert.Equal(0, ctx.Tables[A].GetCount(1));
+        Assert.Equal(0, ctx.Tables[B].GetCount(0));
+        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+
+        Assert.Equal(2, ctx.Freed[A].Count);
+        Assert.Contains(0, ctx.Freed[A]);
+        Assert.Contains(1, ctx.Freed[A]);
+        Assert.Single(ctx.Freed[B]);
+        Assert.Single(ctx.Freed[C]);
+    }
+
+    [Fact]
+    public void ThreeTable_Diamond_SharedGrandchild()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
+        var ctx = new MultiTableContext();
+
+        // A[0] → {B[0], C[0]}, both B[0] and C[0] → A[1]. A[1] rc=2 (two paths converge).
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[C].Increment(0);
+        ctx.Tables[A].Increment(1);
+        ctx.Tables[A].Increment(1); // rc=2
+
+        ctx.AddEdge(A, 0, B, 0);
+        ctx.AddEdge(A, 0, C, 0);
+        ctx.AddEdge(B, 0, A, 1);
+        ctx.AddEdge(C, 0, A, 1);
+
+        ctx.Decrement(A, 0);
+
+        Assert.Equal(0, ctx.Tables[A].GetCount(0));
+        Assert.Equal(0, ctx.Tables[A].GetCount(1));
+        Assert.Equal(0, ctx.Tables[B].GetCount(0));
+        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+
+        Assert.Equal(2, ctx.Freed[A].Count);
+        Assert.Single(ctx.Freed[B]);
+        Assert.Single(ctx.Freed[C]);
+    }
+
+    [Fact]
+    public void ThreeTable_FanIn_SharedChild_PartialThenFull()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
+        var ctx = new MultiTableContext();
+
+        // A[0] → C[0], B[0] → C[0]. C[0] rc=2.
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[C].Increment(0);
+        ctx.Tables[C].Increment(0); // rc=2
+
+        ctx.AddEdge(A, 0, C, 0);
+        ctx.AddEdge(B, 0, C, 0);
+
+        // First root: C[0] survives
+        ctx.Decrement(A, 0);
+        Assert.Equal(1, ctx.Tables[C].GetCount(0));
+        Assert.Empty(ctx.Freed[C]);
+
+        // Second root: C[0] now frees
+        ctx.Decrement(B, 0);
+        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+        Assert.Single(ctx.Freed[C]);
+    }
+
+    [Fact]
+    public void ThreeTable_ComplexGraph_AllTablesInterconnected()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
+        var ctx = new MultiTableContext();
+
+        // A[0] → {B[0], C[0]}, B[0] → {A[1], C[1]}, C[0] → {A[2]}, C[1] → {B[1]}
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[A].Increment(1);
+        ctx.Tables[A].Increment(2);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[B].Increment(1);
+        ctx.Tables[C].Increment(0);
+        ctx.Tables[C].Increment(1);
+
+        ctx.AddEdge(A, 0, B, 0);
+        ctx.AddEdge(A, 0, C, 0);
+        ctx.AddEdge(B, 0, A, 1);
+        ctx.AddEdge(B, 0, C, 1);
+        ctx.AddEdge(C, 0, A, 2);
+        ctx.AddEdge(C, 1, B, 1);
+
+        ctx.Decrement(A, 0);
+
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(0, ctx.Tables[A].GetCount(i));
+        for (var i = 0; i < 2; i++)
+            Assert.Equal(0, ctx.Tables[B].GetCount(i));
+        for (var i = 0; i < 2; i++)
+            Assert.Equal(0, ctx.Tables[C].GetCount(i));
+
+        var totalFreed = ctx.Freed[A].Count + ctx.Freed[B].Count + ctx.Freed[C].Count;
+        Assert.Equal(7, totalFreed);
+        Assert.Equal(3, ctx.Freed[A].Count);
+        Assert.Equal(2, ctx.Freed[B].Count);
+        Assert.Equal(2, ctx.Freed[C].Count);
+    }
+
+    [Fact]
+    public void ThreeTable_MultipleRoots_ConvergingPaths()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
+        var ctx = new MultiTableContext();
+
+        // Two paths converge: A[0]→B[0]→C[0], A[1]→B[1]→C[0]. C[0] rc=2.
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[A].Increment(1);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[B].Increment(1);
+        ctx.Tables[C].Increment(0);
+        ctx.Tables[C].Increment(0); // rc=2
+
+        ctx.AddEdge(A, 0, B, 0);
+        ctx.AddEdge(A, 1, B, 1);
+        ctx.AddEdge(B, 0, C, 0);
+        ctx.AddEdge(B, 1, C, 0);
+
+        // First root: C[0] survives
+        ctx.Decrement(A, 0);
+        Assert.Equal(1, ctx.Tables[C].GetCount(0));
+        Assert.Empty(ctx.Freed[C]);
+
+        // Second root: C[0] now frees
+        ctx.Decrement(A, 1);
+        Assert.Equal(0, ctx.Tables[C].GetCount(0));
+        Assert.Single(ctx.Freed[C]);
+    }
+
+    [Fact]
+    public void ThreeTable_MultipleChildrenInSameTable()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B;
+        var ctx = new MultiTableContext();
+
+        // A[0] → {B[0], B[1], B[2]}: three children in same target table
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[B].Increment(1);
+        ctx.Tables[B].Increment(2);
+
+        ctx.AddEdge(A, 0, B, 0);
+        ctx.AddEdge(A, 0, B, 1);
+        ctx.AddEdge(A, 0, B, 2);
+
+        ctx.Decrement(A, 0);
+
+        Assert.Equal(0, ctx.Tables[A].GetCount(0));
+        Assert.Equal(0, ctx.Tables[B].GetCount(0));
+        Assert.Equal(0, ctx.Tables[B].GetCount(1));
+        Assert.Equal(0, ctx.Tables[B].GetCount(2));
+
+        Assert.Single(ctx.Freed[A]);
+        Assert.Equal(3, ctx.Freed[B].Count);
+    }
+
+    [Fact]
+    public void ThreeTable_DeepAlternatingChain()
+    {
+        const int Depth = 30; // 10 nodes per table
+        var ctx = new MultiTableContext(nodesPerTable: 12);
+        int[] tableOrder = [MultiTableContext.A, MultiTableContext.B, MultiTableContext.C];
+
+        for (var i = 0; i < Depth; i++)
+            ctx.Tables[tableOrder[i % 3]].Increment(i / 3);
+
+        for (var i = 0; i < Depth - 1; i++)
+            ctx.AddEdge(tableOrder[i % 3], i / 3, tableOrder[(i + 1) % 3], (i + 1) / 3);
+
+        ctx.Decrement(MultiTableContext.A, 0);
+
+        for (var i = 0; i < Depth; i++)
+            Assert.Equal(0, ctx.Tables[tableOrder[i % 3]].GetCount(i / 3));
+
+        var totalFreed = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
+        Assert.Equal(Depth, totalFreed);
+        Assert.Equal(10, ctx.Freed[0].Count);
+        Assert.Equal(10, ctx.Freed[1].Count);
+        Assert.Equal(10, ctx.Freed[2].Count);
+    }
+
+    [Fact]
+    public void ThreeTable_CascadeActive_FalseOnAllTables_AfterComplexCascade()
+    {
+        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
+        var ctx = new MultiTableContext();
+
+        // A[0] → B[0] → C[0] → A[1]: loop through all three tables
+        ctx.Tables[A].Increment(0);
+        ctx.Tables[A].Increment(1);
+        ctx.Tables[B].Increment(0);
+        ctx.Tables[C].Increment(0);
+
+        ctx.AddEdge(A, 0, B, 0);
+        ctx.AddEdge(B, 0, C, 0);
+        ctx.AddEdge(C, 0, A, 1);
+
+        ctx.Decrement(A, 0);
+
+        Assert.False(ctx.Tables[A].GetTestAccessor().CascadeActive);
+        Assert.False(ctx.Tables[B].GetTestAccessor().CascadeActive);
+        Assert.False(ctx.Tables[C].GetTestAccessor().CascadeActive);
     }
 
     // ═══════════════════════════ Cascade state ════════════════════════════
