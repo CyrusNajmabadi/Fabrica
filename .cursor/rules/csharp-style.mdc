@@ -18,7 +18,7 @@ alwaysApply: false
 - Instance fields: `_camelCase` (private/internal)
 - Properties and methods: `PascalCase`
 - Local variables and parameters: `camelCase`
-- Do not use `this.` qualification except to resolve ambiguity.
+- Do not use `this.` for fields. Do use `this.` for properties, methods, and events.
 
 ## Fields vs Properties
 
