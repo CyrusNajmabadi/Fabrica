@@ -60,28 +60,86 @@ public class CrossTypeSnapshotTests
         }
     }
 
-    // ── Child enumerators (same-store children only) ───────────────────
+    // ── Child enumerators (all children, including cross-type) ─────────
 
-    private struct ParentChildEnumerator : DagValidator.IChildEnumerator<ParentNode>
+    private struct ParentChildEnumerator : IChildEnumerator<ParentNode, byte>
     {
-        public readonly void GetChildren(in ParentNode node, List<Handle<ParentNode>> children)
+        public readonly void EnumerateChildren<TAction>(in ParentNode node, in byte context, ref TAction action)
+            where TAction : struct, IChildAction
         {
-            if (node.LeftParent.IsValid)
-                children.Add(node.LeftParent);
-            if (node.RightParent.IsValid)
-                children.Add(node.RightParent);
+            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent);
+            if (node.RightParent.IsValid) action.OnChild(node.RightParent);
+            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef);
         }
     }
 
-    private struct ChildChildEnumerator : DagValidator.IChildEnumerator<ChildNode>
+    private struct ChildChildEnumerator : IChildEnumerator<ChildNode, byte>
     {
-        public readonly void GetChildren(in ChildNode node, List<Handle<ChildNode>> children)
+        public readonly void EnumerateChildren<TAction>(in ChildNode node, in byte context, ref TAction action)
+            where TAction : struct, IChildAction
         {
-            if (node.LeftChild.IsValid)
-                children.Add(node.LeftChild);
-            if (node.RightChild.IsValid)
-                children.Add(node.RightChild);
+            if (node.LeftChild.IsValid) action.OnChild(node.LeftChild);
+            if (node.RightChild.IsValid) action.OnChild(node.RightChild);
         }
+    }
+
+    // ── Cross-store world accessor ──────────────────────────────────────
+
+    private const int ParentTypeId = 0;
+    private const int ChildTypeId = 1;
+
+    private struct CrossStoreAccessor(
+        NodeStore<ParentNode, ParentHandler> parentStore,
+        NodeStore<ChildNode, ChildHandler> childStore) : DagValidator.IWorldAccessor
+    {
+        public readonly int TypeCount => 2;
+
+        public readonly int HighWater(int typeId) => typeId switch
+        {
+            ParentTypeId => parentStore.Arena.GetTestAccessor().HighWater,
+            ChildTypeId => childStore.Arena.GetTestAccessor().HighWater,
+            _ => 0,
+        };
+
+        public readonly int GetRefCount(int typeId, int index) => typeId switch
+        {
+            ParentTypeId => parentStore.RefCounts.GetCount(new Handle<ParentNode>(index)),
+            ChildTypeId => childStore.RefCounts.GetCount(new Handle<ChildNode>(index)),
+            _ => 0,
+        };
+
+        public readonly void GetChildren(int typeId, int index, List<DagValidator.NodeRef> children)
+        {
+            if (typeId == ParentTypeId)
+            {
+                ref readonly var node = ref parentStore.Arena[new Handle<ParentNode>(index)];
+                if (node.LeftParent.IsValid) children.Add(new DagValidator.NodeRef(ParentTypeId, node.LeftParent.Index));
+                if (node.RightParent.IsValid) children.Add(new DagValidator.NodeRef(ParentTypeId, node.RightParent.Index));
+                if (node.ChildRef.IsValid) children.Add(new DagValidator.NodeRef(ChildTypeId, node.ChildRef.Index));
+            }
+            else if (typeId == ChildTypeId)
+            {
+                ref readonly var node = ref childStore.Arena[new Handle<ChildNode>(index)];
+                if (node.LeftChild.IsValid) children.Add(new DagValidator.NodeRef(ChildTypeId, node.LeftChild.Index));
+                if (node.RightChild.IsValid) children.Add(new DagValidator.NodeRef(ChildTypeId, node.RightChild.Index));
+            }
+        }
+    }
+
+    private static void AssertCrossStoreValid(
+        NodeStore<ParentNode, ParentHandler> parentStore,
+        NodeStore<ChildNode, ChildHandler> childStore,
+        ReadOnlySpan<Handle<ParentNode>> parentRoots,
+        ReadOnlySpan<Handle<ChildNode>> childRoots,
+        bool strict = true)
+    {
+        var allRoots = new DagValidator.NodeRef[parentRoots.Length + childRoots.Length];
+        for (var i = 0; i < parentRoots.Length; i++)
+            allRoots[i] = new DagValidator.NodeRef(ParentTypeId, parentRoots[i].Index);
+        for (var i = 0; i < childRoots.Length; i++)
+            allRoots[parentRoots.Length + i] = new DagValidator.NodeRef(ChildTypeId, childRoots[i].Index);
+
+        DagValidator.AssertValid(allRoots, new CrossStoreAccessor(parentStore, childStore), strict);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -613,5 +671,168 @@ public class CrossTypeSnapshotTests
         Assert.Equal(0, childStore.RefCounts.GetCount(cRoot));
         Assert.Equal(0, childStore.RefCounts.GetCount(cMid));
         Assert.Equal(0, childStore.RefCounts.GetCount(cLeaf));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Cross-store DAG validation tests
+    // ═══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void CrossStoreValidation_SimpleTree_Valid()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var childLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var parentRoot = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, childLeaf);
+
+        parentStore.RefCounts.Increment(parentRoot);
+
+        AssertCrossStoreValid(parentStore, childStore, [parentRoot], []);
+    }
+
+    [Fact]
+    public void CrossStoreValidation_DeepCrossTypeDAG_Valid()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var cLeaf1 = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cLeaf2 = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
+        var cRoot = AllocChild(childStore, cLeaf1, cLeaf2, 0);
+
+        var pLeaf = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, Handle<ChildNode>.None);
+        var pRoot = AllocParent(parentStore, childStore, pLeaf, Handle<ParentNode>.None, cRoot);
+
+        parentStore.RefCounts.Increment(pRoot);
+
+        AssertCrossStoreValid(parentStore, childStore, [pRoot], []);
+    }
+
+    [Fact]
+    public void CrossStoreValidation_SharedChild_BothSnapshotRoots_Valid()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var childLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 42);
+        var parentRoot = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, childLeaf);
+
+        parentStore.RefCounts.Increment(parentRoot);
+        childStore.RefCounts.Increment(childLeaf);
+
+        // Relaxed: childLeaf is both a root and reachable through parentRoot's ChildRef
+        AssertCrossStoreValid(parentStore, childStore, [parentRoot], [childLeaf], strict: false);
+    }
+
+    [Fact]
+    public void CrossStoreValidation_DetectsRefcountMismatch()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var childLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var parentRoot = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, childLeaf);
+
+        parentStore.RefCounts.Increment(parentRoot);
+        // Artificially inflate childLeaf's refcount — should be 1 (from parent) but we make it 2
+        childStore.RefCounts.Increment(childLeaf);
+
+        var accessor = new CrossStoreAccessor(parentStore, childStore);
+        var roots = new[] { new DagValidator.NodeRef(ParentTypeId, parentRoot.Index) };
+        var issues = DagValidator.Validate(roots, accessor);
+
+        Assert.Contains(issues, i => i.Contains($"index={childLeaf.Index}") && i.Contains("expected refcount 1, actual 2"));
+    }
+
+    [Fact]
+    public void CrossStoreValidation_DetectsOrphanInChildStore()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var childLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var parentRoot = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, childLeaf);
+
+        parentStore.RefCounts.Increment(parentRoot);
+
+        // Allocate an orphan child node with refcount > 0 that isn't reachable from any root
+        var orphan = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 99);
+        childStore.RefCounts.Increment(orphan);
+
+        var accessor = new CrossStoreAccessor(parentStore, childStore);
+        var roots = new[] { new DagValidator.NodeRef(ParentTypeId, parentRoot.Index) };
+        var issues = DagValidator.Validate(roots, accessor);
+
+        Assert.Contains(issues, i => i.Contains($"index={orphan.Index}") && i.Contains("reachable=False"));
+    }
+
+    [Fact]
+    public void CrossStoreValidation_EmptyWorld_Valid()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        AssertCrossStoreValid(parentStore, childStore, [], []);
+    }
+
+    [Fact]
+    public void CrossStoreValidation_AfterFullRelease_Empty()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var cLeaf = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var pRoot = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, cLeaf);
+
+        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        parentSlice.AddRoot(pRoot);
+        parentSlice.IncrementRootRefCounts();
+
+        // Valid while alive
+        AssertCrossStoreValid(parentStore, childStore, [pRoot], []);
+
+        // Release — everything freed
+        parentSlice.DecrementRootRefCounts();
+
+        // Valid after full release (empty world)
+        AssertCrossStoreValid(parentStore, childStore, [], []);
+    }
+
+    [Fact]
+    public void CrossStoreValidation_MultipleParentRootsWithSharedChild_Valid()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var sharedChild = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+
+        var p1 = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, sharedChild);
+        var p2 = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, sharedChild);
+
+        parentStore.RefCounts.Increment(p1);
+        parentStore.RefCounts.Increment(p2);
+
+        AssertCrossStoreValid(parentStore, childStore, [p1, p2], []);
+    }
+
+    [Fact]
+    public void CrossStoreValidation_ParentAndChildRoots_OverlappingSubtree_Valid()
+    {
+        var (parentStore, childStore) = CreateStores();
+
+        var cA = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 1);
+        var cB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
+        var cRoot = AllocChild(childStore, cA, cB, 0);
+
+        var pRoot = AllocParent(parentStore, childStore,
+            Handle<ParentNode>.None, Handle<ParentNode>.None, cRoot);
+
+        parentStore.RefCounts.Increment(pRoot);
+        childStore.RefCounts.Increment(cRoot);
+
+        // cRoot has refcount 2: one from parent's ChildRef, one from being a child root
+        // Relaxed: cRoot is both a root and reachable through pRoot's ChildRef
+        AssertCrossStoreValid(parentStore, childStore, [pRoot], [cRoot], strict: false);
     }
 }
