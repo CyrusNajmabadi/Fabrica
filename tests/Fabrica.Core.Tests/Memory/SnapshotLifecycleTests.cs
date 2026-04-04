@@ -18,24 +18,31 @@ public class SnapshotLifecycleTests
         public Handle<TreeNode> Right { get; set; }
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
     {
         public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
             ref readonly var node = ref arena[handle];
-            if (node.Left.IsValid) table.Decrement(node.Left, this);
-            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            var action = new DecrementChildAction<TreeNode, TreeHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref action);
             arena.Free(handle);
         }
     }
 
-    private struct TreeChildEnumerator : IChildEnumerator<TreeNode, byte>
+    private struct TreeChildEnumerator : IChildEnumerator<TreeNode>
     {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, in byte context, ref TAction action)
+        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction action)
             where TAction : struct, IChildAction
         {
             if (node.Left.IsValid) action.OnChild(node.Left);
             if (node.Right.IsValid) action.OnChild(node.Right);
+        }
+
+        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction action)
+            where TAction : struct, IChildAction<TContext>
+        {
+            if (node.Left.IsValid) action.OnChild(node.Left, in context);
+            if (node.Right.IsValid) action.OnChild(node.Right, in context);
         }
     }
 
@@ -45,9 +52,10 @@ public class SnapshotLifecycleTests
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var handler = new TreeHandler(arena);
+        var enumerator = new TreeChildEnumerator();
+        var handler = new TreeHandler(arena, enumerator);
         _store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
-        _store.EnableValidation(new TreeChildEnumerator());
+        _store.EnableValidation(enumerator);
     }
 
     private Handle<TreeNode> AllocNode(Handle<TreeNode> left, Handle<TreeNode> right)
@@ -302,7 +310,8 @@ public class SnapshotLifecycleTests
             // Fresh store per permutation so freed nodes from prior iterations don't interfere.
             var arena = new UnsafeSlabArena<TreeNode>();
             var refCounts = new RefCountTable<TreeNode>();
-            var handler = new TreeHandler(arena);
+            var enumerator = new TreeChildEnumerator();
+            var handler = new TreeHandler(arena, enumerator);
             var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
 
             var root = BuildPerfectTreeInStore(store, 3);
