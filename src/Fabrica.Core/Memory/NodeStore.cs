@@ -107,7 +107,7 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     /// </summary>
     [Conditional("DEBUG")]
     internal void EnableValidation<TEnumerator>(TEnumerator enumerator)
-        where TEnumerator : struct, DagValidator.IChildEnumerator<TNode>
+        where TEnumerator : struct, IChildEnumerator<TNode, byte>
     {
 #if DEBUG
         _trackedRootCounts = [];

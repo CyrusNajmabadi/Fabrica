@@ -29,12 +29,13 @@ public class SnapshotLifecycleTests
         }
     }
 
-    private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
+    private struct TreeChildEnumerator : IChildEnumerator<TreeNode, byte>
     {
-        public readonly void GetChildren(in TreeNode node, List<Handle<TreeNode>> children)
+        public readonly void EnumerateChildren<TAction>(in TreeNode node, in byte context, ref TAction action)
+            where TAction : struct, IChildAction
         {
-            if (node.Left.IsValid) children.Add(node.Left);
-            if (node.Right.IsValid) children.Add(node.Right);
+            if (node.Left.IsValid) action.OnChild(node.Left);
+            if (node.Right.IsValid) action.OnChild(node.Right);
         }
     }
 

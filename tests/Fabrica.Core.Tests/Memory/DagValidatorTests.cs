@@ -13,12 +13,13 @@ public class DagValidatorTests
         public Handle<TreeNode> Right { get; set; }
     }
 
-    private struct TreeChildEnumerator : DagValidator.IChildEnumerator<TreeNode>
+    private struct TreeChildEnumerator : IChildEnumerator<TreeNode, byte>
     {
-        public readonly void GetChildren(in TreeNode node, List<Handle<TreeNode>> children)
+        public readonly void EnumerateChildren<TAction>(in TreeNode node, in byte context, ref TAction action)
+            where TAction : struct, IChildAction
         {
-            if (node.Left.IsValid) children.Add(node.Left);
-            if (node.Right.IsValid) children.Add(node.Right);
+            if (node.Left.IsValid) action.OnChild(node.Left);
+            if (node.Right.IsValid) action.OnChild(node.Right);
         }
     }
 
@@ -201,7 +202,7 @@ public class DagValidatorTests
         Assert.Equal(2, store.RefCounts.GetCount(leaf));
 
         var issues = Validate(store, [root]);
-        Assert.Contains(issues, i => i.Contains($"Node {leaf.Index}") && i.Contains("expected refcount 1, actual 2"));
+        Assert.Contains(issues, i => i.Contains($"index={leaf.Index}") && i.Contains("expected refcount 1, actual 2"));
     }
 
     [Fact]
@@ -227,7 +228,7 @@ public class DagValidatorTests
         store2.RefCounts.Increment(leaf2);
 
         var issues2 = Validate(store2, [root2]);
-        Assert.Contains(issues2, i => i.Contains($"Node {leaf2.Index}") && i.Contains("expected refcount 1, actual 2"));
+        Assert.Contains(issues2, i => i.Contains($"index={leaf2.Index}") && i.Contains("expected refcount 1, actual 2"));
     }
 
     [Fact]
@@ -243,7 +244,7 @@ public class DagValidatorTests
         store.RefCounts.Increment(orphan);
 
         var issues = Validate(store, [root]);
-        Assert.Contains(issues, i => i.Contains($"Node {orphan.Index}") && i.Contains("reachable=False"));
+        Assert.Contains(issues, i => i.Contains($"index={orphan.Index}") && i.Contains("reachable=False"));
     }
 
     // ── Violation: empty roots but live nodes ────────────────────────────
@@ -256,7 +257,7 @@ public class DagValidatorTests
         store.RefCounts.Increment(node);
 
         var issues = Validate(store, []);
-        Assert.Contains(issues, i => i.Contains($"Node {node.Index}") && i.Contains("expected refcount 0, actual 1"));
+        Assert.Contains(issues, i => i.Contains($"index={node.Index}") && i.Contains("expected refcount 0, actual 1"));
     }
 
     // ── Violation: root is also a child ──────────────────────────────────
@@ -273,7 +274,7 @@ public class DagValidatorTests
         store.RefCounts.Increment(child);
 
         var issues = Validate(store, [root, child]);
-        Assert.Contains(issues, i => i.Contains($"Root {child.Index}") && i.Contains("also a child"));
+        Assert.Contains(issues, i => i.Contains($"index={child.Index}") && i.Contains("also a child"));
     }
 
     [Fact]
@@ -294,7 +295,7 @@ public class DagValidatorTests
         store.RefCounts.Increment(b);
 
         var issues = Validate(store, [root, b]);
-        Assert.Contains(issues, i => i.Contains($"Root {b.Index}") && i.Contains("also a child"));
+        Assert.Contains(issues, i => i.Contains($"index={b.Index}") && i.Contains("also a child"));
     }
 
     // ── Violation: cycle detection ───────────────────────────────────────
@@ -345,7 +346,7 @@ public class DagValidatorTests
         store.RefCounts.Increment(handle);
 
         var issues = Validate(store, [handle]);
-        Assert.Contains(issues, i => i.Contains("out-of-range child index 9999"));
+        Assert.Contains(issues, i => i.Contains("out-of-range child") && i.Contains("index=9999"));
     }
 
     // ── Valid after full lifecycle ────────────────────────────────────────
