@@ -103,8 +103,10 @@ internal static class DagValidator
             var hw = accessor.HighWater(t);
             expectedRefCount[t] = new int[hw];
             color[t] = new int[hw];
+#pragma warning disable IDE0031 // Roslyn suggests null-conditional assignment, which requires preview lang version
             if (isChildOfSomeNode != null)
                 isChildOfSomeNode[t] = new bool[hw];
+#pragma warning restore IDE0031
         }
 
         // Count root holds
@@ -168,8 +170,10 @@ internal static class DagValidator
                         continue;
                     }
 
+#pragma warning disable IDE0031
                     if (isChildOfSomeNode != null)
                         isChildOfSomeNode[child.TypeId][child.Index] = true;
+#pragma warning restore IDE0031
 
                     expectedRefCount[child.TypeId][child.Index]++;
 
