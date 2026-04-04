@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 using Xunit;
@@ -30,56 +31,87 @@ public class CrossTypeSnapshotTests
 
     // ── Handlers ─────────────────────────────────────────────────────────
 
-    private struct ChildHandler(UnsafeSlabArena<ChildNode> arena) : RefCountTable<ChildNode>.IRefCountHandler
+    private struct ChildHandler(UnsafeSlabArena<ChildNode> arena, ChildChildEnumerator enumerator) : RefCountTable<ChildNode>.IRefCountHandler
     {
         public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
         {
             ref readonly var node = ref arena[handle];
-            if (node.LeftChild.IsValid)
-                table.Decrement(node.LeftChild, this);
-            if (node.RightChild.IsValid)
-                table.Decrement(node.RightChild, this);
+            var action = new DecrementChildAction<ChildNode, ChildHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref action);
             arena.Free(handle);
+        }
+    }
+
+    /// <summary>
+    /// Cross-type decrement: dispatches to the correct <see cref="RefCountTable{T}"/> based on
+    /// the child's type. The <c>typeof</c> checks are JIT constants — dead branches are eliminated.
+    /// </summary>
+    private struct ParentDecrementAction(
+        RefCountTable<ParentNode> parentTable,
+        ParentHandler parentHandler,
+        RefCountTable<ChildNode> childTable,
+        ChildHandler childHandler) : IChildAction
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
+        {
+            if (!child.IsValid) return;
+            if (typeof(TChild) == typeof(ParentNode))
+                parentTable.Decrement(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child), parentHandler);
+            else if (typeof(TChild) == typeof(ChildNode))
+                childTable.Decrement(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child), childHandler);
         }
     }
 
     private struct ParentHandler(
         UnsafeSlabArena<ParentNode> parentArena,
-        NodeStore<ChildNode, ChildHandler> childStore) : RefCountTable<ParentNode>.IRefCountHandler
+        NodeStore<ChildNode, ChildHandler> childStore,
+        ParentChildEnumerator enumerator) : RefCountTable<ParentNode>.IRefCountHandler
     {
         public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
         {
             ref readonly var node = ref parentArena[handle];
-            if (node.LeftParent.IsValid)
-                table.Decrement(node.LeftParent, this);
-            if (node.RightParent.IsValid)
-                table.Decrement(node.RightParent, this);
-            if (node.ChildRef.IsValid)
-                childStore.RefCounts.Decrement(node.ChildRef, childStore.GetTestAccessor().Handler);
+            var action = new ParentDecrementAction(table, this, childStore.RefCounts, childStore.GetTestAccessor().Handler);
+            enumerator.EnumerateChildren(in node, ref action);
             parentArena.Free(handle);
         }
     }
 
     // ── Child enumerators (all children, including cross-type) ─────────
 
-    private struct ParentChildEnumerator : IChildEnumerator<ParentNode, byte>
+    private struct ParentChildEnumerator : IChildEnumerator<ParentNode>
     {
-        public readonly void EnumerateChildren<TAction>(in ParentNode node, in byte context, ref TAction action)
+        public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction action)
             where TAction : struct, IChildAction
         {
             if (node.LeftParent.IsValid) action.OnChild(node.LeftParent);
             if (node.RightParent.IsValid) action.OnChild(node.RightParent);
             if (node.ChildRef.IsValid) action.OnChild(node.ChildRef);
         }
+
+        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction action)
+            where TAction : struct, IChildAction<TContext>
+        {
+            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent, in context);
+            if (node.RightParent.IsValid) action.OnChild(node.RightParent, in context);
+            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef, in context);
+        }
     }
 
-    private struct ChildChildEnumerator : IChildEnumerator<ChildNode, byte>
+    private struct ChildChildEnumerator : IChildEnumerator<ChildNode>
     {
-        public readonly void EnumerateChildren<TAction>(in ChildNode node, in byte context, ref TAction action)
+        public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction action)
             where TAction : struct, IChildAction
         {
             if (node.LeftChild.IsValid) action.OnChild(node.LeftChild);
             if (node.RightChild.IsValid) action.OnChild(node.RightChild);
+        }
+
+        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction action)
+            where TAction : struct, IChildAction<TContext>
+        {
+            if (node.LeftChild.IsValid) action.OnChild(node.LeftChild, in context);
+            if (node.RightChild.IsValid) action.OnChild(node.RightChild, in context);
         }
     }
 
@@ -149,15 +181,17 @@ public class CrossTypeSnapshotTests
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childHandler = new ChildHandler(childArena);
+        var childEnumerator = new ChildChildEnumerator();
+        var childHandler = new ChildHandler(childArena, childEnumerator);
         var childStore = new NodeStore<ChildNode, ChildHandler>(childArena, childRefCounts, childHandler);
-        childStore.EnableValidation(new ChildChildEnumerator());
+        childStore.EnableValidation(childEnumerator);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentHandler = new ParentHandler(parentArena, childStore);
+        var parentEnumerator = new ParentChildEnumerator();
+        var parentHandler = new ParentHandler(parentArena, childStore, parentEnumerator);
         var parentStore = new NodeStore<ParentNode, ParentHandler>(parentArena, parentRefCounts, parentHandler);
-        parentStore.EnableValidation(new ParentChildEnumerator());
+        parentStore.EnableValidation(parentEnumerator);
 
         return (parentStore, childStore);
     }
