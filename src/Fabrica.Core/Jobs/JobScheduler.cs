@@ -10,14 +10,11 @@ namespace Fabrica.Core.Jobs;
 /// USAGE
 ///   1. Create a <see cref="WorkerPool"/> (shared, long-lived).
 ///   2. Create a <see cref="JobScheduler"/> per logical pipeline (sim, render).
-///   3. Call <see cref="Submit"/> to inject root jobs into the pool's shared injection queue.
-///   4. Call <see cref="WaitForCompletion"/> to park until the entire DAG drains.
-///   5. Repeat from step 3 for the next batch.
+///   3. Call <see cref="Submit"/> with a root job. The call blocks until the entire DAG drains.
+///   4. Repeat from step 3 for the next batch.
 ///
 /// ONE DAG AT A TIME
-///   Each scheduler handles one DAG at a time. Submitting while a DAG is in flight is a programming
-///   error (caught by a debug assert). This simplifies completion detection: when the outstanding
-///   counter reaches zero, the DAG is done.
+///   <see cref="Submit"/> blocks until the DAG completes, so only one DAG is in flight at a time.
 /// </summary>
 internal sealed class JobScheduler
 {
@@ -32,7 +29,7 @@ internal sealed class JobScheduler
 
     /// <summary>
     /// Signaled by the worker that decrements <see cref="_outstandingJobs"/> to zero, unparking
-    /// the coordinator in <see cref="WaitForCompletion"/>. Reset at the start of each wait cycle.
+    /// the coordinator in <see cref="Submit"/>. Reset at the start of each wait cycle.
     /// </summary>
     private readonly ManualResetEventSlim _completionSignal = new(false);
 
@@ -41,39 +38,14 @@ internal sealed class JobScheduler
     // ── Coordinator API ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Submits a ready-to-execute job into the pool's injection queue. Workers will dequeue it.
-    /// Must not be called while a previous DAG is still in flight (debug assert).
+    /// Submits a root job and blocks until the entire DAG (including sub-jobs and dependents)
+    /// completes. Returns <c>true</c> if completed, <c>false</c> if the timeout expired. Pass
+    /// <c>-1</c> for no timeout.
     /// </summary>
-    internal void Submit(Job job)
+    internal bool Submit(Job job, int millisecondsTimeout = -1)
     {
-#if DEBUG
-        Debug.Assert(job._state == JobState.Pending);
-        job._state = JobState.Queued;
-#endif
-        job._scheduler = this;
-        Interlocked.Increment(ref _outstandingJobs);
-        _pool.Inject(job);
-    }
-
-    /// <summary>
-    /// Parks the coordinator thread until all outstanding jobs have completed. Returns <c>true</c>
-    /// if completed, <c>false</c> if the timeout expired. Pass <c>-1</c> for no timeout.
-    /// </summary>
-    internal bool WaitForCompletion(int millisecondsTimeout = -1)
-    {
-        if (Volatile.Read(ref _outstandingJobs) == 0)
-            return true;
-
-        _completionSignal.Reset();
-
-        if (Volatile.Read(ref _outstandingJobs) == 0)
-            return true;
-
-        if (millisecondsTimeout >= 0)
-            return _completionSignal.Wait(millisecondsTimeout);
-
-        _completionSignal.Wait();
-        return true;
+        this.InjectJob(job);
+        return this.WaitForCompletion(millisecondsTimeout);
     }
 
     // ── Called by WorkerPool execution infrastructure ────────────────────────
@@ -95,6 +67,36 @@ internal sealed class JobScheduler
             _completionSignal.Set();
     }
 
+    // ── Private ─────────────────────────────────────────────────────────────
+
+    private void InjectJob(Job job)
+    {
+#if DEBUG
+        Debug.Assert(job._state == JobState.Pending);
+        job._state = JobState.Queued;
+#endif
+        job._scheduler = this;
+        Interlocked.Increment(ref _outstandingJobs);
+        _pool.Inject(job);
+    }
+
+    private bool WaitForCompletion(int millisecondsTimeout)
+    {
+        if (Volatile.Read(ref _outstandingJobs) == 0)
+            return true;
+
+        _completionSignal.Reset();
+
+        if (Volatile.Read(ref _outstandingJobs) == 0)
+            return true;
+
+        if (millisecondsTimeout >= 0)
+            return _completionSignal.Wait(millisecondsTimeout);
+
+        _completionSignal.Wait();
+        return true;
+    }
+
     // ── Test accessor ───────────────────────────────────────────────────────
 
     internal TestAccessor GetTestAccessor() => new(this);
@@ -102,5 +104,14 @@ internal sealed class JobScheduler
     internal readonly struct TestAccessor(JobScheduler scheduler)
     {
         public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
+
+        /// <summary>
+        /// Injects a job without waiting for completion. Allows tests to submit multiple
+        /// independent jobs before waiting.
+        /// </summary>
+        public void Inject(Job job) => scheduler.InjectJob(job);
+
+        public bool WaitForCompletion(int millisecondsTimeout = -1) =>
+            scheduler.WaitForCompletion(millisecondsTimeout);
     }
 }
