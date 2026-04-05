@@ -139,26 +139,6 @@ public class JobSchedulerTests
         Assert.Equal(1, joinExecutionCount);
     }
 
-    // ── Coordinator-only mode (zero workers) ────────────────────────────────
-
-    [Fact]
-    public void ZeroWorkers_CoordinatorExecutesEverything()
-    {
-        using var scheduler = new JobScheduler(workerCount: 0);
-
-        var order = new ConcurrentQueue<string>();
-
-        var jobA = new TestJob { OnExecute = _ => order.Enqueue("A") };
-        var jobB = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("B") };
-
-        jobA._dependents = [jobB];
-
-        scheduler.Submit(jobA);
-        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
-
-        Assert.Equal(["A", "B"], [.. order]);
-    }
-
     // ── Sub-job enqueue from within Execute ─────────────────────────────────
 
     [Fact]

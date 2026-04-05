@@ -29,8 +29,7 @@ namespace Fabrica.Core.Jobs;
 /// COORDINATOR MODEL
 ///   The coordinator thread (<see cref="Submit"/>/<see cref="WaitForCompletion"/>) does not execute
 ///   jobs. It pushes submitted jobs onto its own deque (workers steal from it), then parks on
-///   <see cref="_completionSignal"/> until all work is done. Zero-worker mode is an exception: the
-///   coordinator executes all work itself as a fallback for testing.
+///   <see cref="_completionSignal"/> until all work is done.
 ///
 /// REFERENCE
 ///   D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
@@ -38,19 +37,13 @@ namespace Fabrica.Core.Jobs;
 internal sealed class JobScheduler : IDisposable
 {
     /// <summary>
-    /// All worker contexts plus the coordinator context. Length is <see cref="_workerCount"/> + 1.
-    /// Indices 0..<see cref="_workerCount"/>-1 are background worker contexts; the last element
-    /// (index <see cref="_workerCount"/>) is the coordinator. Included in the array so workers can
-    /// steal submitted jobs from the coordinator's deque.
+    /// All worker contexts plus the coordinator's submission context. Length is
+    /// <see cref="_workerCount"/> + 1. Indices 0..<see cref="_workerCount"/>-1 are background worker
+    /// contexts; the last element (index <see cref="_workerCount"/>) holds the deque that
+    /// <see cref="Submit"/> pushes onto. Workers steal from all contexts, including the submission
+    /// deque.
     /// </summary>
     private readonly WorkerContext[] _allContexts;
-
-    /// <summary>
-    /// The coordinator's context — always <c>_allContexts[_workerCount]</c>. Owns the deque that
-    /// <see cref="Submit"/> pushes onto. The coordinator does not execute jobs (except in
-    /// zero-worker fallback mode).
-    /// </summary>
-    private readonly WorkerContext _coordinatorContext;
 
     /// <summary>Background worker threads. Length equals <see cref="_workerCount"/>.</summary>
     private readonly Thread[] _workerThreads;
@@ -95,7 +88,7 @@ internal sealed class JobScheduler : IDisposable
     /// <summary>
     /// Creates a scheduler with <paramref name="workerCount"/> background worker threads. If
     /// negative, defaults to <see cref="Environment.ProcessorCount"/> (clamped to
-    /// <see cref="MaxWorkerCount"/>). Zero is valid (the coordinator executes all work itself).
+    /// <see cref="MaxWorkerCount"/>). Must be at least 1.
     /// </summary>
     internal const int MaxWorkerCount = 127;
 
@@ -104,6 +97,7 @@ internal sealed class JobScheduler : IDisposable
         if (workerCount < 0)
             workerCount = Math.Min(Environment.ProcessorCount, MaxWorkerCount);
 
+        ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(workerCount, MaxWorkerCount);
 
         _workerCount = workerCount;
@@ -113,8 +107,6 @@ internal sealed class JobScheduler : IDisposable
         _allContexts = new WorkerContext[workerCount + 1];
         for (var i = 0; i <= workerCount; i++)
             _allContexts[i] = new WorkerContext(this, i);
-
-        _coordinatorContext = _allContexts[workerCount];
 
         _workerThreads = new Thread[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -145,7 +137,7 @@ internal sealed class JobScheduler : IDisposable
         job._state = JobState.Queued;
 #endif
         Interlocked.Increment(ref _outstandingJobs);
-        _coordinatorContext.Deque.Push(job);
+        _allContexts[_workerCount].Deque.Push(job);
         this.NotifyWorkAvailable();
     }
 
@@ -153,16 +145,11 @@ internal sealed class JobScheduler : IDisposable
     /// Parks the coordinator thread until all outstanding jobs have completed. Workers execute all
     /// work; the coordinator does not participate. Returns <c>true</c> if completed, <c>false</c>
     /// if the timeout expired. Pass <c>-1</c> for no timeout.
-    ///
-    /// Zero-worker mode is an exception: the coordinator executes all work itself.
     /// </summary>
     internal bool WaitForCompletion(int millisecondsTimeout = -1)
     {
         if (Volatile.Read(ref _outstandingJobs) == 0)
             return true;
-
-        if (_workerCount == 0)
-            return this.WaitForCompletionCoordinatorOnly(millisecondsTimeout);
 
         _completionSignal.Reset();
 
@@ -173,34 +160,6 @@ internal sealed class JobScheduler : IDisposable
             return _completionSignal.Wait(millisecondsTimeout);
 
         _completionSignal.Wait();
-        return true;
-    }
-
-    /// <summary>
-    /// Fallback for zero-worker mode: the coordinator pops from its own deque and executes jobs
-    /// directly until <see cref="_outstandingJobs"/> reaches zero.
-    /// </summary>
-    private bool WaitForCompletionCoordinatorOnly(int millisecondsTimeout)
-    {
-        var deadline = millisecondsTimeout >= 0
-            ? Stopwatch.GetTimestamp() + (long)(millisecondsTimeout * (double)Stopwatch.Frequency / 1000)
-            : long.MaxValue;
-
-        var spinner = new SpinWait();
-        while (Volatile.Read(ref _outstandingJobs) != 0)
-        {
-            if (millisecondsTimeout >= 0 && Stopwatch.GetTimestamp() >= deadline)
-                return false;
-
-            if (this.TryExecuteOne(_coordinatorContext))
-            {
-                spinner.Reset();
-                continue;
-            }
-
-            spinner.SpinOnce();
-        }
-
         return true;
     }
 
@@ -329,9 +288,7 @@ internal sealed class JobScheduler : IDisposable
             return;
 
         _shutdownRequested = true;
-
-        if (_workerCount > 0)
-            _workSignal.Release(_workerCount);
+        _workSignal.Release(_workerCount);
 
         foreach (var thread in _workerThreads)
             thread.Join();
@@ -346,7 +303,7 @@ internal sealed class JobScheduler : IDisposable
 
     internal readonly struct TestAccessor(JobScheduler scheduler)
     {
-        public WorkerContext CoordinatorContext => scheduler._coordinatorContext;
+        public WorkerContext SubmissionContext => scheduler._allContexts[scheduler._workerCount];
         public WorkerContext GetWorkerContext(int index) => scheduler._allContexts[index];
         public int TotalContextCount => scheduler._allContexts.Length;
         public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
