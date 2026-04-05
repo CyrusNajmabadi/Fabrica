@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Fabrica.Core.Memory;
@@ -6,6 +7,9 @@ namespace Fabrica.Core.Memory;
 /// An <see cref="IChildAction"/> that decrements same-type children in a <see cref="RefCountTable{T}"/>.
 /// Cross-type children (where <c>typeof(TChild) != typeof(TNode)</c>) are silently ignored — the
 /// <c>typeof</c> check is a JIT constant and the dead branch is eliminated entirely.
+///
+/// Callers (enumerators) are expected to only pass valid handles — <see cref="DecrementTyped"/>
+/// asserts this in debug builds.
 ///
 /// For handlers whose nodes reference multiple types, define a custom <see cref="IChildAction"/>
 /// that captures all necessary tables and dispatches with per-type <c>typeof</c> checks.
@@ -24,7 +28,7 @@ internal struct DecrementChildAction<TNode, THandler>(RefCountTable<TNode> table
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private readonly void DecrementTyped(Handle<TNode> child)
     {
-        if (child.IsValid)
-            table.Decrement(child, handler);
+        Debug.Assert(child.IsValid);
+        table.Decrement(child, handler);
     }
 }

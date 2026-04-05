@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
@@ -64,15 +65,15 @@ public class CrossTypeSnapshotTests
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly void DecrementParent(Handle<ParentNode> child)
         {
-            if (child.IsValid)
-                parentTable.Decrement(child, parentHandler);
+            Debug.Assert(child.IsValid);
+            parentTable.Decrement(child, parentHandler);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly void DecrementChild(Handle<ChildNode> child)
         {
-            if (child.IsValid)
-                childTable.Decrement(child, childHandler);
+            Debug.Assert(child.IsValid);
+            childTable.Decrement(child, childHandler);
         }
     }
 

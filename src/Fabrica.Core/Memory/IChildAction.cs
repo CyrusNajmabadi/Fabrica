@@ -7,6 +7,11 @@ namespace Fabrica.Core.Memory;
 ///
 /// For actions that need context passed through from the caller, see <see cref="IChildAction{TContext}"/>.
 ///
+/// CONTRACT
+///   Enumerators must only call <see cref="OnChild{TChild}"/> with valid handles (i.e.,
+///   <see cref="Handle{T}.IsValid"/> is true). Actions may assert this in debug builds but
+///   should not re-check in release builds.
+///
 /// IMPLEMENTATION PATTERN
 ///   Implementations should dispatch on the child type using standalone <c>typeof</c> checks and
 ///   delegate to a typed helper method. This is the canonical pattern for JIT dead-branch elimination:
@@ -19,8 +24,8 @@ namespace Fabrica.Core.Memory;
 ///
 ///   private void OnMyNodeChild(Handle&lt;MyNode&gt; child)
 ///   {
-///       if (child.IsValid)
-///           table.Decrement(child, handler);
+///       Debug.Assert(child.IsValid);
+///       table.Decrement(child, handler);
 ///   }
 ///   </code>
 ///   Keep the <c>typeof</c> comparison as a standalone if-statement — do not combine it with

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Fabrica.Core.Memory;
@@ -316,8 +317,8 @@ internal static class DagValidator
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly void CollectTyped(Handle<TNode> child)
         {
-            if (child.IsValid)
-                children.Add(new NodeRef(0, child.Index));
+            Debug.Assert(child.IsValid);
+            children.Add(new NodeRef(0, child.Index));
         }
     }
 }
