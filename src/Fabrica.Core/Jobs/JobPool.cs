@@ -91,6 +91,8 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     {
         item._counter = default;
         item._dependents = null;
+        item._workerContext = null;
+        item._state = default;
         item.Reset();
 
         var spinner = new SpinWait();
