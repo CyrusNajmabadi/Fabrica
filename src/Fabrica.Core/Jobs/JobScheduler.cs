@@ -88,8 +88,10 @@ internal sealed class JobScheduler : IDisposable
     /// </summary>
     internal void Submit(Job job)
     {
+#if DEBUG
         Debug.Assert(job._state == JobState.Pending);
         job._state = JobState.Queued;
+#endif
         Interlocked.Increment(ref _outstandingJobs);
         _coordinatorContext.Deque.Push(job);
         this.NotifyWorkAvailable();
@@ -186,11 +188,15 @@ internal sealed class JobScheduler : IDisposable
     private void ExecuteJob(Job job, WorkerContext context)
     {
         job._workerContext = context;
+#if DEBUG
         job._state = JobState.Executing;
+#endif
 
         job.Execute();
 
+#if DEBUG
         job._state = JobState.Completed;
+#endif
         job._workerContext = null;
 
         this.PropagateCompletion(job, context);
@@ -207,8 +213,10 @@ internal sealed class JobScheduler : IDisposable
             if (Interlocked.Decrement(ref dependent._remainingDependencies) != 0)
                 continue;
 
+#if DEBUG
             Debug.Assert(dependent._state == JobState.Pending);
             dependent._state = JobState.Queued;
+#endif
             Interlocked.Increment(ref _outstandingJobs);
             context.Deque.Push(dependent);
             this.NotifyWorkAvailable();

@@ -1,9 +1,6 @@
 namespace Fabrica.Core.Jobs;
 
-/// <summary>
-/// Debug-only lifecycle state for catching misuse (double-enqueue, executing an unqueued job, etc.).
-/// Not used for correctness — the scheduler's outstanding job counter handles completion detection.
-/// </summary>
+#if DEBUG
 internal enum JobState : byte
 {
     Pending = 0,
@@ -11,6 +8,7 @@ internal enum JobState : byte
     Executing = 2,
     Completed = 3,
 }
+#endif
 
 /// <summary>
 /// Abstract base class for all jobs in the DAG-based job system. Concrete subclasses carry
@@ -76,12 +74,9 @@ internal abstract class Job
     /// </summary>
     internal WorkerContext? _workerContext;
 
-    /// <summary>
-    /// Debug-only lifecycle state. Used by <see cref="System.Diagnostics.Debug.Assert"/> in the
-    /// scheduler to catch misuse (double-enqueue, executing an unqueued job). Not relied upon
-    /// for correctness — the scheduler's outstanding job counter handles completion detection.
-    /// </summary>
+#if DEBUG
     internal JobState _state;
+#endif
 
     /// <summary>Performs the job's work. Called by a worker thread.</summary>
     internal abstract void Execute();

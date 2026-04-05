@@ -208,8 +208,10 @@ public class JobSchedulerTests
         var job = pool.Rent();
         job._remainingDependencies = 3;
         job._dependents = [new TestJob()];
-        job._state = JobState.Completed;
         job._workerContext = new WorkerContext(null!, 99);
+#if DEBUG
+        job._state = JobState.Completed;
+#endif
 
         pool.Return(job);
         var reused = pool.Rent();
@@ -217,8 +219,10 @@ public class JobSchedulerTests
         Assert.Same(job, reused);
         Assert.Equal(0, reused._remainingDependencies);
         Assert.Null(reused._dependents);
-        Assert.Equal(JobState.Pending, reused._state);
         Assert.Null(reused._workerContext);
+#if DEBUG
+        Assert.Equal(JobState.Pending, reused._state);
+#endif
     }
 
     // ── Concurrent stress ───────────────────────────────────────────────────

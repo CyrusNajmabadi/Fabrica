@@ -31,8 +31,10 @@ internal sealed class WorkerContext(JobScheduler scheduler, int workerIndex)
     /// </summary>
     internal void Enqueue(Job job)
     {
+#if DEBUG
         Debug.Assert(job._state == JobState.Pending);
         job._state = JobState.Queued;
+#endif
         scheduler.IncrementOutstanding();
         Deque.Push(job);
         scheduler.NotifyWorkAvailable();
