@@ -1,0 +1,68 @@
+---
+description: How to handle JIT baseline test failures and add new baselines
+globs: ["tests/baselines/jit/**", "tests/Fabrica.JitBaseline/**", "tests/Fabrica.Core.Tests/Memory/JitBaselineTests.cs"]
+---
+
+# JIT Baseline Tests
+
+## What they are
+
+Golden-file tests that capture the native ASM the JIT produces for critical visitor-pattern
+methods. They verify that `typeof` dead-branch elimination, struct devirtualization, and
+inlining are working as expected. Each baseline is a normalized `.asm` file stored at:
+
+```
+tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.asm
+```
+
+The platform key includes the .NET runtime version because even patch releases can change
+JIT codegen.
+
+## When tests fail
+
+### "No baseline found"
+
+This happens when running on a new platform or runtime version. The test writes an `.actual`
+file with the current JIT output.
+
+**What to do:**
+1. Review the `.actual` file — verify the ASM looks correct:
+   - `visit-different-type`: should be tiny (just prologue+return, ~16 bytes ARM64) — the
+     entire body was dead-branch eliminated
+   - `visit-same-type`: should inline directly to Decrement with no typeof check
+   - `enumerate-decrement-same-type`: full enumerator→visitor→Decrement pipeline inlined
+   - `enumerate-decrement-mixed-type`: only same-type child path present, cross-type
+     completely eliminated
+2. Rename `.actual` → `.asm` to establish the baseline
+3. Commit the new baseline directory
+
+### "JIT output differs from baseline"
+
+This happens when the JIT changes its codegen for an existing platform+version (rare — usually
+means a rebuild with a different SDK that targets the same runtime).
+
+**What to do:**
+1. Diff the `.actual` file against the existing `.asm` baseline
+2. Verify the new output still demonstrates the expected optimizations
+3. If correct, replace the `.asm` with the `.actual` content
+
+### "Runtime correctness check failed"
+
+This means the visitor produced wrong refcount results — the generated code is actually broken,
+not just differently shaped. This is a real bug — investigate the visitor/enumerator code.
+
+## CRITICAL: never delete old baselines
+
+Old version directories (e.g., `osx-arm64-net10.0.2/`) remain valid for anyone running that
+.NET version. When a new version appears, ADD a new directory alongside the old ones.
+
+Only delete a baseline directory if that .NET version is no longer supported by the project.
+
+## Adding new baseline scenarios
+
+1. Add a new `[MethodImpl(MethodImplOptions.NoInlining)]` wrapper in
+   `tests/Fabrica.JitBaseline/Program.cs` that exercises the method
+2. Add runtime correctness assertions before/after the call
+3. Add a new `[InlineData]` entry in `JitBaselineTests.JitOutput_MatchesBaseline`
+4. Run the tests — they will fail and generate `.actual` files
+5. Review and promote to `.asm` baselines
