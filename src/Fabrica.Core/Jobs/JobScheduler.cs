@@ -30,12 +30,36 @@ namespace Fabrica.Core.Jobs;
 /// </summary>
 internal sealed class JobScheduler : IDisposable
 {
+    /// <summary>
+    /// All worker contexts plus the coordinator context. Length is <see cref="_workerCount"/> + 1.
+    /// Indices 0..<see cref="_workerCount"/>-1 are background worker contexts; the last element
+    /// (index <see cref="_workerCount"/>) is the coordinator. Used for steal-target iteration so
+    /// any thread can steal from any other, including the coordinator's deque.
+    /// </summary>
     private readonly WorkerContext[] _allContexts;
+
+    /// <summary>
+    /// The coordinator's context — always <c>_allContexts[_workerCount]</c>. The coordinator thread
+    /// pushes submitted jobs here and pops/steals during <see cref="WaitForCompletion"/>.
+    /// </summary>
     private readonly WorkerContext _coordinatorContext;
+
+    /// <summary>Background worker threads. Length equals <see cref="_workerCount"/>.</summary>
     private readonly Thread[] _workerThreads;
+
+    /// <summary>Number of background worker threads (does not include the coordinator).</summary>
     private readonly int _workerCount;
+
+    /// <summary>
+    /// Shared semaphore for parking idle workers. Each <see cref="NotifyWorkAvailable"/> call
+    /// releases one permit, waking at most one parked worker.
+    /// </summary>
     private readonly SemaphoreSlim _workSignal;
+
+    /// <summary>Set to <c>true</c> during <see cref="Dispose"/> to break worker loops.</summary>
     private volatile bool _shutdownRequested;
+
+    /// <summary>Guard for idempotent <see cref="Dispose"/>.</summary>
     private int _disposed;
 
     /// <summary>
