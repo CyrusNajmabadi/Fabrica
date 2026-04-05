@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -18,6 +19,10 @@ namespace Fabrica.Core.Memory;
 /// REUSE
 ///   The internal <see cref="List{T}"/> grows to steady state and is reused via <see cref="Clear"/>.
 ///   Once a snapshot is fully released, its slices can be reused by future snapshots with zero allocation.
+///
+/// THREAD MODEL
+///   Single-threaded. All operations must come from the coordinator thread. Debug builds assert via
+///   the underlying <see cref="NodeStore{TNode, THandler}"/>'s <see cref="SingleThreadedOwner"/>.
 ///
 /// PORTABILITY
 ///   In Rust: a struct holding a reference to the <c>NodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
@@ -53,12 +58,24 @@ internal readonly struct SnapshotSlice<TNode, THandler>(NodeStore<TNode, THandle
     /// <summary>Adds a handle as a root in this snapshot slice.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void AddRoot(Handle<TNode> handle)
-        => _rootHandles.Add(handle);
+    {
+        this.AssertOwnerThread();
+        _rootHandles.Add(handle);
+    }
 
     /// <summary>Resets the root list for reuse in the next snapshot. The backing array is retained so
     /// future snapshots allocate nothing in steady state.</summary>
     public readonly void Clear()
-        => _rootHandles.Clear();
+    {
+        this.AssertOwnerThread();
+        _rootHandles.Clear();
+    }
+
+    /// <summary>Debug-only assertion that the caller is on the store's owner thread. Delegates to the
+    /// underlying <see cref="NodeStore{TNode, THandler}"/> which maintains the thread-ownership tracking.</summary>
+    [Conditional("DEBUG")]
+    private readonly void AssertOwnerThread()
+        => _store.AssertOwnerThread();
 
     /// <summary>
     /// Increments the refcount of every root in this slice. Called when the snapshot is published (e.g.,

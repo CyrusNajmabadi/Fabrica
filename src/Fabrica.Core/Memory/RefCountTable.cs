@@ -62,7 +62,9 @@ internal sealed partial class RefCountTable<T> where T : struct
     /// </summary>
     private bool _cascadeActive;
 
+#if DEBUG
     private SingleThreadedOwner _owner;
+#endif
 
     // ── Constructors ──────────────────────────────────────────────────────
 
@@ -77,6 +79,19 @@ internal sealed partial class RefCountTable<T> where T : struct
     internal RefCountTable(int directoryLength, int slabShift)
         => _directory = new UnsafeSlabDirectory<int>(directoryLength, slabShift);
 
+    // ── Thread ownership ──────────────────────────────────────────────────
+
+    /// <summary>Debug-only assertion that the caller is on the owner thread. Types that wrap a
+    /// <see cref="RefCountTable{T}"/> (e.g., <see cref="NodeStore{TNode, THandler}"/>) delegate
+    /// here rather than maintaining their own <see cref="SingleThreadedOwner"/>.</summary>
+    [Conditional("DEBUG")]
+    internal void AssertOwnerThread()
+    {
+#if DEBUG
+        _owner.AssertOwnerThread();
+#endif
+    }
+
     // ── Capacity management ──────────────────────────────────────────────
 
     /// <summary>
@@ -86,7 +101,7 @@ internal sealed partial class RefCountTable<T> where T : struct
     /// </summary>
     public void EnsureCapacity(int highWater)
     {
-        _owner.AssertOwnerThread();
+        this.AssertOwnerThread();
         for (var slabStart = 0; slabStart < highWater; slabStart += _directory.SlabLength)
             _directory.EnsureSlab(slabStart);
     }
@@ -103,7 +118,7 @@ internal sealed partial class RefCountTable<T> where T : struct
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Increment(Handle<T> handle)
     {
-        _owner.AssertOwnerThread();
+        this.AssertOwnerThread();
         _directory[handle.Index]++;
     }
 
@@ -119,7 +134,7 @@ internal sealed partial class RefCountTable<T> where T : struct
     public void Decrement<THandler>(Handle<T> handle, THandler handler)
         where THandler : struct, IRefCountHandler
     {
-        _owner.AssertOwnerThread();
+        this.AssertOwnerThread();
         Debug.Assert(_directory[handle.Index] > 0, $"Decrement on index {handle.Index} with refcount already at {_directory[handle.Index]}.");
 
         if (--_directory[handle.Index] != 0)
@@ -137,7 +152,7 @@ internal sealed partial class RefCountTable<T> where T : struct
     /// <see cref="EnsureCapacity"/> for the full range beforehand.</summary>
     public void IncrementBatch(ReadOnlySpan<Handle<T>> handles)
     {
-        _owner.AssertOwnerThread();
+        this.AssertOwnerThread();
         for (var i = 0; i < handles.Length; i++)
             _directory[handles[i].Index]++;
     }
@@ -149,7 +164,7 @@ internal sealed partial class RefCountTable<T> where T : struct
     public void DecrementBatch<THandler>(ReadOnlySpan<Handle<T>> handles, THandler handler)
         where THandler : struct, IRefCountHandler
     {
-        _owner.AssertOwnerThread();
+        this.AssertOwnerThread();
         Debug.Assert(!_cascadeActive, "DecrementBatch must not be called during an active cascade.");
 
         for (var i = 0; i < handles.Length; i++)
