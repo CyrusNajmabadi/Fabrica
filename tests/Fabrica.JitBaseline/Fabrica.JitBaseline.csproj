@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+		<!-- Not a test project — suppress xunit from tests/Directory.Build.props -->
+		<IsTestProject>false</IsTestProject>
+	</PropertyGroup>
+
+	<!-- Remove xunit packages inherited from tests/Directory.Build.props -->
+	<ItemGroup>
+		<PackageReference Remove="xunit.v3.mtp-v2" />
+		<PackageReference Remove="Microsoft.Testing.Extensions.CodeCoverage" />
+		<Content Remove="xunit.runner.json" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Fabrica.Core\Fabrica.Core.csproj" />
+	</ItemGroup>
+</Project>

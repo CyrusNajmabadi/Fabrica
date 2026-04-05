@@ -6,4 +6,5 @@
   <Project Path="tests/Fabrica.Core.Tests/Fabrica.Core.Tests.csproj" />
   <Project Path="tests/Fabrica.Pipeline.Tests/Fabrica.Pipeline.Tests.csproj" />
   <Project Path="tests/Fabrica.Engine.Tests/Fabrica.Engine.Tests.csproj" />
+  <Project Path="tests/Fabrica.JitBaseline/Fabrica.JitBaseline.csproj" />
 </Solution>
