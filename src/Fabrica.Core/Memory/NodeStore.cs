@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
 
@@ -30,7 +29,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from the coordinator thread. Debug builds assert via
-///   <see cref="SingleThreadedOwner"/>.
+///   the underlying <see cref="RefCountTable{T}"/>'s <see cref="Threading.SingleThreadedOwner"/>.
 ///
 /// PORTABILITY
 ///   No GC reliance. In Rust: a struct holding the arena, refcount table, and a handler function
@@ -42,7 +41,6 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     where THandler : struct, RefCountTable<TNode>.IRefCountHandler
 {
     private readonly THandler _handler = handler;
-    private SingleThreadedOwner _owner;
 
 #if DEBUG
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
@@ -54,6 +52,12 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
 
     /// <summary>Parallel refcount array — index <c>i</c> holds the refcount for the node at arena index <c>i</c>.</summary>
     public RefCountTable<TNode> RefCounts { get; } = refCounts;
+
+    /// <summary>Debug-only assertion that the caller is on the owner thread. Delegates to the
+    /// underlying <see cref="RefCountTable{T}"/> which holds the sole <see cref="Threading.SingleThreadedOwner"/>.</summary>
+    [Conditional("DEBUG")]
+    internal void AssertOwnerThread()
+        => this.RefCounts.AssertOwnerThread();
 
     // ── Single-handle operations (used by visitor actions) ─────────────
 
@@ -79,7 +83,6 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     /// </summary>
     public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
-        _owner.AssertOwnerThread();
         this.RefCounts.IncrementBatch(roots);
         this.TrackAndValidateAfterIncrement(roots);
     }
@@ -92,7 +95,6 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     /// </summary>
     public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
-        _owner.AssertOwnerThread();
         this.TrackBeforeDecrement(roots);
         this.RefCounts.DecrementBatch(roots, _handler);
         this.RunValidation();
