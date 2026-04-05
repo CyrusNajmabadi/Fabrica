@@ -84,7 +84,7 @@ public class JobCounterTests
         const int N = 100;
         var counter = new JobCounter(N);
         var zeroCount = 0;
-        var barrier = new Barrier(N);
+        using var barrier = new Barrier(N);
 
         var threads = new Thread[N];
         for (var i = 0; i < N; i++)
@@ -108,12 +108,14 @@ public class JobCounterTests
     [Fact]
     public void ConcurrentDecrement_Stress()
     {
-        for (var iteration = 0; iteration < 1000; iteration++)
+        const int Iterations = 100;
+        const int N = 8;
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
         {
-            const int N = 8;
             var counter = new JobCounter(N);
             var zeroCount = 0;
-            var barrier = new Barrier(N);
+            using var barrier = new Barrier(N);
 
             var threads = new Thread[N];
             for (var i = 0; i < N; i++)

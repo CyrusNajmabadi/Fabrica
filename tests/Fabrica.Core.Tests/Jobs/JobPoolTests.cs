@@ -266,7 +266,7 @@ public class JobPoolTests
         const int ThreadCount = 8;
         const int OpsPerThread = 1000;
         var pool = new JobPool<TestJob>();
-        var barrier = new Barrier(ThreadCount);
+        using var barrier = new Barrier(ThreadCount);
 
         var threads = new Thread[ThreadCount];
         for (var t = 0; t < ThreadCount; t++)
@@ -303,7 +303,7 @@ public class JobPoolTests
             pool.Return(new TestJob());
 
         var allJobs = new TestJob[ThreadCount * JobsPerThread];
-        var barrier = new Barrier(ThreadCount);
+        using var barrier = new Barrier(ThreadCount);
 
         var threads = new Thread[ThreadCount];
         for (var t = 0; t < ThreadCount; t++)
