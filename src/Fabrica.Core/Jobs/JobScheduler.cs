@@ -19,6 +19,10 @@ namespace Fabrica.Core.Jobs;
 ///   for sub-jobs happen during the parent's execution (before the parent's decrement). The worker
 ///   that decrements to zero signals <see cref="_completionSignal"/>, unparking the coordinator.
 ///
+///   TODO: The current single-counter/single-signal design assumes one batch at a time. To share
+///   workers across multiple submitters (e.g. sim + render), completion tracking needs to move to a
+///   per-DAG fence object (JobFence) with its own atomic count and signal.
+///
 /// WORKER LIFECYCLE
 ///   Uses the announce-then-recheck pattern: when a worker finds no work, it atomically increments
 ///   <see cref="_parkedWorkers"/>, re-checks for work (closing the missed-wake race), and only
