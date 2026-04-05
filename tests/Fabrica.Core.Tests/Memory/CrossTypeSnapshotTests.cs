@@ -110,6 +110,14 @@ public class CrossTypeSnapshotTests
             if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
         }
+
+        public readonly void RewriteChildren<TRewriter>(ref ParentNode node, ref TRewriter rewriter)
+            where TRewriter : struct, INodeHandleRewriter
+        {
+            if (node.LeftParent.Index != -1) { var h = node.LeftParent; rewriter.Rewrite(ref h); node.LeftParent = h; }
+            if (node.RightParent.Index != -1) { var h = node.RightParent; rewriter.Rewrite(ref h); node.RightParent = h; }
+            if (node.ChildRef.Index != -1) { var h = node.ChildRef; rewriter.Rewrite(ref h); node.ChildRef = h; }
+        }
     }
 
     private struct ChildChildEnumerator : INodeChildEnumerator<ChildNode>
@@ -126,6 +134,13 @@ public class CrossTypeSnapshotTests
         {
             if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild, in context);
             if (node.RightChild.IsValid) visitor.Visit(node.RightChild, in context);
+        }
+
+        public readonly void RewriteChildren<TRewriter>(ref ChildNode node, ref TRewriter rewriter)
+            where TRewriter : struct, INodeHandleRewriter
+        {
+            if (node.LeftChild.Index != -1) { var h = node.LeftChild; rewriter.Rewrite(ref h); node.LeftChild = h; }
+            if (node.RightChild.Index != -1) { var h = node.RightChild; rewriter.Rewrite(ref h); node.RightChild = h; }
         }
     }
 
