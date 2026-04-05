@@ -26,14 +26,14 @@ internal sealed class WorkerContext(JobScheduler scheduler, int workerIndex)
     internal int _stealOffset;
 
     /// <summary>
-    /// Pushes a ready-to-execute job onto this worker's deque and signals the scheduler that
-    /// work is available. The job must be in <see cref="JobState.Pending"/> state (not yet queued
-    /// or executed).
+    /// Pushes a ready-to-execute job onto this worker's deque, increments the scheduler's
+    /// outstanding job count, and signals that work is available.
     /// </summary>
     internal void Enqueue(Job job)
     {
         Debug.Assert(job._state == JobState.Pending);
         job._state = JobState.Queued;
+        scheduler.IncrementOutstanding();
         Deque.Push(job);
         scheduler.NotifyWorkAvailable();
     }

@@ -122,14 +122,14 @@ public class JobPoolTests
         var job = pool.Rent();
 
         var otherJob = pool.Rent();
-        job._counter = new JobCounter(3);
+        job._remainingDependencies = 3;
         job._dependents = [otherJob];
 
         pool.Return(job);
         var reused = pool.Rent();
 
         Assert.Same(job, reused);
-        Assert.True(reused._counter.IsComplete);
+        Assert.Equal(0, reused._remainingDependencies);
         Assert.Null(reused._dependents);
         Assert.Null(reused._poolNext);
     }

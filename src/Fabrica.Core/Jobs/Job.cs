@@ -1,21 +1,14 @@
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
-/// Tracks the lifecycle of a <see cref="Job"/> within the scheduler. Managed by scheduler
-/// infrastructure; prevents double-execution when a job serves as a terminal counter holder.
+/// Debug-only lifecycle state for catching misuse (double-enqueue, executing an unqueued job, etc.).
+/// Not used for correctness — the scheduler's outstanding job counter handles completion detection.
 /// </summary>
 internal enum JobState : byte
 {
-    /// <summary>Newly created or freshly rented from pool. Eligible for scheduling.</summary>
     Pending = 0,
-
-    /// <summary>Pushed onto a work-stealing deque, awaiting execution.</summary>
     Queued = 1,
-
-    /// <summary>Currently executing on a worker thread.</summary>
     Executing = 2,
-
-    /// <summary>Execution complete and dependencies propagated.</summary>
     Completed = 3,
 }
 
@@ -27,22 +20,22 @@ internal enum JobState : byte
 /// LIFECYCLE
 ///   1. <b>Rent</b> — The coordinator (or a parent job) rents a job from its type-specific
 ///      <see cref="JobPool{TJob}"/>. If the pool is empty, a new instance is allocated.
-///   2. <b>Configure</b> — The caller sets the job's <see cref="_counter"/> (dependency count),
-///      <see cref="_dependents"/> (downstream jobs to decrement), and subclass-specific input fields.
+///   2. <b>Configure</b> — The caller sets <see cref="_remainingDependencies"/>,
+///      <see cref="_dependents"/>, and subclass-specific input fields.
 ///   3. <b>Submit</b> — The job is pushed onto a <see cref="Collections.WorkStealingDeque{T}"/>
-///      for execution via <see cref="JobScheduler.Submit"/> or <see cref="WorkerContext.Enqueue"/>.
+///      via <see cref="JobScheduler.Submit"/> or <see cref="WorkerContext.Enqueue"/>.
 ///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler sets
 ///      <see cref="_workerContext"/> to the executing thread's context, then calls
 ///      <see cref="Execute"/>. After execution, the scheduler decrements all
-///      <see cref="_dependents"/>' counters, enqueuing any that hit zero.
-///   5. <b>Sweep</b> — After the terminal counter completes, the coordinator walks the DAG and
-///      calls <see cref="Reset"/> on each job, then returns it to its pool.
+///      <see cref="_dependents"/>' dependency counts, enqueuing any that hit zero.
+///   5. <b>Sweep</b> — After the scheduler's outstanding job count reaches zero, the coordinator
+///      walks the DAG and calls <see cref="Reset"/> on each job, then returns it to its pool.
 ///
 /// DAG DEPENDENCIES
-///   <see cref="_counter"/> gates execution: the scheduler enqueues this job only when
-///   <see cref="JobCounter.IsComplete"/> becomes true (via dependency propagation).
-///   <see cref="_dependents"/> lists the downstream jobs whose counters this job will decrement
-///   upon completion. The coordinator that created the DAG is responsible for wiring these.
+///   <see cref="_remainingDependencies"/> gates execution: the scheduler enqueues this job only
+///   when the count reaches zero (via atomic decrement from completed prerequisites).
+///   <see cref="_dependents"/> lists the downstream jobs whose counts this job decrements upon
+///   completion.
 ///
 /// POOLING
 ///   <see cref="_poolNext"/> is the intrusive linked-list pointer used by
@@ -56,16 +49,17 @@ internal enum JobState : byte
 internal abstract class Job
 {
     /// <summary>
-    /// Dependency counter — this job is eligible to execute only when the counter reaches zero.
-    /// Set by the coordinator or parent job during DAG construction. For root jobs (no
-    /// dependencies), initialize to <c>new JobCounter(0)</c> or leave at default.
+    /// Number of prerequisite jobs that must complete before this job is eligible to run.
+    /// Set during DAG construction. The scheduler atomically decrements this when a prerequisite
+    /// completes; the thread that brings it to zero enqueues the job. For root jobs (no
+    /// dependencies), leave at default (0).
     /// </summary>
-    internal JobCounter _counter;
+    internal int _remainingDependencies;
 
     /// <summary>
-    /// Downstream jobs whose counters should be decremented when this job completes. The
-    /// scheduler iterates this array after <see cref="Execute"/> returns. May be null if this
-    /// job has no dependents (terminal job or standalone).
+    /// Downstream jobs whose dependency counts should be decremented when this job completes.
+    /// The scheduler iterates this array after <see cref="Execute"/> returns. May be null if
+    /// this job has no dependents (leaf of the DAG).
     /// </summary>
     internal Job[]? _dependents;
 
@@ -83,9 +77,9 @@ internal abstract class Job
     internal WorkerContext? _workerContext;
 
     /// <summary>
-    /// Lifecycle state managed by the scheduler. Prevents double-execution when a job serves as
-    /// a terminal counter holder (its counter is decremented after it has already completed).
-    /// Reset to <see cref="JobState.Pending"/> when the job is returned to its pool.
+    /// Debug-only lifecycle state. Used by <see cref="System.Diagnostics.Debug.Assert"/> in the
+    /// scheduler to catch misuse (double-enqueue, executing an unqueued job). Not relied upon
+    /// for correctness — the scheduler's outstanding job counter handles completion detection.
     /// </summary>
     internal JobState _state;
 
@@ -94,8 +88,8 @@ internal abstract class Job
 
     /// <summary>
     /// Resets this job's state for pool reuse. Called by the coordinator during the DAG sweep
-    /// after the terminal counter completes. Subclasses must clear all input/output buffer
-    /// references and any other mutable state.
+    /// after the scheduler's outstanding count reaches zero. Subclasses must clear all
+    /// input/output buffer references and any other mutable state.
     /// </summary>
     internal abstract void Reset();
 }

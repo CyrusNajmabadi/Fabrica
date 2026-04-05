@@ -29,18 +29,6 @@ public class JobSchedulerTests
         }
     }
 
-    private sealed class NopJob : Job
-    {
-        internal override void Execute() { }
-        internal override void Reset() { }
-    }
-
-    // ── Helpers ─────────────────────────────────────────────────────────────
-
-    /// <summary>Creates a NopJob whose counter starts at <paramref name="count"/>, used as a
-    /// terminal signal for <see cref="JobScheduler.WaitForCompletion"/>.</summary>
-    private static NopJob CreateSignal(int count = 1) => new() { _counter = new JobCounter(count) };
-
     // ── Basic execution ─────────────────────────────────────────────────────
 
     [Fact]
@@ -48,11 +36,9 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 2);
 
-        var signal = CreateSignal();
-        var job = new TestJob { _dependents = [signal] };
-
+        var job = new TestJob();
         scheduler.Submit(job);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
         Assert.True(job.Executed);
     }
@@ -62,17 +48,14 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 2);
 
-        var signal = CreateSignal();
         var capturedIndex = -1;
-
         var job = new TestJob
         {
-            _dependents = [signal],
             OnExecute = j => capturedIndex = j.ExecutedOnWorker,
         };
 
         scheduler.Submit(job);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
         Assert.True(capturedIndex >= 0);
     }
@@ -84,22 +67,19 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 2);
 
-        var signal = CreateSignal();
         var order = new ConcurrentQueue<string>();
 
         var jobA = new TestJob { OnExecute = _ => order.Enqueue("A") };
-        var jobB = new TestJob { _counter = new JobCounter(1), OnExecute = _ => order.Enqueue("B") };
-        var jobC = new TestJob { _counter = new JobCounter(1), OnExecute = _ => order.Enqueue("C") };
+        var jobB = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("B") };
+        var jobC = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("C") };
 
         jobA._dependents = [jobB];
         jobB._dependents = [jobC];
-        jobC._dependents = [signal];
 
         scheduler.Submit(jobA);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
-        var result = order.ToArray();
-        Assert.Equal(["A", "B", "C"], result);
+        Assert.Equal(["A", "B", "C"], [.. order]);
     }
 
     // ── DAG: fan-out / fan-in ───────────────────────────────────────────────
@@ -109,21 +89,19 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 4);
 
-        var signal = CreateSignal();
         var order = new ConcurrentQueue<string>();
 
         var root = new TestJob { OnExecute = _ => order.Enqueue("root") };
-        var left = new TestJob { _counter = new JobCounter(1), OnExecute = _ => order.Enqueue("left") };
-        var right = new TestJob { _counter = new JobCounter(1), OnExecute = _ => order.Enqueue("right") };
-        var join = new TestJob { _counter = new JobCounter(2), OnExecute = _ => order.Enqueue("join") };
+        var left = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("left") };
+        var right = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("right") };
+        var join = new TestJob { _remainingDependencies = 2, OnExecute = _ => order.Enqueue("join") };
 
         root._dependents = [left, right];
         left._dependents = [join];
         right._dependents = [join];
-        join._dependents = [signal];
 
         scheduler.Submit(root);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
         var result = order.ToArray();
         Assert.Equal(4, result.Length);
@@ -140,54 +118,25 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 4);
 
-        var signal = CreateSignal();
         var joinExecutionCount = 0;
 
         var root = new TestJob();
-        var left = new TestJob { _counter = new JobCounter(1) };
-        var right = new TestJob { _counter = new JobCounter(1) };
+        var left = new TestJob { _remainingDependencies = 1 };
+        var right = new TestJob { _remainingDependencies = 1 };
         var join = new TestJob
         {
-            _counter = new JobCounter(2),
+            _remainingDependencies = 2,
             OnExecute = _ => Interlocked.Increment(ref joinExecutionCount),
         };
 
         root._dependents = [left, right];
         left._dependents = [join];
         right._dependents = [join];
-        join._dependents = [signal];
 
         scheduler.Submit(root);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
         Assert.Equal(1, joinExecutionCount);
-    }
-
-    // ── Terminal counter holder is not re-executed ───────────────────────────
-
-    [Fact]
-    public void TerminalCounterHolder_NotReExecuted()
-    {
-        using var scheduler = new JobScheduler(workerCount: 2);
-
-        var executionCount = 0;
-        var terminal = new TestJob
-        {
-            _counter = new JobCounter(1),
-            OnExecute = _ => Interlocked.Increment(ref executionCount),
-        };
-
-        var child = new TestJob
-        {
-            _counter = new JobCounter(1),
-            _dependents = [terminal]
-        };
-        terminal._dependents = [child];
-
-        scheduler.Submit(terminal);
-        Assert.True(scheduler.WaitForCompletion(terminal, millisecondsTimeout: 5000));
-
-        Assert.Equal(1, executionCount);
     }
 
     // ── Coordinator-only mode (zero workers) ────────────────────────────────
@@ -197,17 +146,15 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 0);
 
-        var signal = CreateSignal();
         var order = new ConcurrentQueue<string>();
 
         var jobA = new TestJob { OnExecute = _ => order.Enqueue("A") };
-        var jobB = new TestJob { _counter = new JobCounter(1), OnExecute = _ => order.Enqueue("B") };
+        var jobB = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("B") };
 
         jobA._dependents = [jobB];
-        jobB._dependents = [signal];
 
         scheduler.Submit(jobA);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
         Assert.Equal(["A", "B"], [.. order]);
     }
@@ -219,13 +166,10 @@ public class JobSchedulerTests
     {
         using var scheduler = new JobScheduler(workerCount: 2);
 
-        var signal = CreateSignal();
         var subJobExecuted = false;
-
         var subJob = new TestJob
         {
             OnExecute = _ => subJobExecuted = true,
-            _dependents = [signal],
         };
 
         var parentJob = new TestJob
@@ -234,10 +178,24 @@ public class JobSchedulerTests
         };
 
         scheduler.Submit(parentJob);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 5000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
 
         Assert.True(parentJob.Executed);
         Assert.True(subJobExecuted);
+    }
+
+    // ── Outstanding counter ─────────────────────────────────────────────────
+
+    [Fact]
+    public void OutstandingCount_ReachesZeroAfterCompletion()
+    {
+        using var scheduler = new JobScheduler(workerCount: 2);
+
+        var job = new TestJob();
+        scheduler.Submit(job);
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 5000));
+
+        Assert.Equal(0, scheduler.GetTestAccessor().OutstandingJobs);
     }
 
     // ── Pool integration ────────────────────────────────────────────────────
@@ -248,8 +206,8 @@ public class JobSchedulerTests
         var pool = new JobPool<TestJob>();
 
         var job = pool.Rent();
-        job._counter = new JobCounter(3);
-        job._dependents = [new NopJob()];
+        job._remainingDependencies = 3;
+        job._dependents = [new TestJob()];
         job._state = JobState.Completed;
         job._workerContext = new WorkerContext(null!, 99);
 
@@ -257,7 +215,7 @@ public class JobSchedulerTests
         var reused = pool.Rent();
 
         Assert.Same(job, reused);
-        Assert.True(reused._counter.IsComplete);
+        Assert.Equal(0, reused._remainingDependencies);
         Assert.Null(reused._dependents);
         Assert.Equal(JobState.Pending, reused._state);
         Assert.Null(reused._workerContext);
@@ -271,7 +229,6 @@ public class JobSchedulerTests
         const int JobCount = 200;
         using var scheduler = new JobScheduler(workerCount: 4);
 
-        var signal = CreateSignal(count: JobCount);
         var executionCount = 0;
 
         for (var i = 0; i < JobCount; i++)
@@ -279,12 +236,11 @@ public class JobSchedulerTests
             var job = new TestJob
             {
                 OnExecute = _ => Interlocked.Increment(ref executionCount),
-                _dependents = [signal],
             };
             scheduler.Submit(job);
         }
 
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 10000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 10000));
         Assert.Equal(JobCount, executionCount);
     }
 
@@ -294,7 +250,6 @@ public class JobSchedulerTests
         const int Depth = 100;
         using var scheduler = new JobScheduler(workerCount: 4);
 
-        var signal = CreateSignal();
         var order = new ConcurrentQueue<int>();
 
         var jobs = new TestJob[Depth];
@@ -303,7 +258,7 @@ public class JobSchedulerTests
             var idx = i;
             jobs[i] = new TestJob
             {
-                _counter = i == 0 ? default : new JobCounter(1),
+                _remainingDependencies = i == 0 ? 0 : 1,
                 OnExecute = _ => order.Enqueue(idx),
             };
         }
@@ -311,10 +266,8 @@ public class JobSchedulerTests
         for (var i = 0; i < Depth - 1; i++)
             jobs[i]._dependents = [jobs[i + 1]];
 
-        jobs[Depth - 1]._dependents = [signal];
-
         scheduler.Submit(jobs[0]);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 10000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 10000));
 
         var result = order.ToArray();
         Assert.Equal(Depth, result.Length);
@@ -328,13 +281,11 @@ public class JobSchedulerTests
         const int FanWidth = 50;
         using var scheduler = new JobScheduler(workerCount: 4);
 
-        var signal = CreateSignal();
         var executionCount = 0;
 
         var join = new TestJob
         {
-            _counter = new JobCounter(FanWidth),
-            _dependents = [signal],
+            _remainingDependencies = FanWidth,
         };
 
         var root = new TestJob();
@@ -343,7 +294,7 @@ public class JobSchedulerTests
         {
             children[i] = new TestJob
             {
-                _counter = new JobCounter(1),
+                _remainingDependencies = 1,
                 OnExecute = _ => Interlocked.Increment(ref executionCount),
                 _dependents = [join],
             };
@@ -351,7 +302,7 @@ public class JobSchedulerTests
 
         root._dependents = children;
         scheduler.Submit(root);
-        Assert.True(scheduler.WaitForCompletion(signal, millisecondsTimeout: 10000));
+        Assert.True(scheduler.WaitForCompletion(millisecondsTimeout: 10000));
 
         Assert.Equal(FanWidth, executionCount);
     }

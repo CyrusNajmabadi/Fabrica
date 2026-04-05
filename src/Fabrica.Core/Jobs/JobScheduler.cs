@@ -9,21 +9,16 @@ namespace Fabrica.Core.Jobs;
 /// SCHEDULING MODEL
 ///   Each worker owns a <see cref="Collections.WorkStealingDeque{T}"/>. Workers pop from their
 ///   own deque (LIFO — cache-hot) and steal from peers (FIFO — large tasks) when idle. After
-///   executing a job, the scheduler decrements all dependent counters; any dependent whose
-///   counter reaches zero is pushed onto the executing worker's deque.
+///   executing a job, the scheduler atomically decrements all dependent jobs' remaining dependency
+///   counts; any dependent whose count reaches zero is pushed onto the executing worker's deque.
 ///
-/// COORDINATOR PARTICIPATION
-///   The coordinator thread (the thread that calls <see cref="Submit"/> and
-///   <see cref="WaitForCompletion"/>) has its own deque. During <see cref="WaitForCompletion"/>,
-///   the coordinator actively steals and executes work instead of blocking, maximizing throughput.
-///
-/// DAG WIRING
-///   Jobs form a directed acyclic graph via <see cref="Job._dependents"/> and
-///   <see cref="Job._counter"/>. The coordinator submits a root job; the root's
-///   <see cref="Job.Execute"/> creates and enqueues sub-jobs via
-///   <see cref="WorkerContext.Enqueue"/>. Terminal counter holders (jobs whose counter is
-///   decremented after they've already executed) are not re-enqueued, thanks to
-///   <see cref="JobState"/> tracking.
+/// COMPLETION DETECTION
+///   The scheduler maintains an atomic outstanding job counter. Every enqueue (submit, sub-job
+///   enqueue, or dependency propagation) increments it; every completed execution decrements it.
+///   The counter reaches zero exactly when all jobs in the DAG have finished, because increments
+///   for sub-jobs happen during the parent's execution (before the parent's decrement). The
+///   coordinator polls this counter in <see cref="WaitForCompletion"/> while actively stealing
+///   and executing work.
 ///
 /// WORKER LIFECYCLE
 ///   Workers park on a shared <see cref="SemaphoreSlim"/> when no work is found (after a brief
@@ -42,6 +37,13 @@ internal sealed class JobScheduler : IDisposable
     private readonly SemaphoreSlim _workSignal;
     private volatile bool _shutdownRequested;
     private int _disposed;
+
+    /// <summary>
+    /// Number of jobs that have been enqueued but not yet completed. Incremented on every enqueue
+    /// (submit, sub-job enqueue, dependency propagation); decremented after each execution
+    /// completes (including dependency propagation). Reaches zero exactly when all DAG work is done.
+    /// </summary>
+    private int _outstandingJobs;
 
     /// <summary>
     /// Creates a scheduler with <paramref name="workerCount"/> background worker threads. If
@@ -88,23 +90,24 @@ internal sealed class JobScheduler : IDisposable
     {
         Debug.Assert(job._state == JobState.Pending);
         job._state = JobState.Queued;
+        Interlocked.Increment(ref _outstandingJobs);
         _coordinatorContext.Deque.Push(job);
         this.NotifyWorkAvailable();
     }
 
     /// <summary>
-    /// Blocks the coordinator thread until <paramref name="terminalJob"/>'s counter reaches zero,
-    /// while actively stealing and executing work. Returns <c>true</c> if completed, <c>false</c>
-    /// if the timeout expired. Pass <c>-1</c> for no timeout.
+    /// Blocks the coordinator thread until all outstanding jobs have completed, while actively
+    /// stealing and executing work. Returns <c>true</c> if completed, <c>false</c> if the
+    /// timeout expired. Pass <c>-1</c> for no timeout.
     /// </summary>
-    internal bool WaitForCompletion(Job terminalJob, int millisecondsTimeout = -1)
+    internal bool WaitForCompletion(int millisecondsTimeout = -1)
     {
         var deadline = millisecondsTimeout >= 0
             ? Stopwatch.GetTimestamp() + (long)(millisecondsTimeout * (double)Stopwatch.Frequency / 1000)
             : long.MaxValue;
 
         var spinner = new SpinWait();
-        while (!terminalJob._counter.IsComplete)
+        while (Volatile.Read(ref _outstandingJobs) != 0)
         {
             if (millisecondsTimeout >= 0 && Stopwatch.GetTimestamp() >= deadline)
                 return false;
@@ -126,6 +129,12 @@ internal sealed class JobScheduler : IDisposable
     /// <see cref="Submit"/>, <see cref="WorkerContext.Enqueue"/>, and dependency propagation.
     /// </summary>
     internal void NotifyWorkAvailable() => _workSignal.Release();
+
+    /// <summary>
+    /// Atomically increments the outstanding job count. Called by <see cref="WorkerContext.Enqueue"/>
+    /// when a job pushes sub-jobs during execution.
+    /// </summary>
+    internal void IncrementOutstanding() => Interlocked.Increment(ref _outstandingJobs);
 
     // ── Worker loop ─────────────────────────────────────────────────────────
 
@@ -185,6 +194,7 @@ internal sealed class JobScheduler : IDisposable
         job._workerContext = null;
 
         this.PropagateCompletion(job, context);
+        Interlocked.Decrement(ref _outstandingJobs);
     }
 
     private void PropagateCompletion(Job job, WorkerContext context)
@@ -194,13 +204,12 @@ internal sealed class JobScheduler : IDisposable
 
         foreach (var dependent in dependents)
         {
-            if (!dependent._counter.Decrement())
+            if (Interlocked.Decrement(ref dependent._remainingDependencies) != 0)
                 continue;
 
-            if (dependent._state != JobState.Pending)
-                continue;
-
+            Debug.Assert(dependent._state == JobState.Pending);
             dependent._state = JobState.Queued;
+            Interlocked.Increment(ref _outstandingJobs);
             context.Deque.Push(dependent);
             this.NotifyWorkAvailable();
         }
@@ -233,5 +242,6 @@ internal sealed class JobScheduler : IDisposable
         public WorkerContext CoordinatorContext => scheduler._coordinatorContext;
         public WorkerContext GetWorkerContext(int index) => scheduler._allContexts[index];
         public int TotalContextCount => scheduler._allContexts.Length;
+        public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
     }
 }
