@@ -68,7 +68,9 @@ namespace Fabrica.Core.Tests.Memory;
 ///     where the baseline would be, and fails with instructions to review and commit.</item>
 ///   <item>When the runtime is upgraded, the test will fail on first run (new version directory).
 ///     Do NOT delete old baselines — they're still valid for that version. Instead, review the
-///     new <c>.actual</c> output and rename to <c>.asm</c> to add the new version's baseline.</item>
+///     new <c>.actual</c> output and rename to <c>.asm</c> to add the new version's baseline.
+///     If the output is identical to an existing version, create a <c>.ref</c> file instead
+///     (a text file containing the relative path to the matching <c>.asm</c>).</item>
 /// </list>
 /// </summary>
 public partial class JitBaselineTests
@@ -83,47 +85,76 @@ public partial class JitBaselineTests
     [InlineData("EnumerateDecrement", "enumerate-decrement-same-type", 2)]
     [InlineData("EnumerateMixedDecrement", "enumerate-decrement-mixed-type", 1)]
     [InlineData("EnumerateParentDecrement", "enumerate-decrement-multi-type", 2)]
-    public void JitOutput_MatchesBaseline(string methodFilter, string baselineName, int expectedDecrements)
+    public void JitOutput_MatchesBaseline(string methodFilter, string baselineName, int expectedDecrements) => this.VerifyBaseline(methodFilter, baselineName, expectedDecrements, requireOutput: true);
+
+    /// <summary>
+    /// Callee-level baselines: capture the methods the wrappers call into, where typeof elimination
+    /// actually happens on architectures that don't inline into <c>NoInlining</c> wrappers (e.g., x64).
+    /// On ARM64, these callees are fully inlined and never compiled standalone — the test skips.
+    /// </summary>
+    [Theory]
+    [InlineData("TreeChildEnumerator:EnumerateChildren", "enumerate-decrement-same-type-callee", 2)]
+    [InlineData("MixedChildEnumerator:EnumerateChildren", "enumerate-decrement-mixed-type-callee", 1)]
+    [InlineData("ParentChildEnumerator:EnumerateChildren", "enumerate-decrement-multi-type-callee", 2)]
+    public void JitOutput_CalleeMatchesBaseline(string methodFilter, string baselineName, int expectedDecrements) => this.VerifyBaseline(methodFilter, baselineName, expectedDecrements, requireOutput: false);
+
+    private void VerifyBaseline(string methodFilter, string baselineName, int expectedDecrements, bool requireOutput)
     {
 #if DEBUG
-        // The JIT skips aggressive inlining and dead-branch elimination in Debug builds,
-        // which is exactly what these tests validate. Only meaningful in Release.
         Assert.Skip("JIT baseline tests require Release configuration — Debug JIT does not inline or eliminate typeof branches.");
         return;
 #endif
 
 #pragma warning disable CS0162 // Unreachable code (the return above is conditional on DEBUG)
         var rawAsm = CaptureJitDisasm(methodFilter);
-        Assert.True(rawAsm.Length > 0, $"DOTNET_JitDisasm produced no output for filter '*{methodFilter}*'. " +
-            "This may mean the method was not JIT-compiled or the filter didn't match.");
+
+        if (rawAsm.Length == 0)
+        {
+            if (requireOutput)
+            {
+                Assert.Fail($"DOTNET_JitDisasm produced no output for filter '*{methodFilter}*'. " +
+                    "This may mean the method was not JIT-compiled or the filter didn't match.");
+            }
+
+            // Callee was fully inlined — the wrapper baseline contains the optimization proof.
+            Assert.Skip($"No standalone compilation for '*{methodFilter}*' — method was fully inlined by the JIT.");
+            return;
+        }
 
         var normalized = NormalizeAsm(rawAsm);
 
         AssertTypeofEliminated(normalized, baselineName, expectedDecrements);
 
-        var baselineFile = Path.Combine(s_baselineDir, $"{baselineName}.asm");
         var actualFile = Path.Combine(s_baselineDir, $"{baselineName}.actual");
+        var resolvedBaseline = ResolveBaseline(s_baselineDir, baselineName);
 
-        if (!File.Exists(baselineFile))
+        if (resolvedBaseline is null)
         {
             Directory.CreateDirectory(s_baselineDir);
             File.WriteAllText(actualFile, normalized);
-            Assert.Fail(
-                $"No baseline found for {PlatformKey()}/{baselineName}.\n" +
-                $"Generated output written to: {actualFile}\n" +
-                "Review the output, and if correct, add it as the .asm baseline.\n" +
-                $"\n--- BEGIN {baselineName}.asm ---\n{normalized}--- END {baselineName}.asm ---");
+
+            var matchHint = FindMatchingBaseline(baselineName, normalized);
+            var message = $"No baseline found for {PlatformKey()}/{baselineName}.\n" +
+                $"Generated output written to: {actualFile}\n";
+            message += matchHint is not null
+                ? $"Output MATCHES existing baseline: {matchHint}\n" +
+                  $"To deduplicate, create a .ref file instead of a new .asm:\n" +
+                  $"  echo \"{matchHint}\" > {Path.Combine(s_baselineDir, $"{baselineName}.ref")}\n"
+                : "Review the output, and if correct, add it as the .asm baseline.\n";
+            message += $"\n--- BEGIN {baselineName}.asm ---\n{normalized}--- END {baselineName}.asm ---";
+
+            Assert.Fail(message);
             return;
         }
 
-        var expected = File.ReadAllText(baselineFile);
+        var expected = File.ReadAllText(resolvedBaseline);
         if (normalized != expected)
         {
             Directory.CreateDirectory(s_baselineDir);
             File.WriteAllText(actualFile, normalized);
             Assert.Fail(
                 $"JIT output for {baselineName} on {PlatformKey()} differs from baseline.\n" +
-                $"Baseline: {baselineFile}\n" +
+                $"Baseline: {resolvedBaseline}\n" +
                 $"Actual:   {actualFile}\n" +
                 "Review the diff. If the new output is correct, replace the .asm baseline.\n" +
                 "Do NOT delete baselines for other platform/version directories — they remain valid.\n" +
@@ -149,12 +180,17 @@ public partial class JitBaselineTests
     ///   <item><c>CORINFO_HELP</c> — JIT helper calls for type operations</item>
     /// </list>
     ///
-    /// <para><b>Positive check (ARM64)</b>: Counts occurrences of the refcount decrement instruction
-    /// <c>sub wN, wN, #1</c>. Each fully-inlined <see cref="Core.Memory.RefCountTable{T}.Decrement"/>
-    /// call produces exactly one of these. The expected count directly reflects which typeof branches
+    /// <para><b>Positive check</b>: Counts occurrences of the architecture-specific refcount
+    /// decrement instruction. Each fully-inlined <see cref="Core.Memory.RefCountTable{T}.Decrement"/>
+    /// call produces exactly one. The expected count directly reflects which typeof branches
     /// survived constant-folding. For example, <c>visit-different-type</c> expects 0 (the typeof was
     /// false, so the entire body was eliminated), while <c>enumerate-decrement-multi-type</c> expects 2
     /// (both typeof branches are true for their respective types).</para>
+    /// <para>Architecture-specific patterns:</para>
+    /// <list type="bullet">
+    ///   <item>ARM64: <c>sub wN, wN, #1</c></item>
+    ///   <item>x64: <c>dec dword ptr [reg+offset]</c> or <c>add dword ptr [reg+offset], -1</c></item>
+    /// </list>
     /// </summary>
     private static void AssertTypeofEliminated(string asm, string scenarioName, int expectedDecrements)
     {
@@ -168,20 +204,33 @@ public partial class JitBaselineTests
 
         // POSITIVE CHECK: count refcount decrements. Each inlined RefCountTable.Decrement produces
         // exactly one of these. The count tells us which typeof branches survived.
+        //
+        // On x64, wrapper methods may be thin call stubs (the JIT doesn't inline into NoInlining
+        // wrappers). The callee baselines contain the actual inlined code. We detect thin wrappers
+        // by checking for call instructions to callee methods — skip the positive check for those.
         var arch = RuntimeInformation.OSArchitecture;
-        if (arch == Architecture.Arm64)
-        {
-            // ARM64: the refcount decrement is "sub wN, wN, #1" (32-bit subtract-immediate of 1).
-            // This pattern does not appear anywhere else in the generated code for these methods.
-            var actualDecrements = Arm64DecrementPattern().Matches(asm).Count;
-            Assert.True(actualDecrements == expectedDecrements,
-                $"[{scenarioName}] Expected {expectedDecrements} refcount decrement(s) (ARM64: 'sub wN, wN, #1') " +
-                $"but found {actualDecrements}. This indicates the JIT may not have eliminated typeof checks or " +
-                "failed to inline Decrement calls as expected.");
-        }
+        var isThinWrapper = arch == Architecture.X64 && ThinCallPattern().IsMatch(asm);
 
-        // x64: when baselines are available, add a count for the x64 decrement pattern
-        // (likely "dec dword ptr [reg+offset]" or "sub dword ptr [...], 1").
+        if (!isThinWrapper)
+        {
+            int? actualDecrements = arch switch
+            {
+                Architecture.Arm64 => Arm64DecrementPattern().Matches(asm).Count,
+                Architecture.X64 => X64DecrementPattern().Matches(asm).Count,
+                _ => null,
+            };
+
+            if (actualDecrements is not null)
+            {
+                var patternDesc = arch == Architecture.Arm64
+                    ? "ARM64: 'sub wN, wN, #1'"
+                    : "x64: 'dec dword ptr' or 'add dword ptr [...], -1'";
+                Assert.True(actualDecrements == expectedDecrements,
+                    $"[{scenarioName}] Expected {expectedDecrements} refcount decrement(s) ({patternDesc}) " +
+                    $"but found {actualDecrements}. This indicates the JIT may not have eliminated typeof checks or " +
+                    "failed to inline Decrement calls as expected.");
+            }
+        }
     }
 
     private static string CaptureJitDisasm(string methodFilter)
@@ -290,6 +339,66 @@ public partial class JitBaselineTests
         return $"{os}-{arch}-net{version.Major}.{version.Minor}.{version.Build}";
     }
 
+    /// <summary>
+    /// Resolves a baseline for the given name. Checks for <c>.asm</c> first, then <c>.ref</c>.
+    /// A <c>.ref</c> file contains a relative path to the actual <c>.asm</c> baseline,
+    /// enabling deduplication across runtime versions with identical JIT output.
+    /// </summary>
+    private static string? ResolveBaseline(string baselineDir, string baselineName)
+    {
+        var asmFile = Path.Combine(baselineDir, $"{baselineName}.asm");
+        if (File.Exists(asmFile))
+            return asmFile;
+
+        var refFile = Path.Combine(baselineDir, $"{baselineName}.ref");
+        if (File.Exists(refFile))
+        {
+            var relativePath = File.ReadAllText(refFile).Trim();
+            var resolved = Path.GetFullPath(Path.Combine(baselineDir, relativePath));
+            Assert.True(File.Exists(resolved),
+                $"Baseline .ref file {refFile} points to {relativePath}, but resolved path {resolved} does not exist.");
+            return resolved;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Scans sibling version directories (same os-arch prefix) for an existing <c>.asm</c> baseline
+    /// with identical content. Returns a relative path suitable for a <c>.ref</c> file, or null.
+    /// </summary>
+    private static string? FindMatchingBaseline(string baselineName, string normalizedAsm)
+    {
+        var jitDir = Path.GetDirectoryName(s_baselineDir)!;
+        var currentDirName = Path.GetFileName(s_baselineDir);
+        var platformPrefix = OsArchPrefix();
+
+        foreach (var siblingDir in Directory.GetDirectories(jitDir))
+        {
+            var siblingDirName = Path.GetFileName(siblingDir);
+            if (siblingDirName == currentDirName)
+                continue;
+            if (!siblingDirName.StartsWith(platformPrefix, StringComparison.Ordinal))
+                continue;
+
+            var candidateAsm = Path.Combine(siblingDir, $"{baselineName}.asm");
+            if (!File.Exists(candidateAsm))
+                continue;
+
+            if (File.ReadAllText(candidateAsm) == normalizedAsm)
+                return $"../{siblingDirName}/{baselineName}.asm";
+        }
+
+        return null;
+    }
+
+    private static string OsArchPrefix()
+    {
+        var key = PlatformKey();
+        var lastDash = key.LastIndexOf("-net", StringComparison.Ordinal);
+        return lastDash >= 0 ? key[..lastDash] : key;
+    }
+
     private static string FindRepoRoot()
     {
         var dir = AppContext.BaseDirectory;
@@ -318,4 +427,18 @@ public partial class JitBaselineTests
     /// </summary>
     [GeneratedRegex(@"sub\s+w\d+,\s*w\d+,\s*#1\b")]
     private static partial Regex Arm64DecrementPattern();
+
+    /// <summary>
+    /// Matches the x64 refcount decrement: <c>dec dword ptr [...]</c> or <c>add dword ptr [...], -1</c>.
+    /// Each fully-inlined <c>RefCountTable.Decrement</c> produces exactly one of these.
+    /// </summary>
+    [GeneratedRegex(@"(dec\s+dword\s+ptr|add\s+dword\s+ptr\s+\[.+?\],\s*-1)")]
+    private static partial Regex X64DecrementPattern();
+
+    /// <summary>
+    /// Detects x64 thin wrapper methods: the JIT doesn't inline into <c>NoInlining</c> wrappers,
+    /// so the ASM is just <c>call [MethodName]</c>. Positive decrement checks are meaningless here.
+    /// </summary>
+    [GeneratedRegex(@"call\s+\[")]
+    private static partial Regex ThinCallPattern();
 }
