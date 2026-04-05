@@ -1,17 +1,16 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
-/// Lightweight per-DAG completion tracker. Each scheduler owns an injection queue and an atomic
-/// outstanding-job counter. Multiple schedulers share a single <see cref="WorkerPool"/>, allowing
-/// independent DAGs (e.g. simulation and rendering) to execute concurrently on the same workers.
+/// Lightweight per-DAG completion tracker. Multiple schedulers share a single
+/// <see cref="WorkerPool"/>, allowing independent DAGs (e.g. simulation and rendering) to execute
+/// concurrently on the same workers.
 ///
 /// USAGE
 ///   1. Create a <see cref="WorkerPool"/> (shared, long-lived).
 ///   2. Create a <see cref="JobScheduler"/> per logical pipeline (sim, render).
-///   3. Call <see cref="Submit"/> to inject root jobs. Workers dequeue them from the injection queue.
+///   3. Call <see cref="Submit"/> to inject root jobs into the pool's shared injection queue.
 ///   4. Call <see cref="WaitForCompletion"/> to park until the entire DAG drains.
 ///   5. Repeat from step 3 for the next batch.
 ///
@@ -23,13 +22,6 @@ namespace Fabrica.Core.Jobs;
 internal sealed class JobScheduler
 {
     private readonly WorkerPool _pool;
-
-    /// <summary>
-    /// MPSC injection queue. <see cref="Submit"/> enqueues here; workers dequeue via the pool's
-    /// injection queue sweep. Using <see cref="ConcurrentQueue{T}"/> avoids the Chase-Lev
-    /// owner-only Push constraint, allowing any thread to submit.
-    /// </summary>
-    private readonly ConcurrentQueue<Job> _injectionQueue = new();
 
     /// <summary>
     /// Number of jobs that have been enqueued but not yet completed. Incremented on every enqueue
@@ -44,17 +36,13 @@ internal sealed class JobScheduler
     /// </summary>
     private readonly ManualResetEventSlim _completionSignal = new(false);
 
-    internal JobScheduler(WorkerPool pool)
-    {
-        _pool = pool;
-        pool.RegisterInjectionQueue(_injectionQueue);
-    }
+    internal JobScheduler(WorkerPool pool) => _pool = pool;
 
     // ── Coordinator API ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Submits a ready-to-execute job into the injection queue. Workers will dequeue it. Must not
-    /// be called while a previous DAG is still in flight (debug assert).
+    /// Submits a ready-to-execute job into the pool's injection queue. Workers will dequeue it.
+    /// Must not be called while a previous DAG is still in flight (debug assert).
     /// </summary>
     internal void Submit(Job job)
     {
@@ -64,8 +52,7 @@ internal sealed class JobScheduler
 #endif
         job._scheduler = this;
         Interlocked.Increment(ref _outstandingJobs);
-        _injectionQueue.Enqueue(job);
-        _pool.NotifyWorkAvailable();
+        _pool.Inject(job);
     }
 
     /// <summary>

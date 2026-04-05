@@ -5,8 +5,8 @@ namespace Fabrica.Core.Jobs;
 
 /// <summary>
 /// Shared pool of worker threads backed by per-worker work-stealing deques (Chase-Lev). Multiple
-/// <see cref="JobScheduler"/> instances register their injection queues with a single pool, allowing
-/// independent DAGs to share the same workers.
+/// <see cref="JobScheduler"/> instances share a single pool, submitting jobs via
+/// <see cref="Inject"/>.
 ///
 /// SCHEDULING MODEL
 ///   Each worker owns a <see cref="Collections.WorkStealingDeque{T}"/>. Workers pop from their
@@ -17,7 +17,7 @@ namespace Fabrica.Core.Jobs;
 /// WORK DISCOVERY PRIORITY
 ///   1. Pop own deque (LIFO — recently pushed sub-jobs, cache-hot).
 ///   2. Steal from peer deques (FIFO — redistribute work).
-///   3. Dequeue from registered injection queues (cold — newly submitted top-level jobs).
+///   3. Dequeue from the shared injection queue (cold — newly submitted top-level jobs).
 ///
 /// WORKER LIFECYCLE
 ///   Uses the announce-then-recheck pattern: when a worker finds no work, it atomically increments
@@ -60,11 +60,10 @@ internal sealed class WorkerPool : IDisposable
     private int _parkedWorkers;
 
     /// <summary>
-    /// Registered injection queues from <see cref="JobScheduler"/> instances. Copy-on-write: each
-    /// <see cref="RegisterInjectionQueue"/> call swaps in a new array. Workers read via
-    /// <see cref="Volatile.Read{T}(ref T)"/>. Registration happens at startup, not on the hot path.
+    /// Shared injection queue for top-level job submission. <see cref="JobScheduler.Submit"/> calls
+    /// <see cref="Inject"/> to enqueue here; workers dequeue after exhausting local and peer deques.
     /// </summary>
-    private ConcurrentQueue<Job>[] _injectionQueues = [];
+    private readonly ConcurrentQueue<Job> _injectionQueue = new();
 
     internal const int MaxWorkerCount = 127;
 
@@ -98,22 +97,16 @@ internal sealed class WorkerPool : IDisposable
 
     internal int WorkerCount => _workerCount;
 
-    // ── Injection queue registry ─────────────────────────────────────────────
+    // ── Job injection ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Registers a scheduler's injection queue so workers can dequeue from it. Called once per
-    /// <see cref="JobScheduler"/> during construction. Uses copy-on-write array swap.
+    /// Enqueues a job into the shared injection queue and wakes a parked worker. Called by
+    /// <see cref="JobScheduler.Submit"/> after stamping the job with its scheduler.
     /// </summary>
-    internal void RegisterInjectionQueue(ConcurrentQueue<Job> queue)
+    internal void Inject(Job job)
     {
-        lock (_allContexts)
-        {
-            var old = _injectionQueues;
-            var next = new ConcurrentQueue<Job>[old.Length + 1];
-            old.CopyTo(next, 0);
-            next[old.Length] = queue;
-            Volatile.Write(ref _injectionQueues, next);
-        }
+        _injectionQueue.Enqueue(job);
+        this.NotifyWorkAvailable();
     }
 
     /// <summary>
@@ -192,15 +185,10 @@ internal sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        var queues = Volatile.Read(ref _injectionQueues);
-
-        foreach (var queue in queues)
+        if (_injectionQueue.TryDequeue(out var job))
         {
-            if (queue.TryDequeue(out var job))
-            {
-                this.ExecuteJob(job, context);
-                return true;
-            }
+            this.ExecuteJob(job, context);
+            return true;
         }
 
         return false;
