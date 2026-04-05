@@ -85,6 +85,14 @@ public partial class JitBaselineTests
     [InlineData("EnumerateParentDecrement", "enumerate-decrement-multi-type", 2)]
     public void JitOutput_MatchesBaseline(string methodFilter, string baselineName, int expectedDecrements)
     {
+#if DEBUG
+        // The JIT skips aggressive inlining and dead-branch elimination in Debug builds,
+        // which is exactly what these tests validate. Only meaningful in Release.
+        Assert.Skip("JIT baseline tests require Release configuration — Debug JIT does not inline or eliminate typeof branches.");
+        return;
+#endif
+
+#pragma warning disable CS0162 // Unreachable code (the return above is conditional on DEBUG)
         var rawAsm = CaptureJitDisasm(methodFilter);
         Assert.True(rawAsm.Length > 0, $"DOTNET_JitDisasm produced no output for filter '*{methodFilter}*'. " +
             "This may mean the method was not JIT-compiled or the filter didn't match.");
@@ -125,6 +133,7 @@ public partial class JitBaselineTests
         {
             File.Delete(actualFile);
         }
+#pragma warning restore CS0162
     }
 
     /// <summary>
