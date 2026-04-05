@@ -55,11 +55,24 @@ public class CrossTypeSnapshotTests
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
         {
-            if (!child.IsValid) return;
             if (typeof(TChild) == typeof(ParentNode))
-                parentTable.Decrement(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child), parentHandler);
+                this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
             else if (typeof(TChild) == typeof(ChildNode))
-                childTable.Decrement(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child), childHandler);
+                this.DecrementChild(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly void DecrementParent(Handle<ParentNode> child)
+        {
+            if (child.IsValid)
+                parentTable.Decrement(child, parentHandler);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly void DecrementChild(Handle<ChildNode> child)
+        {
+            if (child.IsValid)
+                childTable.Decrement(child, childHandler);
         }
     }
 

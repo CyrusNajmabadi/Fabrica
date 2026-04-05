@@ -309,7 +309,14 @@ internal static class DagValidator
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
         {
-            if (typeof(TChild) == typeof(TNode) && child.IsValid)
+            if (typeof(TChild) == typeof(TNode))
+                this.CollectTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly void CollectTyped(Handle<TNode> child)
+        {
+            if (child.IsValid)
                 children.Add(new NodeRef(0, child.Index));
         }
     }

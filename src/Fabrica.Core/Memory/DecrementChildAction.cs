@@ -17,7 +17,14 @@ internal struct DecrementChildAction<TNode, THandler>(RefCountTable<TNode> table
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
     {
-        if (typeof(TChild) == typeof(TNode) && child.IsValid)
-            table.Decrement(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child), handler);
+        if (typeof(TChild) == typeof(TNode))
+            this.DecrementTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private readonly void DecrementTyped(Handle<TNode> child)
+    {
+        if (child.IsValid)
+            table.Decrement(child, handler);
     }
 }
