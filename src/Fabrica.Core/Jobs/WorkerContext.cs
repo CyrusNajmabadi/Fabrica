@@ -9,8 +9,8 @@ namespace Fabrica.Core.Jobs;
 /// worker identity.
 ///
 /// Jobs use <see cref="Enqueue"/> to push ready sub-jobs onto the executing thread's deque.
-/// The scheduler sets <see cref="Job._workerContext"/> before calling <see cref="Job.Execute"/>
-/// and clears it after, ensuring the context is only accessible during execution.
+/// The scheduler passes this context to <see cref="Job.Execute"/>, so it is only accessible
+/// during execution.
 ///
 /// THREAD MODEL
 ///   <see cref="Enqueue"/> calls <see cref="WorkStealingDeque{T}.Push"/>, which is an owner-only

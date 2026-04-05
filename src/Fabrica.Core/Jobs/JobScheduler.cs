@@ -4,7 +4,7 @@ namespace Fabrica.Core.Jobs;
 
 /// <summary>
 /// DAG-based job scheduler backed by per-worker work-stealing deques (Chase-Lev). Manages N
-/// background worker threads plus a coordinator context for the submitting thread.
+/// background worker threads; the coordinator thread parks while workers execute.
 ///
 /// SCHEDULING MODEL
 ///   Each worker owns a <see cref="Collections.WorkStealingDeque{T}"/>. Workers pop from their
@@ -16,14 +16,21 @@ namespace Fabrica.Core.Jobs;
 ///   The scheduler maintains an atomic outstanding job counter. Every enqueue (submit, sub-job
 ///   enqueue, or dependency propagation) increments it; every completed execution decrements it.
 ///   The counter reaches zero exactly when all jobs in the DAG have finished, because increments
-///   for sub-jobs happen during the parent's execution (before the parent's decrement). The
-///   coordinator polls this counter in <see cref="WaitForCompletion"/> while actively stealing
-///   and executing work.
+///   for sub-jobs happen during the parent's execution (before the parent's decrement). The worker
+///   that decrements to zero signals <see cref="_completionSignal"/>, unparking the coordinator.
 ///
 /// WORKER LIFECYCLE
-///   Workers park on a shared <see cref="SemaphoreSlim"/> when no work is found (after a brief
-///   spin). Each <see cref="NotifyWorkAvailable"/> call wakes at most one parked worker.
+///   Uses the announce-then-recheck pattern: when a worker finds no work, it atomically increments
+///   <see cref="_parkedWorkers"/>, re-checks for work (closing the missed-wake race), and only
+///   then blocks on <see cref="_workSignal"/>. <see cref="NotifyWorkAvailable"/> only releases the
+///   semaphore when parked workers exist, preventing unbounded permit accumulation.
 ///   <see cref="Dispose"/> sets a shutdown flag, wakes all workers, and joins their threads.
+///
+/// COORDINATOR MODEL
+///   The coordinator thread (<see cref="Submit"/>/<see cref="WaitForCompletion"/>) does not execute
+///   jobs. It pushes submitted jobs onto its own deque (workers steal from it), then parks on
+///   <see cref="_completionSignal"/> until all work is done. Zero-worker mode is an exception: the
+///   coordinator executes all work itself as a fallback for testing.
 ///
 /// REFERENCE
 ///   D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
@@ -33,14 +40,15 @@ internal sealed class JobScheduler : IDisposable
     /// <summary>
     /// All worker contexts plus the coordinator context. Length is <see cref="_workerCount"/> + 1.
     /// Indices 0..<see cref="_workerCount"/>-1 are background worker contexts; the last element
-    /// (index <see cref="_workerCount"/>) is the coordinator. Used for steal-target iteration so
-    /// any thread can steal from any other, including the coordinator's deque.
+    /// (index <see cref="_workerCount"/>) is the coordinator. Included in the array so workers can
+    /// steal submitted jobs from the coordinator's deque.
     /// </summary>
     private readonly WorkerContext[] _allContexts;
 
     /// <summary>
-    /// The coordinator's context — always <c>_allContexts[_workerCount]</c>. The coordinator thread
-    /// pushes submitted jobs here and pops/steals during <see cref="WaitForCompletion"/>.
+    /// The coordinator's context — always <c>_allContexts[_workerCount]</c>. Owns the deque that
+    /// <see cref="Submit"/> pushes onto. The coordinator does not execute jobs (except in
+    /// zero-worker fallback mode).
     /// </summary>
     private readonly WorkerContext _coordinatorContext;
 
@@ -51,10 +59,16 @@ internal sealed class JobScheduler : IDisposable
     private readonly int _workerCount;
 
     /// <summary>
-    /// Shared semaphore for parking idle workers. Each <see cref="NotifyWorkAvailable"/> call
-    /// releases one permit, waking at most one parked worker.
+    /// Shared semaphore for parking idle workers. Only released when <see cref="_parkedWorkers"/>
+    /// is positive, preventing unbounded permit accumulation.
     /// </summary>
     private readonly SemaphoreSlim _workSignal;
+
+    /// <summary>
+    /// Signaled by the worker that decrements <see cref="_outstandingJobs"/> to zero, unparking the
+    /// coordinator in <see cref="WaitForCompletion"/>. Reset at the start of each wait cycle.
+    /// </summary>
+    private readonly ManualResetEventSlim _completionSignal;
 
     /// <summary>Set to <c>true</c> during <see cref="Dispose"/> to break worker loops.</summary>
     private volatile bool _shutdownRequested;
@@ -66,21 +80,35 @@ internal sealed class JobScheduler : IDisposable
     /// Number of jobs that have been enqueued but not yet completed. Incremented on every enqueue
     /// (submit, sub-job enqueue, dependency propagation); decremented after each execution
     /// completes (including dependency propagation). Reaches zero exactly when all DAG work is done.
+    /// The worker that decrements to zero signals <see cref="_completionSignal"/>.
     /// </summary>
     private int _outstandingJobs;
 
     /// <summary>
-    /// Creates a scheduler with <paramref name="workerCount"/> background worker threads. If
-    /// negative, defaults to <see cref="Environment.ProcessorCount"/>. Zero is valid (the
-    /// coordinator does all work during <see cref="WaitForCompletion"/>).
+    /// Number of workers currently parked (blocked on <see cref="_workSignal"/>). Used by
+    /// <see cref="NotifyWorkAvailable"/> to avoid releasing the semaphore when no one is waiting,
+    /// which would cause unbounded permit accumulation. Updated via announce-then-recheck: workers
+    /// increment before re-checking for work, and decrement after waking or finding work.
     /// </summary>
+    private int _parkedWorkers;
+
+    /// <summary>
+    /// Creates a scheduler with <paramref name="workerCount"/> background worker threads. If
+    /// negative, defaults to <see cref="Environment.ProcessorCount"/> (clamped to
+    /// <see cref="MaxWorkerCount"/>). Zero is valid (the coordinator executes all work itself).
+    /// </summary>
+    internal const int MaxWorkerCount = 127;
+
     internal JobScheduler(int workerCount = -1)
     {
         if (workerCount < 0)
-            workerCount = Environment.ProcessorCount;
+            workerCount = Math.Min(Environment.ProcessorCount, MaxWorkerCount);
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(workerCount, MaxWorkerCount);
 
         _workerCount = workerCount;
         _workSignal = new SemaphoreSlim(0);
+        _completionSignal = new ManualResetEventSlim(false);
 
         _allContexts = new WorkerContext[workerCount + 1];
         for (var i = 0; i <= workerCount; i++)
@@ -106,9 +134,9 @@ internal sealed class JobScheduler : IDisposable
     // ── Coordinator API ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Submits a ready-to-execute job onto the coordinator's deque. Workers will steal it, or the
-    /// coordinator will pop it during <see cref="WaitForCompletion"/>. Must be called from the
-    /// coordinator thread.
+    /// Submits a ready-to-execute job. The job is pushed onto the coordinator's deque (following the
+    /// Chase-Lev owner-push model) where workers can steal it. Must be called from the coordinator
+    /// thread.
     /// </summary>
     internal void Submit(Job job)
     {
@@ -122,11 +150,37 @@ internal sealed class JobScheduler : IDisposable
     }
 
     /// <summary>
-    /// Blocks the coordinator thread until all outstanding jobs have completed, while actively
-    /// stealing and executing work. Returns <c>true</c> if completed, <c>false</c> if the
-    /// timeout expired. Pass <c>-1</c> for no timeout.
+    /// Parks the coordinator thread until all outstanding jobs have completed. Workers execute all
+    /// work; the coordinator does not participate. Returns <c>true</c> if completed, <c>false</c>
+    /// if the timeout expired. Pass <c>-1</c> for no timeout.
+    ///
+    /// Zero-worker mode is an exception: the coordinator executes all work itself.
     /// </summary>
     internal bool WaitForCompletion(int millisecondsTimeout = -1)
+    {
+        if (Volatile.Read(ref _outstandingJobs) == 0)
+            return true;
+
+        if (_workerCount == 0)
+            return this.WaitForCompletionCoordinatorOnly(millisecondsTimeout);
+
+        _completionSignal.Reset();
+
+        if (Volatile.Read(ref _outstandingJobs) == 0)
+            return true;
+
+        if (millisecondsTimeout >= 0)
+            return _completionSignal.Wait(millisecondsTimeout);
+
+        _completionSignal.Wait();
+        return true;
+    }
+
+    /// <summary>
+    /// Fallback for zero-worker mode: the coordinator pops from its own deque and executes jobs
+    /// directly until <see cref="_outstandingJobs"/> reaches zero.
+    /// </summary>
+    private bool WaitForCompletionCoordinatorOnly(int millisecondsTimeout)
     {
         var deadline = millisecondsTimeout >= 0
             ? Stopwatch.GetTimestamp() + (long)(millisecondsTimeout * (double)Stopwatch.Frequency / 1000)
@@ -151,10 +205,14 @@ internal sealed class JobScheduler : IDisposable
     }
 
     /// <summary>
-    /// Signals that work is available, waking at most one parked worker. Called by
-    /// <see cref="Submit"/>, <see cref="WorkerContext.Enqueue"/>, and dependency propagation.
+    /// Signals that work is available, waking at most one parked worker. Only releases the
+    /// semaphore when at least one worker is parked, preventing unbounded permit accumulation.
     /// </summary>
-    internal void NotifyWorkAvailable() => _workSignal.Release();
+    internal void NotifyWorkAvailable()
+    {
+        if (Volatile.Read(ref _parkedWorkers) > 0)
+            _workSignal.Release();
+    }
 
     /// <summary>
     /// Atomically increments the outstanding job count. Called by <see cref="WorkerContext.Enqueue"/>
@@ -166,12 +224,26 @@ internal sealed class JobScheduler : IDisposable
 
     private void RunWorker(WorkerContext context)
     {
+        Threading.ThreadPinningNative.TryPinCurrentThread(context.WorkerIndex);
+
         while (!_shutdownRequested)
         {
             if (this.TryExecuteOne(context))
                 continue;
 
-            _workSignal.Wait(millisecondsTimeout: 100);
+            // Announce-then-recheck: declare intent to park, then re-check for work. This closes
+            // the race where work arrives between our failed steal and the Wait call — the producer
+            // sees _parkedWorkers > 0 and releases, or our re-check finds the work directly.
+            Interlocked.Increment(ref _parkedWorkers);
+
+            if (this.TryExecuteOne(context))
+            {
+                Interlocked.Decrement(ref _parkedWorkers);
+                continue;
+            }
+
+            _workSignal.Wait();
+            Interlocked.Decrement(ref _parkedWorkers);
         }
     }
 
@@ -222,7 +294,9 @@ internal sealed class JobScheduler : IDisposable
 #endif
 
         this.PropagateCompletion(job, context);
-        Interlocked.Decrement(ref _outstandingJobs);
+
+        if (Interlocked.Decrement(ref _outstandingJobs) == 0)
+            _completionSignal.Set();
     }
 
     private void PropagateCompletion(Job job, WorkerContext context)
@@ -232,7 +306,9 @@ internal sealed class JobScheduler : IDisposable
 
         foreach (var dependent in dependents)
         {
-            if (Interlocked.Decrement(ref dependent._remainingDependencies) != 0)
+            var remaining = Interlocked.Decrement(ref dependent._remainingDependencies);
+            Debug.Assert(remaining >= 0);
+            if (remaining != 0)
                 continue;
 
 #if DEBUG
@@ -261,6 +337,7 @@ internal sealed class JobScheduler : IDisposable
             thread.Join();
 
         _workSignal.Dispose();
+        _completionSignal.Dispose();
     }
 
     // ── Test accessor ───────────────────────────────────────────────────────
