@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Fabrica.Core.Memory;
@@ -13,7 +14,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// SINGLE-STORE CONVENIENCE
 ///   Overloads that take a single <see cref="NodeStore{TNode,THandler}"/> and an
-///   <see cref="IChildEnumerator{TNode,TContext}"/> wrap into a <see cref="SingleStoreAccessor{TNode,THandler,TEnumerator,TContext}"/>
+///   <see cref="IChildEnumerator{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,THandler,TEnumerator}"/>
 ///   internally. Cross-type children from the enumerator are ignored (they contribute external
 ///   refcounts that this store can't verify).
 ///
@@ -235,27 +236,9 @@ internal static class DagValidator
     // ── Single-store convenience ────────────────────────────────────────
 
     /// <summary>
-    /// Validates a single store's DAG using an <see cref="IChildEnumerator{TNode,TContext}"/>.
+    /// Validates a single store's DAG using an <see cref="IChildEnumerator{TNode}"/>.
     /// Cross-type children produced by the enumerator are ignored — use the cross-store overload
     /// for full heterogeneous validation.
-    /// </summary>
-    internal static void AssertValid<TNode, THandler, TEnumerator, TContext>(
-        NodeStore<TNode, THandler> store,
-        ReadOnlySpan<Handle<TNode>> roots,
-        TEnumerator enumerator,
-        TContext context,
-        bool strict = true)
-        where TNode : struct
-        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode, TContext>
-    {
-        var issues = Validate(store, roots, enumerator, context, strict);
-        if (issues.Count > 0)
-            throw new DagValidationException(issues);
-    }
-
-    /// <summary>
-    /// Convenience overload for enumerators that don't require context (<c>TContext = byte</c>).
     /// </summary>
     internal static void AssertValid<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
@@ -264,29 +247,14 @@ internal static class DagValidator
         bool strict = true)
         where TNode : struct
         where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode, byte>
-        => AssertValid(store, roots, enumerator, default(byte), strict);
-
-    /// <summary>Single-store validate returning issues list.</summary>
-    internal static List<string> Validate<TNode, THandler, TEnumerator, TContext>(
-        NodeStore<TNode, THandler> store,
-        ReadOnlySpan<Handle<TNode>> roots,
-        TEnumerator enumerator,
-        TContext context,
-        bool strict = true)
-        where TNode : struct
-        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode, TContext>
+        where TEnumerator : struct, IChildEnumerator<TNode>
     {
-        var accessor = new SingleStoreAccessor<TNode, THandler, TEnumerator, TContext>(store, enumerator, context);
-        var nodeRefs = roots.Length <= 128 ? stackalloc NodeRef[roots.Length] : new NodeRef[roots.Length];
-        for (var i = 0; i < roots.Length; i++)
-            nodeRefs[i] = new NodeRef(0, roots[i].Index);
-
-        return Validate(nodeRefs, accessor, strict);
+        var issues = Validate(store, roots, enumerator, strict);
+        if (issues.Count > 0)
+            throw new DagValidationException(issues);
     }
 
-    /// <summary>Convenience overload for enumerators that don't require context.</summary>
+    /// <summary>Single-store validate returning issues list.</summary>
     internal static List<string> Validate<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
         ReadOnlySpan<Handle<TNode>> roots,
@@ -294,23 +262,29 @@ internal static class DagValidator
         bool strict = true)
         where TNode : struct
         where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode, byte>
-        => Validate(store, roots, enumerator, default(byte), strict);
+        where TEnumerator : struct, IChildEnumerator<TNode>
+    {
+        var accessor = new SingleStoreAccessor<TNode, THandler, TEnumerator>(store, enumerator);
+        var nodeRefs = roots.Length <= 128 ? stackalloc NodeRef[roots.Length] : new NodeRef[roots.Length];
+        for (var i = 0; i < roots.Length; i++)
+            nodeRefs[i] = new NodeRef(0, roots[i].Index);
+
+        return Validate(nodeRefs, accessor, strict);
+    }
 
     // ── SingleStoreAccessor ─────────────────────────────────────────────
 
     /// <summary>
-    /// Adapts a single <see cref="NodeStore{TNode,THandler}"/> + <see cref="IChildEnumerator{TNode,TContext}"/>
+    /// Adapts a single <see cref="NodeStore{TNode,THandler}"/> + <see cref="IChildEnumerator{TNode}"/>
     /// into an <see cref="IWorldAccessor"/> with one type (typeId = 0). Cross-type children from the
     /// enumerator are silently filtered out.
     /// </summary>
-    private struct SingleStoreAccessor<TNode, THandler, TEnumerator, TContext>(
+    private struct SingleStoreAccessor<TNode, THandler, TEnumerator>(
         NodeStore<TNode, THandler> store,
-        TEnumerator enumerator,
-        TContext context) : IWorldAccessor
+        TEnumerator enumerator) : IWorldAccessor
         where TNode : struct
         where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode, TContext>
+        where TEnumerator : struct, IChildEnumerator<TNode>
     {
         public readonly int TypeCount => 1;
 
@@ -322,7 +296,7 @@ internal static class DagValidator
         {
             ref readonly var node = ref store.Arena[new Handle<TNode>(index)];
             var action = new CollectSameTypeAction<TNode>(children);
-            enumerator.EnumerateChildren(in node, in context, ref action);
+            enumerator.EnumerateChildren(in node, ref action);
         }
     }
 
@@ -336,8 +310,15 @@ internal static class DagValidator
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
         {
-            if (typeof(TChild) == typeof(TNode) && child.IsValid)
-                children.Add(new NodeRef(0, child.Index));
+            if (typeof(TChild) == typeof(TNode))
+                this.CollectTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly void CollectTyped(Handle<TNode> child)
+        {
+            Debug.Assert(child.IsValid);
+            children.Add(new NodeRef(0, child.Index));
         }
     }
 }

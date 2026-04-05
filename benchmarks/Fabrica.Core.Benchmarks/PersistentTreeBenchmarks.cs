@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using Fabrica.Core.Memory;
@@ -22,15 +23,35 @@ public class PersistentTreeBenchmarks
         public Handle<TreeNode> Right { get; set; }
     }
 
-    // ── Cascade handler ──────────────────────────────────────────────────
+    // ── Enumerator + cascade handler ────────────────────────────────────
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
+    private struct TreeChildEnumerator : IChildEnumerator<TreeNode>
     {
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void EnumerateChildren<TAction>(in TreeNode node, ref TAction action)
+            where TAction : struct, IChildAction
+        {
+            if (node.Left.IsValid) action.OnChild(node.Left);
+            if (node.Right.IsValid) action.OnChild(node.Right);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction action)
+            where TAction : struct, IChildAction<TContext>
+        {
+            if (node.Left.IsValid) action.OnChild(node.Left, in context);
+            if (node.Right.IsValid) action.OnChild(node.Right, in context);
+        }
+    }
+
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
             ref readonly var node = ref arena[handle];
-            if (node.Left.IsValid) table.Decrement(node.Left, this);
-            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            var action = new DecrementChildAction<TreeNode, TreeHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref action);
             arena.Free(handle);
         }
     }
@@ -149,7 +170,7 @@ public class PersistentTreeBenchmarks
     {
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena);
+        var handler = new TreeHandler(_arena, default);
         var root = _root;
 
         for (var i = 0; i < this.ChangeCount; i++)
@@ -172,7 +193,7 @@ public class PersistentTreeBenchmarks
     {
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena);
+        var handler = new TreeHandler(_arena, default);
         var roots = _burstRoots;
         roots[0] = _root;
 
@@ -198,7 +219,7 @@ public class PersistentTreeBenchmarks
         const int Window = 100;
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena);
+        var handler = new TreeHandler(_arena, default);
 
         var roots = _burstRoots;
         roots[0] = _root;
@@ -249,13 +270,33 @@ public class SingleForkReleaseBenchmarks
         public Handle<TreeNode> Right { get; set; }
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena) : RefCountTable<TreeNode>.IRefCountHandler
+    private struct TreeChildEnumerator : IChildEnumerator<TreeNode>
     {
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void EnumerateChildren<TAction>(in TreeNode node, ref TAction action)
+            where TAction : struct, IChildAction
+        {
+            if (node.Left.IsValid) action.OnChild(node.Left);
+            if (node.Right.IsValid) action.OnChild(node.Right);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction action)
+            where TAction : struct, IChildAction<TContext>
+        {
+            if (node.Left.IsValid) action.OnChild(node.Left, in context);
+            if (node.Right.IsValid) action.OnChild(node.Right, in context);
+        }
+    }
+
+    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
             ref readonly var node = ref arena[handle];
-            if (node.Left.IsValid) table.Decrement(node.Left, this);
-            if (node.Right.IsValid) table.Decrement(node.Right, this);
+            var action = new DecrementChildAction<TreeNode, TreeHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref action);
             arena.Free(handle);
         }
     }
@@ -399,7 +440,7 @@ public class SingleForkReleaseBenchmarks
     [Benchmark]
     public int Release_Only()
     {
-        var handler = new TreeHandler(_arena);
+        var handler = new TreeHandler(_arena, default);
         for (var i = 0; i < this.N; i++)
             _refCounts.Decrement(_preForkedRoots[i], handler);
         return _preForkedRoots[this.N].Index;
@@ -414,7 +455,7 @@ public class SingleForkReleaseBenchmarks
     {
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena);
+        var handler = new TreeHandler(_arena, default);
         var root = _root;
 
         for (var i = 0; i < this.N; i++)
