@@ -18,6 +18,35 @@ tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.asm
 The platform key includes the .NET runtime version because even patch releases can change
 JIT codegen.
 
+## Three layers of verification
+
+The tests validate JIT optimization at three levels:
+
+1. **Runtime correctness**: `Fabrica.JitBaseline` asserts that refcounts are actually updated
+   correctly (exit code 1 on failure). This catches functional regressions regardless of ASM.
+
+2. **Structural validation** (`AssertTypeofEliminated`): Before comparing baselines, the test
+   performs two independent checks to verify `typeof` elimination:
+
+   - **Negative check**: The ASM must NOT contain `GetTypeFromHandle`, `RuntimeTypeHandle`, or
+     `CORINFO_HELP`. These strings only appear when the JIT failed to constant-fold a typeof
+     check and fell back to runtime type resolution.
+
+   - **Positive check (ARM64)**: Count the refcount decrement instruction `sub wN, wN, #1`.
+     Each fully-inlined `RefCountTable.Decrement` call produces exactly one. The expected count
+     per scenario tells us which typeof branches survived constant-folding:
+
+     | Scenario                          | Decrements | Why                                          |
+     |-----------------------------------|:----------:|----------------------------------------------|
+     | `visit-same-type`                 | 1          | typeof true → direct Decrement               |
+     | `visit-different-type`            | 0          | typeof false → entire body eliminated         |
+     | `enumerate-decrement-same-type`   | 2          | Both children same type → 2 Decrements        |
+     | `enumerate-decrement-mixed-type`  | 1          | Cross-type branch eliminated → 1 Decrement   |
+     | `enumerate-decrement-multi-type`  | 2          | Both typeof branches active → 2 Decrements   |
+
+3. **Baseline comparison**: The exact normalized ASM is compared against a golden file. This
+   catches any codegen regression, even ones that pass structural checks.
+
 ## When tests fail
 
 ### "No baseline found"
@@ -26,15 +55,19 @@ This happens when running on a new platform or runtime version. The test writes 
 file with the current JIT output.
 
 **What to do:**
-1. Review the `.actual` file — verify the ASM looks correct:
+1. The structural validation (layer 2) has already passed at this point — the typeof
+   elimination is confirmed. You are reviewing the ASM to establish an initial golden file.
+2. Verify the `.actual` file looks reasonable:
    - `visit-different-type`: should be tiny (just prologue+return, ~16 bytes ARM64) — the
      entire body was dead-branch eliminated
    - `visit-same-type`: should inline directly to Decrement with no typeof check
    - `enumerate-decrement-same-type`: full enumerator→visitor→Decrement pipeline inlined
    - `enumerate-decrement-mixed-type`: only same-type child path present, cross-type
      completely eliminated
-2. Rename `.actual` → `.asm` to establish the baseline
-3. Commit the new baseline directory
+   - `enumerate-decrement-multi-type`: two independent Decrement blocks (one per type),
+     each loading a different table pointer
+3. Rename `.actual` → `.asm` to establish the baseline
+4. Commit the new baseline directory
 
 ### "JIT output differs from baseline"
 
@@ -51,6 +84,17 @@ means a rebuild with a different SDK that targets the same runtime).
 This means the visitor produced wrong refcount results — the generated code is actually broken,
 not just differently shaped. This is a real bug — investigate the visitor/enumerator code.
 
+### "Expected N refcount decrement(s) but found M"
+
+The structural validation detected a typeof elimination failure. The JIT either:
+- Failed to eliminate a dead branch (more decrements than expected), or
+- Failed to inline a Decrement call (fewer decrements than expected), or
+- Emitted a runtime typeof comparison instead of constant-folding it
+
+Investigate the visitor/enumerator code and check whether `[MethodImpl(AggressiveInlining)]`
+is present on all Visit/Decrement methods. Also check that the types involved are structs
+(the JIT can only constant-fold typeof for value types in generic contexts).
+
 ## CRITICAL: never delete old baselines
 
 Old version directories (e.g., `osx-arm64-net10.0.2/`) remain valid for anyone running that
@@ -62,7 +106,12 @@ Only delete a baseline directory if that .NET version is no longer supported by 
 
 1. Add a new `[MethodImpl(MethodImplOptions.NoInlining)]` wrapper in
    `tests/Fabrica.JitBaseline/Program.cs` that exercises the method
-2. Add runtime correctness assertions before/after the call
-3. Add a new `[InlineData]` entry in `JitBaselineTests.JitOutput_MatchesBaseline`
-4. Run the tests — they will fail and generate `.actual` files
+2. Add runtime correctness assertions (AssertRefCount) before/after the call
+3. Add a new `[InlineData]` entry in `JitBaselineTests.JitOutput_MatchesBaseline` with:
+   - Method filter name matching the wrapper
+   - Baseline file name (kebab-case)
+   - Expected refcount decrement count (how many `RefCountTable.Decrement` calls should
+     be fully inlined — determined by how many typeof branches survive constant-folding)
+4. Run the tests — structural validation runs first (confirming typeof elimination), then
+   baseline comparison fails and generates `.actual` files
 5. Review and promote to `.asm` baselines
