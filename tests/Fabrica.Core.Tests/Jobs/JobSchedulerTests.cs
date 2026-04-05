@@ -34,7 +34,8 @@ public class JobSchedulerTests
     [Fact]
     public void SingleJob_Executes()
     {
-        using var scheduler = new JobScheduler(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2);
+        var scheduler = new JobScheduler(pool);
 
         var job = new TestJob();
         scheduler.Submit(job);
@@ -46,7 +47,8 @@ public class JobSchedulerTests
     [Fact]
     public void SingleJob_ReceivesWorkerContext()
     {
-        using var scheduler = new JobScheduler(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2);
+        var scheduler = new JobScheduler(pool);
 
         var capturedIndex = -1;
         var job = new TestJob
@@ -65,7 +67,8 @@ public class JobSchedulerTests
     [Fact]
     public void Chain_ExecutesInDependencyOrder()
     {
-        using var scheduler = new JobScheduler(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2);
+        var scheduler = new JobScheduler(pool);
 
         var order = new ConcurrentQueue<string>();
 
@@ -87,7 +90,8 @@ public class JobSchedulerTests
     [Fact]
     public void FanOutFanIn_RespectsDependencies()
     {
-        using var scheduler = new JobScheduler(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4);
+        var scheduler = new JobScheduler(pool);
 
         var order = new ConcurrentQueue<string>();
 
@@ -116,7 +120,8 @@ public class JobSchedulerTests
     [Fact]
     public void Diamond_JoinExecutesOnce()
     {
-        using var scheduler = new JobScheduler(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4);
+        var scheduler = new JobScheduler(pool);
 
         var joinExecutionCount = 0;
 
@@ -144,7 +149,8 @@ public class JobSchedulerTests
     [Fact]
     public void JobCanEnqueueSubJobs()
     {
-        using var scheduler = new JobScheduler(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2);
+        var scheduler = new JobScheduler(pool);
 
         var subJobExecuted = false;
         var subJob = new TestJob
@@ -169,7 +175,8 @@ public class JobSchedulerTests
     [Fact]
     public void OutstandingCount_ReachesZeroAfterCompletion()
     {
-        using var scheduler = new JobScheduler(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2);
+        var scheduler = new JobScheduler(pool);
 
         var job = new TestJob();
         scheduler.Submit(job);
@@ -183,21 +190,22 @@ public class JobSchedulerTests
     [Fact]
     public void PooledJobs_StateResetCorrectly()
     {
-        var pool = new JobPool<TestJob>();
+        var jobPool = new JobPool<TestJob>();
 
-        var job = pool.Rent();
+        var job = jobPool.Rent();
         job._remainingDependencies = 3;
         job._dependents = [new TestJob()];
 #if DEBUG
         job._state = JobState.Completed;
 #endif
 
-        pool.Return(job);
-        var reused = pool.Rent();
+        jobPool.Return(job);
+        var reused = jobPool.Rent();
 
         Assert.Same(job, reused);
         Assert.Equal(0, reused._remainingDependencies);
         Assert.Null(reused._dependents);
+        Assert.Null(reused._scheduler);
 #if DEBUG
         Assert.Equal(JobState.Pending, reused._state);
 #endif
@@ -209,7 +217,8 @@ public class JobSchedulerTests
     public void Stress_ManyIndependentJobs()
     {
         const int JobCount = 200;
-        using var scheduler = new JobScheduler(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4);
+        var scheduler = new JobScheduler(pool);
 
         var executionCount = 0;
 
@@ -230,7 +239,8 @@ public class JobSchedulerTests
     public void Stress_DeepChain()
     {
         const int Depth = 100;
-        using var scheduler = new JobScheduler(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4);
+        var scheduler = new JobScheduler(pool);
 
         var order = new ConcurrentQueue<int>();
 
@@ -261,7 +271,8 @@ public class JobSchedulerTests
     public void Stress_WideFanOut()
     {
         const int FanWidth = 50;
-        using var scheduler = new JobScheduler(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4);
+        var scheduler = new JobScheduler(pool);
 
         var executionCount = 0;
 
@@ -289,20 +300,44 @@ public class JobSchedulerTests
         Assert.Equal(FanWidth, executionCount);
     }
 
+    // ── Two schedulers sharing one pool ──────────────────────────────────────
+
+    [Fact]
+    public void TwoSchedulers_SharePool_BothComplete()
+    {
+        using var pool = new WorkerPool(workerCount: 4);
+        var schedulerA = new JobScheduler(pool);
+        var schedulerB = new JobScheduler(pool);
+
+        var countA = 0;
+        var countB = 0;
+
+        for (var i = 0; i < 50; i++)
+            schedulerA.Submit(new TestJob { OnExecute = _ => Interlocked.Increment(ref countA) });
+        for (var i = 0; i < 50; i++)
+            schedulerB.Submit(new TestJob { OnExecute = _ => Interlocked.Increment(ref countB) });
+
+        Assert.True(schedulerA.WaitForCompletion(millisecondsTimeout: 10000));
+        Assert.True(schedulerB.WaitForCompletion(millisecondsTimeout: 10000));
+
+        Assert.Equal(50, countA);
+        Assert.Equal(50, countB);
+    }
+
     // ── Dispose ─────────────────────────────────────────────────────────────
 
     [Fact]
     public void Dispose_WorkersShutDown()
     {
-        var scheduler = new JobScheduler(workerCount: 2);
-        scheduler.Dispose();
+        var pool = new WorkerPool(workerCount: 2);
+        pool.Dispose();
     }
 
     [Fact]
     public void Dispose_IsIdempotent()
     {
-        var scheduler = new JobScheduler(workerCount: 2);
-        scheduler.Dispose();
-        scheduler.Dispose();
+        var pool = new WorkerPool(workerCount: 2);
+        pool.Dispose();
+        pool.Dispose();
     }
 }

@@ -1,138 +1,60 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
-/// DAG-based job scheduler backed by per-worker work-stealing deques (Chase-Lev). Manages N
-/// background worker threads; the coordinator thread parks while workers execute.
+/// Lightweight per-DAG completion tracker. Each scheduler owns an injection queue and an atomic
+/// outstanding-job counter. Multiple schedulers share a single <see cref="WorkerPool"/>, allowing
+/// independent DAGs (e.g. simulation and rendering) to execute concurrently on the same workers.
 ///
-/// SCHEDULING MODEL
-///   Each worker owns a <see cref="Collections.WorkStealingDeque{T}"/>. Workers pop from their
-///   own deque (LIFO — cache-hot) and steal from peers (FIFO — large tasks) when idle. After
-///   executing a job, the scheduler atomically decrements all dependent jobs' remaining dependency
-///   counts; any dependent whose count reaches zero is pushed onto the executing worker's deque.
+/// USAGE
+///   1. Create a <see cref="WorkerPool"/> (shared, long-lived).
+///   2. Create a <see cref="JobScheduler"/> per logical pipeline (sim, render).
+///   3. Call <see cref="Submit"/> to inject root jobs. Workers dequeue them from the injection queue.
+///   4. Call <see cref="WaitForCompletion"/> to park until the entire DAG drains.
+///   5. Repeat from step 3 for the next batch.
 ///
-/// COMPLETION DETECTION
-///   The scheduler maintains an atomic outstanding job counter. Every enqueue (submit, sub-job
-///   enqueue, or dependency propagation) increments it; every completed execution decrements it.
-///   The counter reaches zero exactly when all jobs in the DAG have finished, because increments
-///   for sub-jobs happen during the parent's execution (before the parent's decrement). The worker
-///   that decrements to zero signals <see cref="_completionSignal"/>, unparking the coordinator.
-///
-///   TODO: The current single-counter/single-signal design assumes one batch at a time. To share
-///   workers across multiple submitters (e.g. sim + render), completion tracking needs to move to a
-///   per-DAG fence object (JobFence) with its own atomic count and signal.
-///
-/// WORKER LIFECYCLE
-///   Uses the announce-then-recheck pattern: when a worker finds no work, it atomically increments
-///   <see cref="_parkedWorkers"/>, re-checks for work (closing the missed-wake race), and only
-///   then blocks on <see cref="_workSignal"/>. <see cref="NotifyWorkAvailable"/> only releases the
-///   semaphore when parked workers exist, preventing unbounded permit accumulation.
-///   <see cref="Dispose"/> sets a shutdown flag, wakes all workers, and joins their threads.
-///
-/// COORDINATOR MODEL
-///   The coordinator thread (<see cref="Submit"/>/<see cref="WaitForCompletion"/>) does not execute
-///   jobs. It pushes submitted jobs onto its own deque (workers steal from it), then parks on
-///   <see cref="_completionSignal"/> until all work is done.
-///
-/// REFERENCE
-///   D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
+/// ONE DAG AT A TIME
+///   Each scheduler handles one DAG at a time. Submitting while a DAG is in flight is a programming
+///   error (caught by a debug assert). This simplifies completion detection: when the outstanding
+///   counter reaches zero, the DAG is done.
 /// </summary>
-internal sealed class JobScheduler : IDisposable
+internal sealed class JobScheduler
 {
-    /// <summary>
-    /// All worker contexts plus the coordinator's submission context. Length is
-    /// <see cref="_workerCount"/> + 1. Indices 0..<see cref="_workerCount"/>-1 are background worker
-    /// contexts; the last element (index <see cref="_workerCount"/>) holds the deque that
-    /// <see cref="Submit"/> pushes onto. Workers steal from all contexts, including the submission
-    /// deque.
-    /// </summary>
-    private readonly WorkerContext[] _allContexts;
-
-    /// <summary>Background worker threads. Length equals <see cref="_workerCount"/>.</summary>
-    private readonly Thread[] _workerThreads;
-
-    /// <summary>Number of background worker threads (does not include the coordinator).</summary>
-    private readonly int _workerCount;
+    private readonly WorkerPool _pool;
 
     /// <summary>
-    /// Shared semaphore for parking idle workers. Only released when <see cref="_parkedWorkers"/>
-    /// is positive, preventing unbounded permit accumulation.
+    /// MPSC injection queue. <see cref="Submit"/> enqueues here; workers dequeue via the pool's
+    /// injection queue sweep. Using <see cref="ConcurrentQueue{T}"/> avoids the Chase-Lev
+    /// owner-only Push constraint, allowing any thread to submit.
     /// </summary>
-    private readonly SemaphoreSlim _workSignal;
-
-    /// <summary>
-    /// Signaled by the worker that decrements <see cref="_outstandingJobs"/> to zero, unparking the
-    /// coordinator in <see cref="WaitForCompletion"/>. Reset at the start of each wait cycle.
-    /// </summary>
-    private readonly ManualResetEventSlim _completionSignal;
-
-    /// <summary>Set to <c>true</c> during <see cref="Dispose"/> to break worker loops.</summary>
-    private volatile bool _shutdownRequested;
-
-    /// <summary>Guard for idempotent <see cref="Dispose"/>.</summary>
-    private int _disposed;
+    private readonly ConcurrentQueue<Job> _injectionQueue = new();
 
     /// <summary>
     /// Number of jobs that have been enqueued but not yet completed. Incremented on every enqueue
     /// (submit, sub-job enqueue, dependency propagation); decremented after each execution
-    /// completes (including dependency propagation). Reaches zero exactly when all DAG work is done.
-    /// The worker that decrements to zero signals <see cref="_completionSignal"/>.
+    /// completes. Reaches zero exactly when all DAG work is done.
     /// </summary>
     private int _outstandingJobs;
 
     /// <summary>
-    /// Number of workers currently parked (blocked on <see cref="_workSignal"/>). Used by
-    /// <see cref="NotifyWorkAvailable"/> to avoid releasing the semaphore when no one is waiting,
-    /// which would cause unbounded permit accumulation. Updated via announce-then-recheck: workers
-    /// increment before re-checking for work, and decrement after waking or finding work.
+    /// Signaled by the worker that decrements <see cref="_outstandingJobs"/> to zero, unparking
+    /// the coordinator in <see cref="WaitForCompletion"/>. Reset at the start of each wait cycle.
     /// </summary>
-    private int _parkedWorkers;
+    private readonly ManualResetEventSlim _completionSignal = new(false);
 
-    /// <summary>
-    /// Creates a scheduler with <paramref name="workerCount"/> background worker threads. If
-    /// negative, defaults to <see cref="Environment.ProcessorCount"/> (clamped to
-    /// <see cref="MaxWorkerCount"/>). Must be at least 1.
-    /// </summary>
-    internal const int MaxWorkerCount = 127;
-
-    internal JobScheduler(int workerCount = -1)
+    internal JobScheduler(WorkerPool pool)
     {
-        if (workerCount < 0)
-            workerCount = Math.Min(Environment.ProcessorCount, MaxWorkerCount);
-
-        ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(workerCount, MaxWorkerCount);
-
-        _workerCount = workerCount;
-        _workSignal = new SemaphoreSlim(0);
-        _completionSignal = new ManualResetEventSlim(false);
-
-        _allContexts = new WorkerContext[workerCount + 1];
-        for (var i = 0; i <= workerCount; i++)
-            _allContexts[i] = new WorkerContext(this, i);
-
-        _workerThreads = new Thread[workerCount];
-        for (var i = 0; i < workerCount; i++)
-        {
-            var ctx = _allContexts[i];
-            _workerThreads[i] = new Thread(() => this.RunWorker(ctx))
-            {
-                IsBackground = true,
-                Name = $"JobScheduler-Worker-{i}",
-            };
-            _workerThreads[i].Start();
-        }
+        _pool = pool;
+        pool.RegisterInjectionQueue(_injectionQueue);
     }
-
-    internal int WorkerCount => _workerCount;
 
     // ── Coordinator API ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Submits a ready-to-execute job. The job is pushed onto the coordinator's deque (following the
-    /// Chase-Lev owner-push model) where workers can steal it. Must be called from the coordinator
-    /// thread.
+    /// Submits a ready-to-execute job into the injection queue. Workers will dequeue it. Must not
+    /// be called while a previous DAG is still in flight (debug assert).
     /// </summary>
     internal void Submit(Job job)
     {
@@ -140,15 +62,15 @@ internal sealed class JobScheduler : IDisposable
         Debug.Assert(job._state == JobState.Pending);
         job._state = JobState.Queued;
 #endif
+        job._scheduler = this;
         Interlocked.Increment(ref _outstandingJobs);
-        _allContexts[_workerCount].Deque.Push(job);
-        this.NotifyWorkAvailable();
+        _injectionQueue.Enqueue(job);
+        _pool.NotifyWorkAvailable();
     }
 
     /// <summary>
-    /// Parks the coordinator thread until all outstanding jobs have completed. Workers execute all
-    /// work; the coordinator does not participate. Returns <c>true</c> if completed, <c>false</c>
-    /// if the timeout expired. Pass <c>-1</c> for no timeout.
+    /// Parks the coordinator thread until all outstanding jobs have completed. Returns <c>true</c>
+    /// if completed, <c>false</c> if the timeout expired. Pass <c>-1</c> for no timeout.
     /// </summary>
     internal bool WaitForCompletion(int millisecondsTimeout = -1)
     {
@@ -167,138 +89,23 @@ internal sealed class JobScheduler : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Signals that work is available, waking at most one parked worker. Only releases the
-    /// semaphore when at least one worker is parked, preventing unbounded permit accumulation.
-    /// </summary>
-    internal void NotifyWorkAvailable()
-    {
-        if (Volatile.Read(ref _parkedWorkers) > 0)
-            _workSignal.Release();
-    }
+    // ── Called by WorkerPool execution infrastructure ────────────────────────
 
     /// <summary>
-    /// Atomically increments the outstanding job count. Called by <see cref="WorkerContext.Enqueue"/>
-    /// when a job pushes sub-jobs during execution.
+    /// Atomically increments the outstanding job count. Called by <see cref="WorkerPool"/> when a
+    /// sub-job is enqueued or a dependent becomes ready.
     /// </summary>
     internal void IncrementOutstanding() => Interlocked.Increment(ref _outstandingJobs);
 
-    // ── Worker loop ─────────────────────────────────────────────────────────
-
-    private void RunWorker(WorkerContext context)
+    /// <summary>
+    /// Atomically decrements the outstanding job count. If it reaches zero, signals
+    /// <see cref="_completionSignal"/> to unpark the coordinator. Called by <see cref="WorkerPool"/>
+    /// after a job finishes execution.
+    /// </summary>
+    internal void DecrementOutstanding()
     {
-        Threading.ThreadPinningNative.TryPinCurrentThread(context.WorkerIndex);
-
-        while (!_shutdownRequested)
-        {
-            if (this.TryExecuteOne(context))
-                continue;
-
-            // Announce-then-recheck: declare intent to park, then re-check for work. This closes
-            // the race where work arrives between our failed steal and the Wait call — the producer
-            // sees _parkedWorkers > 0 and releases, or our re-check finds the work directly.
-            Interlocked.Increment(ref _parkedWorkers);
-
-            if (this.TryExecuteOne(context))
-            {
-                Interlocked.Decrement(ref _parkedWorkers);
-                continue;
-            }
-
-            _workSignal.Wait();
-            Interlocked.Decrement(ref _parkedWorkers);
-        }
-    }
-
-    // ── Core execution ──────────────────────────────────────────────────────
-
-    private bool TryExecuteOne(WorkerContext context)
-    {
-        if (context.Deque.TryPop(out var job))
-        {
-            this.ExecuteJob(job, context);
-            return true;
-        }
-
-        return this.TryStealAndExecute(context);
-    }
-
-    private bool TryStealAndExecute(WorkerContext context)
-    {
-        var count = _allContexts.Length;
-        var start = ++context._stealOffset;
-
-        for (var i = 0; i < count; i++)
-        {
-            var target = _allContexts[(int)((uint)(start + i) % (uint)count)];
-            if (target.WorkerIndex == context.WorkerIndex)
-                continue;
-
-            if (target.Deque.TrySteal(out var job))
-            {
-                this.ExecuteJob(job, context);
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private void ExecuteJob(Job job, WorkerContext context)
-    {
-#if DEBUG
-        job._state = JobState.Executing;
-#endif
-
-        job.Execute(context);
-
-#if DEBUG
-        job._state = JobState.Completed;
-#endif
-
-        this.PropagateCompletion(job, context);
-
         if (Interlocked.Decrement(ref _outstandingJobs) == 0)
             _completionSignal.Set();
-    }
-
-    private void PropagateCompletion(Job job, WorkerContext context)
-    {
-        if (job._dependents is not { } dependents)
-            return;
-
-        foreach (var dependent in dependents)
-        {
-            var remaining = Interlocked.Decrement(ref dependent._remainingDependencies);
-            Debug.Assert(remaining >= 0);
-            if (remaining != 0)
-                continue;
-
-#if DEBUG
-            Debug.Assert(dependent._state == JobState.Pending);
-            dependent._state = JobState.Queued;
-#endif
-            Interlocked.Increment(ref _outstandingJobs);
-            context.Deque.Push(dependent);
-            this.NotifyWorkAvailable();
-        }
-    }
-
-    // ── Disposal ────────────────────────────────────────────────────────────
-
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-
-        _shutdownRequested = true;
-        _workSignal.Release(_workerCount);
-
-        foreach (var thread in _workerThreads)
-            thread.Join();
-
-        _workSignal.Dispose();
-        _completionSignal.Dispose();
     }
 
     // ── Test accessor ───────────────────────────────────────────────────────
@@ -307,9 +114,6 @@ internal sealed class JobScheduler : IDisposable
 
     internal readonly struct TestAccessor(JobScheduler scheduler)
     {
-        public WorkerContext SubmissionContext => scheduler._allContexts[scheduler._workerCount];
-        public WorkerContext GetWorkerContext(int index) => scheduler._allContexts[index];
-        public int TotalContextCount => scheduler._allContexts.Length;
         public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
     }
 }
