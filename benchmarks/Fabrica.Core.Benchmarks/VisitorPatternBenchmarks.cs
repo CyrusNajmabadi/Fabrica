@@ -8,12 +8,12 @@ namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
 /// Measures the overhead (if any) of the visitor pattern — where
-/// <see cref="IChildAction.OnChild{TChild}"/> receives only <c>Handle&lt;TChild&gt;</c> — vs.
+/// <see cref="INodeVisitor.Visit{TChild}"/> receives only <c>Handle&lt;TChild&gt;</c> — vs.
 /// hand-rolled direct code.
 ///
 /// Both the increment path (hot path for adding children) and the cascade-decrement path
-/// (OnFreed handler) are benchmarked. The "Visitor" variants use <see cref="IChildEnumerator{TNode}"/>
-/// and <see cref="IChildAction"/> / <see cref="DecrementChildAction{TNode,THandler}"/> throughout.
+/// (OnFreed handler) are benchmarked. The "Visitor" variants use <see cref="INodeChildEnumerator{TNode}"/>
+/// and <see cref="INodeVisitor"/> / <see cref="RefCountTable{TNode}.DecrementNodeRefCountVisitor{THandler}"/> throughout.
 /// The "Direct" variants hand-roll all child traversal.
 /// </summary>
 [ShortRunJob]
@@ -48,19 +48,19 @@ public class VisitorPatternBenchmarks
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // VISITOR — IChildAction receives Handle only
+    // VISITOR — INodeVisitor receives Handle only
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <summary>
     /// Captures the world's refcount tables and increments the appropriate one per child type.
     /// typeof(TChild) comparisons are JIT constants — dead branches are eliminated entirely.
     /// </summary>
-    private struct IncrementAction(
+    private struct IncrementNodeVisitor(
         RefCountTable<ParentNode> parentRC,
-        RefCountTable<ChildNode> childRC) : IChildAction
+        RefCountTable<ChildNode> childRC) : INodeVisitor
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnChild<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(ParentNode))
                 parentRC.Increment(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
@@ -69,43 +69,43 @@ public class VisitorPatternBenchmarks
         }
     }
 
-    private struct ParentNodeEnumerator : IChildEnumerator<ParentNode>
+    private struct ParentNodeEnumerator : INodeChildEnumerator<ParentNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EnumerateChildren<TAction>(in ParentNode node, ref TAction action)
-            where TAction : struct, IChildAction
+        public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
+            where TAction : struct, INodeVisitor
         {
-            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent);
-            if (node.RightParent.IsValid) action.OnChild(node.RightParent);
-            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef);
+            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
+            if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
+            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction action)
-            where TAction : struct, IChildAction<TContext>
+        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction visitor)
+            where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent, in context);
-            if (node.RightParent.IsValid) action.OnChild(node.RightParent, in context);
-            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef, in context);
+            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent, in context);
+            if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
+            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
         }
     }
 
-    private struct ChildNodeEnumerator : IChildEnumerator<ChildNode>
+    private struct ChildNodeEnumerator : INodeChildEnumerator<ChildNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EnumerateChildren<TAction>(in ChildNode node, ref TAction action)
-            where TAction : struct, IChildAction
+        public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
+            where TAction : struct, INodeVisitor
         {
-            if (node.Left.IsValid) action.OnChild(node.Left);
-            if (node.Right.IsValid) action.OnChild(node.Right);
+            if (node.Left.IsValid) visitor.Visit(node.Left);
+            if (node.Right.IsValid) visitor.Visit(node.Right);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction action)
-            where TAction : struct, IChildAction<TContext>
+        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction visitor)
+            where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.Left.IsValid) action.OnChild(node.Left, in context);
-            if (node.Right.IsValid) action.OnChild(node.Right, in context);
+            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
+            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 
@@ -151,8 +151,8 @@ public class VisitorPatternBenchmarks
         public void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
         {
             ref readonly var node = ref arena[handle];
-            var action = new DecrementChildAction<ChildNode, VisitorChildHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref action);
+            var visitor = new RefCountTable<ChildNode>.DecrementNodeRefCountVisitor<VisitorChildHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref visitor);
             arena.Free(handle);
         }
     }
@@ -160,19 +160,19 @@ public class VisitorPatternBenchmarks
     /// <summary>
     /// Cross-type decrement action for parent nodes: dispatches to the correct table by type.
     /// </summary>
-    private struct VisitorParentDecrementAction(
+    private struct VisitorParentDecrementNodeVisitor(
         RefCountTable<ParentNode> parentTable,
         VisitorParentHandler parentHandler,
         RefCountTable<ChildNode> childTable,
-        VisitorChildHandler childHandler) : IChildAction
+        VisitorChildHandler childHandler) : INodeVisitor
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnChild<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(ParentNode))
-                DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
+                this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
             else if (typeof(TChild) == typeof(ChildNode))
-                DecrementChild(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
+                this.DecrementChild(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -199,10 +199,10 @@ public class VisitorPatternBenchmarks
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
         {
-            ref readonly var node = ref this.World.ParentArena[handle];
-            var action = new VisitorParentDecrementAction(table, this, this.World.ChildRefCounts, this.ChildHandler);
-            this.Enumerator.EnumerateChildren(in node, ref action);
-            this.World.ParentArena.Free(handle);
+            ref readonly var node = ref World.ParentArena[handle];
+            var visitor = new VisitorParentDecrementNodeVisitor(table, this, World.ChildRefCounts, ChildHandler);
+            Enumerator.EnumerateChildren(in node, ref visitor);
+            World.ParentArena.Free(handle);
         }
     }
 
@@ -284,13 +284,13 @@ public class VisitorPatternBenchmarks
     {
         var parentArena = _world.ParentArena;
         var enumerator = default(ParentNodeEnumerator);
-        var action = new IncrementAction(_world.ParentRefCounts, _world.ChildRefCounts);
+        var visitor = new IncrementNodeVisitor(_world.ParentRefCounts, _world.ChildRefCounts);
         var count = 0;
 
         for (var i = 0; i < this.N; i++)
         {
             ref readonly var node = ref parentArena[_parentHandles[i]];
-            enumerator.EnumerateChildren(in node, ref action);
+            enumerator.EnumerateChildren(in node, ref visitor);
             count++;
         }
 

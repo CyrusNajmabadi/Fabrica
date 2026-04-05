@@ -14,7 +14,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// SINGLE-STORE CONVENIENCE
 ///   Overloads that take a single <see cref="NodeStore{TNode,THandler}"/> and an
-///   <see cref="IChildEnumerator{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,THandler,TEnumerator}"/>
+///   <see cref="INodeChildEnumerator{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,THandler,TEnumerator}"/>
 ///   internally. Cross-type children from the enumerator are ignored (they contribute external
 ///   refcounts that this store can't verify).
 ///
@@ -236,7 +236,7 @@ internal static class DagValidator
     // ── Single-store convenience ────────────────────────────────────────
 
     /// <summary>
-    /// Validates a single store's DAG using an <see cref="IChildEnumerator{TNode}"/>.
+    /// Validates a single store's DAG using an <see cref="INodeChildEnumerator{TNode}"/>.
     /// Cross-type children produced by the enumerator are ignored — use the cross-store overload
     /// for full heterogeneous validation.
     /// </summary>
@@ -247,7 +247,7 @@ internal static class DagValidator
         bool strict = true)
         where TNode : struct
         where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode>
+        where TEnumerator : struct, INodeChildEnumerator<TNode>
     {
         var issues = Validate(store, roots, enumerator, strict);
         if (issues.Count > 0)
@@ -262,7 +262,7 @@ internal static class DagValidator
         bool strict = true)
         where TNode : struct
         where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode>
+        where TEnumerator : struct, INodeChildEnumerator<TNode>
     {
         var accessor = new SingleStoreAccessor<TNode, THandler, TEnumerator>(store, enumerator);
         var nodeRefs = roots.Length <= 128 ? stackalloc NodeRef[roots.Length] : new NodeRef[roots.Length];
@@ -275,7 +275,7 @@ internal static class DagValidator
     // ── SingleStoreAccessor ─────────────────────────────────────────────
 
     /// <summary>
-    /// Adapts a single <see cref="NodeStore{TNode,THandler}"/> + <see cref="IChildEnumerator{TNode}"/>
+    /// Adapts a single <see cref="NodeStore{TNode,THandler}"/> + <see cref="INodeChildEnumerator{TNode}"/>
     /// into an <see cref="IWorldAccessor"/> with one type (typeId = 0). Cross-type children from the
     /// enumerator are silently filtered out.
     /// </summary>
@@ -284,7 +284,7 @@ internal static class DagValidator
         TEnumerator enumerator) : IWorldAccessor
         where TNode : struct
         where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, IChildEnumerator<TNode>
+        where TEnumerator : struct, INodeChildEnumerator<TNode>
     {
         public readonly int TypeCount => 1;
 
@@ -295,20 +295,20 @@ internal static class DagValidator
         public void GetChildren(int typeId, int index, List<NodeRef> children)
         {
             ref readonly var node = ref store.Arena[new Handle<TNode>(index)];
-            var action = new CollectSameTypeAction<TNode>(children);
-            enumerator.EnumerateChildren(in node, ref action);
+            var visitor = new CollectSameTypeNodeVisitor<TNode>(children);
+            enumerator.EnumerateChildren(in node, ref visitor);
         }
     }
 
     /// <summary>
-    /// <see cref="IChildAction"/> that collects only same-type children as <see cref="NodeRef"/> values
+    /// <see cref="INodeVisitor"/> that collects only same-type children as <see cref="NodeRef"/> values
     /// with typeId 0. Cross-type children are silently ignored. The <c>typeof(TChild) == typeof(TNode)</c>
     /// check is a JIT constant — the dead branch is eliminated entirely.
     /// </summary>
-    private struct CollectSameTypeAction<TNode>(List<NodeRef> children) : IChildAction where TNode : struct
+    private struct CollectSameTypeNodeVisitor<TNode>(List<NodeRef> children) : INodeVisitor where TNode : struct
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(TNode))
                 this.CollectTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));

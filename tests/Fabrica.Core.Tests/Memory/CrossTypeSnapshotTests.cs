@@ -37,8 +37,8 @@ public class CrossTypeSnapshotTests
         public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
         {
             ref readonly var node = ref arena[handle];
-            var action = new DecrementChildAction<ChildNode, ChildHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref action);
+            var visitor = new RefCountTable<ChildNode>.DecrementNodeRefCountVisitor<ChildHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref visitor);
             arena.Free(handle);
         }
     }
@@ -47,14 +47,14 @@ public class CrossTypeSnapshotTests
     /// Cross-type decrement: dispatches to the correct <see cref="RefCountTable{T}"/> based on
     /// the child's type. The <c>typeof</c> checks are JIT constants — dead branches are eliminated.
     /// </summary>
-    private struct ParentDecrementAction(
+    private struct ParentDecrementNodeVisitor(
         RefCountTable<ParentNode> parentTable,
         ParentHandler parentHandler,
         RefCountTable<ChildNode> childTable,
-        ChildHandler childHandler) : IChildAction
+        ChildHandler childHandler) : INodeVisitor
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnChild<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(ParentNode))
                 this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
@@ -85,47 +85,47 @@ public class CrossTypeSnapshotTests
         public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
         {
             ref readonly var node = ref parentArena[handle];
-            var action = new ParentDecrementAction(table, this, childStore.RefCounts, childStore.GetTestAccessor().Handler);
-            enumerator.EnumerateChildren(in node, ref action);
+            var visitor = new ParentDecrementNodeVisitor(table, this, childStore.RefCounts, childStore.GetTestAccessor().Handler);
+            enumerator.EnumerateChildren(in node, ref visitor);
             parentArena.Free(handle);
         }
     }
 
     // ── Child enumerators (all children, including cross-type) ─────────
 
-    private struct ParentChildEnumerator : IChildEnumerator<ParentNode>
+    private struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
     {
-        public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction action)
-            where TAction : struct, IChildAction
+        public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
+            where TAction : struct, INodeVisitor
         {
-            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent);
-            if (node.RightParent.IsValid) action.OnChild(node.RightParent);
-            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef);
+            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
+            if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
+            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
 
-        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction action)
-            where TAction : struct, IChildAction<TContext>
+        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction visitor)
+            where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.LeftParent.IsValid) action.OnChild(node.LeftParent, in context);
-            if (node.RightParent.IsValid) action.OnChild(node.RightParent, in context);
-            if (node.ChildRef.IsValid) action.OnChild(node.ChildRef, in context);
+            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent, in context);
+            if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
+            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
         }
     }
 
-    private struct ChildChildEnumerator : IChildEnumerator<ChildNode>
+    private struct ChildChildEnumerator : INodeChildEnumerator<ChildNode>
     {
-        public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction action)
-            where TAction : struct, IChildAction
+        public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
+            where TAction : struct, INodeVisitor
         {
-            if (node.LeftChild.IsValid) action.OnChild(node.LeftChild);
-            if (node.RightChild.IsValid) action.OnChild(node.RightChild);
+            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
+            if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
         }
 
-        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction action)
-            where TAction : struct, IChildAction<TContext>
+        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction visitor)
+            where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.LeftChild.IsValid) action.OnChild(node.LeftChild, in context);
-            if (node.RightChild.IsValid) action.OnChild(node.RightChild, in context);
+            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild, in context);
+            if (node.RightChild.IsValid) visitor.Visit(node.RightChild, in context);
         }
     }
 

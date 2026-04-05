@@ -19,26 +19,26 @@ public class SnapshotSliceTests
         public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
             ref readonly var node = ref arena[handle];
-            var action = new DecrementChildAction<TreeNode, TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref action);
+            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
+            enumerator.EnumerateChildren(in node, ref visitor);
             arena.Free(handle);
         }
     }
 
-    private struct TreeChildEnumerator : IChildEnumerator<TreeNode>
+    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
     {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction action)
-            where TAction : struct, IChildAction
+        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
+            where TAction : struct, INodeVisitor
         {
-            if (node.Left.IsValid) action.OnChild(node.Left);
-            if (node.Right.IsValid) action.OnChild(node.Right);
+            if (node.Left.IsValid) visitor.Visit(node.Left);
+            if (node.Right.IsValid) visitor.Visit(node.Right);
         }
 
-        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction action)
-            where TAction : struct, IChildAction<TContext>
+        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction visitor)
+            where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.Left.IsValid) action.OnChild(node.Left, in context);
-            if (node.Right.IsValid) action.OnChild(node.Right, in context);
+            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
+            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 
