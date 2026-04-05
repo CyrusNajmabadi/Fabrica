@@ -64,7 +64,8 @@ internal abstract class Job
     /// <summary>
     /// The <see cref="JobScheduler"/> that owns this job's DAG. Set by <see cref="JobScheduler.Submit"/>
     /// for root jobs and by <see cref="WorkerPool"/> for sub-jobs and propagated dependents. Read by
-    /// <see cref="WorkerPool"/> to route completion signals to the correct scheduler.
+    /// <see cref="WorkerPool"/> to route completion signals to the correct scheduler. Cleared by
+    /// <see cref="JobPool{TJob}.Return"/> when the job is recycled.
     /// </summary>
     internal JobScheduler? _scheduler;
 
