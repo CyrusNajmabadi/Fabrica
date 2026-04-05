@@ -89,8 +89,11 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// </summary>
     public void Return(TJob item)
     {
-        item._counter = default;
+        item._remainingDependencies = 0;
         item._dependents = null;
+#if DEBUG
+        item._state = default;
+#endif
         item.Reset();
 
         var spinner = new SpinWait();

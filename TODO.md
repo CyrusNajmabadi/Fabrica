@@ -50,6 +50,9 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   independent pools pinned from core 0, wasting cores when one side is idle. Replace with a single pool of N threads
   (one per core) that dynamically partitions between simulation and rendering based on measured load. Full design
   investigation and options analysis in [`docs/unified-thread-pool.md`](docs/unified-thread-pool.md)
+- [ ] **Renderer sharing the `JobScheduler` work queue** — the new `JobScheduler` is designed for simulation work.
+  Discuss how the future renderer will share or coordinate with this work queue: separate scheduler instance, shared
+  workers with priority lanes, or time-sliced access between sim and render phases
 
 ## Documentation
 

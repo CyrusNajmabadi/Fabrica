@@ -12,7 +12,7 @@ public class JobPoolTests
         public int Value { get; set; }
         public bool Executed { get; set; }
 
-        internal override void Execute()
+        internal override void Execute(WorkerContext context)
             => this.Executed = true;
 
         internal override void Reset()
@@ -122,14 +122,14 @@ public class JobPoolTests
         var job = pool.Rent();
 
         var otherJob = pool.Rent();
-        job._counter = new JobCounter(3);
+        job._remainingDependencies = 3;
         job._dependents = [otherJob];
 
         pool.Return(job);
         var reused = pool.Rent();
 
         Assert.Same(job, reused);
-        Assert.True(reused._counter.IsComplete);
+        Assert.Equal(0, reused._remainingDependencies);
         Assert.Null(reused._dependents);
         Assert.Null(reused._poolNext);
     }
@@ -194,7 +194,7 @@ public class JobPoolTests
 
         var job = pool.Rent();
         job.Value = 99;
-        job.Execute();
+        job.Execute(null!);
 
         Assert.Equal(99, job.Value);
         Assert.True(job.Executed);
