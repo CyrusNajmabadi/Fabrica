@@ -12,7 +12,7 @@ public class JobPoolTests
         public int Value { get; set; }
         public bool Executed { get; set; }
 
-        internal override void Execute()
+        internal override void Execute(WorkerContext context)
             => this.Executed = true;
 
         internal override void Reset()
@@ -194,7 +194,7 @@ public class JobPoolTests
 
         var job = pool.Rent();
         job.Value = 99;
-        job.Execute();
+        job.Execute(null!);
 
         Assert.Equal(99, job.Value);
         Assert.True(job.Executed);

@@ -12,13 +12,13 @@ public class JobSchedulerTests
     {
         public bool Executed { get; set; }
         public int ExecutedOnWorker { get; set; } = -1;
-        public Action<TestJob>? OnExecute { get; set; }
+        public Action<WorkerContext>? OnExecute { get; set; }
 
-        internal override void Execute()
+        internal override void Execute(WorkerContext context)
         {
-            this.ExecutedOnWorker = _workerContext!.WorkerIndex;
+            this.ExecutedOnWorker = context.WorkerIndex;
             this.Executed = true;
-            this.OnExecute?.Invoke(this);
+            this.OnExecute?.Invoke(context);
         }
 
         internal override void Reset()
@@ -51,7 +51,7 @@ public class JobSchedulerTests
         var capturedIndex = -1;
         var job = new TestJob
         {
-            OnExecute = j => capturedIndex = j.ExecutedOnWorker,
+            OnExecute = ctx => capturedIndex = ctx.WorkerIndex,
         };
 
         scheduler.Submit(job);
@@ -174,7 +174,7 @@ public class JobSchedulerTests
 
         var parentJob = new TestJob
         {
-            OnExecute = j => j._workerContext!.Enqueue(subJob),
+            OnExecute = ctx => ctx.Enqueue(subJob),
         };
 
         scheduler.Submit(parentJob);
@@ -208,7 +208,6 @@ public class JobSchedulerTests
         var job = pool.Rent();
         job._remainingDependencies = 3;
         job._dependents = [new TestJob()];
-        job._workerContext = new WorkerContext(null!, 99);
 #if DEBUG
         job._state = JobState.Completed;
 #endif
@@ -219,7 +218,6 @@ public class JobSchedulerTests
         Assert.Same(job, reused);
         Assert.Equal(0, reused._remainingDependencies);
         Assert.Null(reused._dependents);
-        Assert.Null(reused._workerContext);
 #if DEBUG
         Assert.Equal(JobState.Pending, reused._state);
 #endif

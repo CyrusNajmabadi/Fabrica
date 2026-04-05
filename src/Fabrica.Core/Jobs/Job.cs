@@ -22,10 +22,10 @@ internal enum JobState : byte
 ///      <see cref="_dependents"/>, and subclass-specific input fields.
 ///   3. <b>Submit</b> — The job is pushed onto a <see cref="Collections.WorkStealingDeque{T}"/>
 ///      via <see cref="JobScheduler.Submit"/> or <see cref="WorkerContext.Enqueue"/>.
-///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler sets
-///      <see cref="_workerContext"/> to the executing thread's context, then calls
-///      <see cref="Execute"/>. After execution, the scheduler decrements all
-///      <see cref="_dependents"/>' dependency counts, enqueuing any that hit zero.
+///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler passes the
+///      executing thread's <see cref="WorkerContext"/> to <see cref="Execute"/>, giving the job
+///      access to the thread's deque for enqueuing sub-jobs. After execution, the scheduler
+///      decrements all <see cref="_dependents"/>' dependency counts, enqueuing any that hit zero.
 ///   5. <b>Sweep</b> — After the scheduler's outstanding job count reaches zero, the coordinator
 ///      walks the DAG and calls <see cref="Reset"/> on each job, then returns it to its pool.
 ///
@@ -67,19 +67,16 @@ internal abstract class Job
     /// </summary>
     internal Job? _poolNext;
 
-    /// <summary>
-    /// Per-worker context set by the scheduler immediately before <see cref="Execute"/> and
-    /// cleared after it returns. Provides access to the executing thread's deque (for pushing
-    /// sub-jobs) and worker index. Must not be accessed outside of <see cref="Execute"/>.
-    /// </summary>
-    internal WorkerContext? _workerContext;
-
 #if DEBUG
     internal JobState _state;
 #endif
 
-    /// <summary>Performs the job's work. Called by a worker thread.</summary>
-    internal abstract void Execute();
+    /// <summary>
+    /// Performs the job's work. Called by a worker thread. The <paramref name="context"/> provides
+    /// access to the executing thread's deque (for enqueuing sub-jobs via
+    /// <see cref="WorkerContext.Enqueue"/>) and worker index.
+    /// </summary>
+    internal abstract void Execute(WorkerContext context);
 
     /// <summary>
     /// Resets this job's state for pool reuse. Called by the coordinator during the DAG sweep

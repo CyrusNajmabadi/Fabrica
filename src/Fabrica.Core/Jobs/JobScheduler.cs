@@ -187,17 +187,15 @@ internal sealed class JobScheduler : IDisposable
 
     private void ExecuteJob(Job job, WorkerContext context)
     {
-        job._workerContext = context;
 #if DEBUG
         job._state = JobState.Executing;
 #endif
 
-        job.Execute();
+        job.Execute(context);
 
 #if DEBUG
         job._state = JobState.Completed;
 #endif
-        job._workerContext = null;
 
         this.PropagateCompletion(job, context);
         Interlocked.Decrement(ref _outstandingJobs);

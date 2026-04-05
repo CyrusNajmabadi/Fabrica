@@ -91,7 +91,6 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     {
         item._remainingDependencies = 0;
         item._dependents = null;
-        item._workerContext = null;
 #if DEBUG
         item._state = default;
 #endif
