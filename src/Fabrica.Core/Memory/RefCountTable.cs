@@ -42,7 +42,7 @@ namespace Fabrica.Core.Memory;
 ///   Sequential increment: ~0.8 ns/op. Cascade-free (binary tree): ~2.4 ns/op. Steady-state inc/dec: ~2.5 ns/op.
 ///   See benchmarks/results/ for full tables.
 /// </summary>
-internal sealed class RefCountTable<T> where T : struct
+internal sealed partial class RefCountTable<T> where T : struct
 {
     private const int DefaultDirectoryLength = 65_536;
 

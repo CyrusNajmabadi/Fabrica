@@ -57,14 +57,14 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
 
     // ── Single-handle operations (used by visitor actions) ─────────────
 
-    /// <summary>Increments the refcount for a single handle. Used by <see cref="IChildAction"/> implementations
+    /// <summary>Increments the refcount for a single handle. Used by <see cref="INodeVisitor"/> implementations
     /// during child enumeration.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void IncrementRefCount(Handle<TNode> handle)
         => this.RefCounts.Increment(handle);
 
     /// <summary>Decrements the refcount for a single handle, triggering cascade-free if it hits zero.
-    /// Uses the stored handler — no caller involvement needed. Used by <see cref="IChildAction"/>
+    /// Uses the stored handler — no caller involvement needed. Used by <see cref="INodeVisitor"/>
     /// implementations during child enumeration.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void DecrementRefCount(Handle<TNode> handle)
@@ -107,7 +107,7 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     /// </summary>
     [Conditional("DEBUG")]
     internal void EnableValidation<TEnumerator>(TEnumerator enumerator)
-        where TEnumerator : struct, IChildEnumerator<TNode>
+        where TEnumerator : struct, INodeChildEnumerator<TNode>
     {
 #if DEBUG
         _trackedRootCounts = [];
