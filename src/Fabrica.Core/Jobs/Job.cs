@@ -43,6 +43,14 @@ internal enum JobState : byte
 /// VIRTUAL DISPATCH
 ///   <see cref="Execute"/> and <see cref="Reset"/> are virtual calls. At typical job granularity
 ///   (microseconds to milliseconds of work per job), the ~2ns vtable lookup is negligible.
+///
+/// FUTURE: SIMPLIFIED PUBLIC API
+///   Higher layers should see only <see cref="JobScheduler.Submit"/> for the root job. Child jobs
+///   created during <see cref="Execute"/> should be enqueued through a protected helper on this
+///   base class (e.g. <c>EnqueueChild(Job)</c>) rather than reaching through
+///   <see cref="WorkerContext"/>. This is possible because <see cref="_scheduler"/> is available on
+///   the base type for the duration of <see cref="Execute"/>. The goal is that derived job classes
+///   never interact with <see cref="WorkerContext"/> or scheduling internals directly.
 /// </summary>
 internal abstract class Job
 {

@@ -38,6 +38,27 @@ alwaysApply: false
 - Use `Trait("Category", "Stress")` for stress tests.
 - Debug-only tests should be wrapped in `#if DEBUG` / `#endif`.
 
+## TestAccessor Pattern
+
+Types must not expose members solely for testing. If a method, property, or overload exists only
+to support test scenarios (e.g., injecting jobs without waiting, reading internal counters,
+accessing pooled state), it belongs on a `TestAccessor` struct, not on the type's public/internal
+surface.
+
+```csharp
+// ✅ GOOD — test-only surface is behind TestAccessor
+internal TestAccessor GetTestAccessor() => new(this);
+
+internal readonly struct TestAccessor(MyType owner)
+{
+    public int InternalCount => Volatile.Read(ref owner._count);
+    public void InjectWithoutWait(Item item) => owner.InjectItem(item);
+}
+
+// ❌ BAD — test-only overload pollutes the real API
+internal void Submit(Item item, bool waitForCompletion = true) { ... }
+```
+
 ## Debug Injection Pattern
 
 For testing concurrent code, add `#if DEBUG` callback properties (e.g., `DebugBeforeRentCas`)
