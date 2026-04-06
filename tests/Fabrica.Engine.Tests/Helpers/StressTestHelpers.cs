@@ -24,7 +24,7 @@ internal static class StressTestHelpers
         var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>(queue);
-        var producer = new SimulationProducer(imagePool, workerPool, scheduler);
+        var producer = new SimulationProducer(imagePool, scheduler);
         var consumer = new InvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new StressClock();
 
@@ -48,7 +48,7 @@ internal static class StressTestHelpers
         var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>(queue);
-        var producer = new SimulationProducer(imagePool, workerPool, scheduler);
+        var producer = new SimulationProducer(imagePool, scheduler);
         var consumer = new InvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new StressClock();
 

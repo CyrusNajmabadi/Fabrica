@@ -45,7 +45,7 @@ internal static class SimulationEngine
 
         var workerPool = new WorkerPool(simulationWorkerCount);
         var scheduler = new JobScheduler(workerPool);
-        var producer = new SimulationProducer(imagePool, workerPool, scheduler);
+        var producer = new SimulationProducer(imagePool, scheduler);
         var consumer = new RenderConsumer<TRenderer>(renderWorkerCount, renderer);
 
         return new Host<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>(

@@ -8,8 +8,8 @@ namespace Fabrica.Engine.Simulation;
 /// <summary>
 /// Adapts the simulation-specific tick logic to the generic <see cref="IProducer{TPayload}"/> interface.
 ///
-/// Owns the image pool (allocation is a producer concern) and references the shared <see cref="WorkerPool"/>
-/// and per-pipeline <see cref="JobScheduler"/> that drive parallel tick work. The pool's allocator handles
+/// Owns the image pool (allocation is a producer concern) and references the per-pipeline
+/// <see cref="JobScheduler"/> that drives parallel tick work. The pool's allocator handles
 /// <see cref="WorldImage.ResetForPool"/> on return, so <see cref="ReleaseResources"/> just returns to the pool.
 ///
 /// TICK FLOW (once WorldImage has real node types)
@@ -22,15 +22,13 @@ namespace Fabrica.Engine.Simulation;
 /// </summary>
 internal readonly struct SimulationProducer(
     ObjectPool<WorldImage, WorldImage.Allocator> imagePool,
-    WorkerPool workerPool,
     JobScheduler scheduler) : IProducer<WorldImage>
 {
     private readonly ObjectPool<WorldImage, WorldImage.Allocator> _imagePool = imagePool;
 
     // Stored for future use when WorldImage gains real node types and the tick
-    // builds a job DAG. Suppressing IDE0052 since these are intentionally forward-declared.
+    // builds a job DAG. Suppressing IDE0052 since it is intentionally forward-declared.
 #pragma warning disable IDE0052
-    private readonly WorkerPool _workerPool = workerPool;
     private readonly JobScheduler _scheduler = scheduler;
 #pragma warning restore IDE0052
 
