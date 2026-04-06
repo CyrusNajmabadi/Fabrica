@@ -103,6 +103,42 @@ using Fabrica.Core.Memory;
 
     // Create a ChildNode and a ParentNode child (both held by the root ParentNode).
     var childRef = childArena.Allocate();
+    childArena[childRef] = new ChildNode { LeftChild = new Handle<ChildNode>(-1), RightChild = new Handle<ChildNode>(-1), Value = 99 };
+    childTable.Increment(childRef);
+
+    var parentChild = parentArena.Allocate();
+    parentArena[parentChild] = new ParentNode { ParentRef = new Handle<ParentNode>(-1), ChildRef = new Handle<ChildNode>(-1) };
+    parentTable.Increment(parentChild);
+
+    var root = parentArena.Allocate();
+    parentArena[root] = new ParentNode { ParentRef = parentChild, ChildRef = childRef };
+    parentTable.Increment(root);
+
+    var enumerator = new ParentChildEnumerator();
+    var visitor = new ParentDecrementVisitor(parentTable, childTable);
+
+    EnumerateParentDecrement(ref enumerator, in parentArena[root], ref visitor);
+    AssertRefCount(parentTable, parentChild, 0, "ParentDecrement: parent-type child refcount");
+    AssertRefCount(childTable, childRef, 0, "ParentDecrement: child-type child refcount");
+    AssertRefCount(parentTable, root, 1, "ParentDecrement: root refcount unchanged");
+}
+
+// ── Scenario 5: Multi-impl INodeOps — single struct for two node types ────
+//
+// MultiTypeOps implements INodeOps<ParentNode> and INodeOps<ChildNode> on one struct.
+// The Visit<T> method handles both types via typeof checks; EnumerateChildren is per-type
+// via explicit interface implementation. The JIT should specialize each EnumerateChildren
+// call site independently, eliminating dead typeof branches just as with separate structs.
+{
+    var parentArena = new UnsafeSlabArena<ParentNode>();
+    var parentTable = new RefCountTable<ParentNode>();
+    parentTable.EnsureCapacity(16);
+
+    var childArena = new UnsafeSlabArena<ChildNode>();
+    var childTable = new RefCountTable<ChildNode>();
+    childTable.EnsureCapacity(16);
+
+    var childRef = childArena.Allocate();
     childArena[childRef] = new ChildNode { Value = 99 };
     childTable.Increment(childRef);
 
@@ -114,15 +150,33 @@ using Fabrica.Core.Memory;
     parentArena[root] = new ParentNode { ParentRef = parentChild, ChildRef = childRef };
     parentTable.Increment(root);
 
-    // ParentDecrementVisitor has two typeof branches: one for ParentNode, one for ChildNode.
-    // Both should resolve and inline — no dead branches, no interface dispatch.
-    var enumerator = new ParentChildEnumerator();
-    var visitor = new ParentDecrementVisitor(parentTable, childTable);
+    var ops = new MultiTypeOps(parentTable, childTable);
 
-    EnumerateParentDecrement(ref enumerator, in parentArena[root], ref visitor);
-    AssertRefCount(parentTable, parentChild, 0, "ParentDecrement: parent-type child refcount");
-    AssertRefCount(childTable, childRef, 0, "ParentDecrement: child-type child refcount");
-    AssertRefCount(parentTable, root, 1, "ParentDecrement: root refcount unchanged");
+    EnumerateMultiOpsParent(ref ops, in parentArena[root], ref ops);
+    AssertRefCount(parentTable, parentChild, 0, "MultiOps-Parent: parent-type child refcount");
+    AssertRefCount(childTable, childRef, 0, "MultiOps-Parent: child-type child refcount");
+    AssertRefCount(parentTable, root, 1, "MultiOps-Parent: root refcount unchanged");
+
+    // Reset for the child-path test
+    parentTable.Increment(parentChild);
+    childTable.Increment(childRef);
+
+    var childLeft = childArena.Allocate();
+    childArena[childLeft] = new ChildNode { Value = 1 };
+    childTable.Increment(childLeft);
+
+    var childRight = childArena.Allocate();
+    childArena[childRight] = new ChildNode { Value = 2 };
+    childTable.Increment(childRight);
+
+    var childParent = childArena.Allocate();
+    childArena[childParent] = new ChildNode { Value = 0, LeftChild = childLeft, RightChild = childRight };
+    childTable.Increment(childParent);
+
+    EnumerateMultiOpsChild(ref ops, in childArena[childParent], ref ops);
+    AssertRefCount(childTable, childLeft, 0, "MultiOps-Child: left child refcount");
+    AssertRefCount(childTable, childRight, 0, "MultiOps-Child: right child refcount");
+    AssertRefCount(childTable, childParent, 1, "MultiOps-Child: parent refcount unchanged");
 }
 
 return 0;
@@ -188,6 +242,39 @@ static void EnumerateParentDecrement(
     enumerator.EnumerateChildren(in node, ref visitor);
 }
 
+// Multi-impl: exercises INodeOps<ParentNode>.EnumerateChildren on MultiTypeOps.
+// The visitor is the same MultiTypeOps struct — both typeof branches should resolve.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static void EnumerateMultiOpsParent(
+    ref MultiTypeOps ops,
+    in ParentNode node,
+    ref MultiTypeOps visitor)
+{
+    ConstrainedEnumerate(ref ops, in node, ref visitor);
+}
+
+// Multi-impl: exercises INodeOps<ChildNode>.EnumerateChildren on MultiTypeOps.
+// Only the ChildNode typeof branch should survive — ParentNode is dead-branch eliminated.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static void EnumerateMultiOpsChild(
+    ref MultiTypeOps ops,
+    in ChildNode node,
+    ref MultiTypeOps visitor)
+{
+    ConstrainedEnumerate(ref ops, in node, ref visitor);
+}
+
+// Constrained generic call — the JIT specializes TOps.EnumerateChildren for the concrete types
+// without boxing, exactly as NodeStore.RunCascade calls through its TNodeOps constraint.
+[MethodImpl(MethodImplOptions.AggressiveInlining)]
+static void ConstrainedEnumerate<TOps, TNode, TVisitor>(ref TOps ops, in TNode node, ref TVisitor visitor)
+    where TOps : struct, INodeOps<TNode>
+    where TNode : struct
+    where TVisitor : struct, INodeVisitor
+{
+    ops.EnumerateChildren(in node, ref visitor);
+}
+
 // ── Node types ───────────────────────────────────────────────────────────
 
 internal struct TreeNode
@@ -219,7 +306,9 @@ internal struct ParentNode
 
 internal struct ChildNode
 {
-    public int Value { get; set; }
+    public Handle<ChildNode> LeftChild;
+    public Handle<ChildNode> RightChild;
+    public int Value;
 }
 
 // ── Enumerators ──────────────────────────────────────────────────────────
@@ -309,4 +398,38 @@ internal struct ParentDecrementVisitor(
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private readonly void DecrementChild(Handle<ChildNode> child) => childTable.Decrement(child);
+}
+
+/// <summary>
+/// Single struct implementing INodeOps for two node types. Combines enumerator and visitor
+/// logic — the JIT must specialize each EnumerateChildren call site independently while
+/// sharing the Visit implementation. When called through INodeOps&lt;ParentNode&gt;, both typeof
+/// branches in Visit are live; through INodeOps&lt;ChildNode&gt;, only the ChildNode branch survives.
+/// </summary>
+internal struct MultiTypeOps(
+    RefCountTable<ParentNode> parentTable,
+    RefCountTable<ChildNode> childTable) : INodeOps<ParentNode>, INodeOps<ChildNode>
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
+    {
+        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef);
+        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    readonly void INodeOps<ChildNode>.EnumerateChildren<TVisitor>(in ChildNode node, ref TVisitor visitor)
+    {
+        if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
+        if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
+    {
+        if (typeof(T) == typeof(ParentNode))
+            parentTable.Decrement(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
+        else if (typeof(T) == typeof(ChildNode))
+            childTable.Decrement(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
+    }
 }
