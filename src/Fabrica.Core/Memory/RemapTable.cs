@@ -22,11 +22,11 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded. Built by the coordinator (or a per-type merge worker) during Phase 1, read
 ///   during Phase 2a. No synchronization.
 /// </summary>
-internal sealed class RemapTable
+public sealed class RemapTable
 {
     private readonly UnsafeList<int>[] _remap;
 
-    internal RemapTable(int threadCount)
+    public RemapTable(int threadCount)
     {
         Debug.Assert(threadCount > 0, $"RemapTable requires at least 1 thread, got {threadCount}.");
         _remap = new UnsafeList<int>[threadCount];

@@ -35,7 +35,7 @@ namespace Fabrica.Core.Memory;
 ///   In Rust: a struct holding a reference to the <c>GlobalNodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
 ///   In C++: same, with <c>std::vector&lt;Handle&gt;</c>.
 /// </summary>
-internal readonly struct SnapshotSlice<TNode, TNodeOps>(GlobalNodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
+public readonly struct SnapshotSlice<TNode, TNodeOps>(GlobalNodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {

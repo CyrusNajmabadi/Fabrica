@@ -4,7 +4,7 @@ namespace Fabrica.Engine.Rendering;
 /// Renders one frame of output. Separated from the consumption loop so tests can observe render sequencing without depending on
 /// console output.
 /// </summary>
-internal interface IRenderer
+public interface IRenderer
 {
     /// <summary>
     /// Called by the consumption loop once per frame (≈60 Hz).

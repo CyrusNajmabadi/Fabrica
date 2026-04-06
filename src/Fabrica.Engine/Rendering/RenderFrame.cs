@@ -24,7 +24,7 @@ namespace Fabrica.Engine.Rendering;
 ///   INVARIANT: <see cref="Previous"/> and <see cref="Latest"/> are always two distinct simulation states. The consumption loop
 ///   waits until at least two entries are available before calling Consume, so both are always valid.
 /// </summary>
-internal readonly struct RenderFrame
+public readonly struct RenderFrame
 {
     public required WorldImage Previous { get; init; }
     public required WorldImage Latest { get; init; }
@@ -40,7 +40,7 @@ internal readonly struct RenderFrame
 ///
 /// where 0 = show Previous and 1 = show Latest. The renderer is free to apply clamping, easing, or any other policy.
 /// </summary>
-internal readonly struct InterpolationClock
+public readonly struct InterpolationClock
 {
     /// <summary>
     /// Wall-clock nanoseconds elapsed since <see cref="RenderFrame.Latest"/> was published by the simulation thread.

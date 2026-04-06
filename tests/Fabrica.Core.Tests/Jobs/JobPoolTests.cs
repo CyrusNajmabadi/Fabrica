@@ -12,10 +12,10 @@ public class JobPoolTests
         public int Value { get; set; }
         public bool Executed { get; set; }
 
-        internal override void Execute(WorkerContext context)
+        protected internal override void Execute(WorkerContext context)
             => this.Executed = true;
 
-        internal override void Reset()
+        protected internal override void Reset()
         {
             this.Value = 0;
             this.Executed = false;

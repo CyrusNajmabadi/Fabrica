@@ -29,7 +29,7 @@ namespace Fabrica.Core.Jobs;
 /// REFERENCE
 ///   D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
 /// </summary>
-internal sealed class WorkerPool : IDisposable
+public sealed class WorkerPool : IDisposable
 {
     /// <summary>Worker contexts, one per background thread. Length equals <see cref="_workerCount"/>.</summary>
     private readonly WorkerContext[] _allContexts;
@@ -67,7 +67,7 @@ internal sealed class WorkerPool : IDisposable
 
     internal const int MaxWorkerCount = 127;
 
-    internal WorkerPool(int workerCount = -1)
+    public WorkerPool(int workerCount = -1)
     {
         if (workerCount < 0)
             workerCount = Math.Min(Environment.ProcessorCount, MaxWorkerCount);
@@ -95,7 +95,7 @@ internal sealed class WorkerPool : IDisposable
         }
     }
 
-    internal int WorkerCount => _workerCount;
+    public int WorkerCount => _workerCount;
 
     // ── Job injection ─────────────────────────────────────────────────────────
 

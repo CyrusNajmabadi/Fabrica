@@ -53,11 +53,11 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
+public sealed class GlobalNodeStore<TNode, TNodeOps>
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
-    private TNodeOps _nodeOps = nodeOps;
+    private TNodeOps _nodeOps;
 
     /// <summary>
     /// Handles whose refcount reached zero during a decrement cascade, pending processing.
@@ -78,11 +78,28 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     private Action? _runValidation;
 #endif
 
+    /// <summary>
+    /// Creates a store with its own arena and refcount table. Call <see cref="SetNodeOps"/> to
+    /// complete two-phase initialization before using the store.
+    /// </summary>
+    public GlobalNodeStore() : this(new UnsafeSlabArena<TNode>(), new RefCountTable<TNode>(), default) { }
+
+    /// <summary>
+    /// Creates a store with caller-provided arena and refcount table. Used by tests (via IVT)
+    /// that need to inspect internal state.
+    /// </summary>
+    internal GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
+    {
+        this.Arena = arena;
+        this.RefCounts = refCounts;
+        _nodeOps = nodeOps;
+    }
+
     /// <summary>The slab-backed arena storing nodes of type <typeparamref name="TNode"/>.</summary>
-    public UnsafeSlabArena<TNode> Arena { get; } = arena;
+    internal UnsafeSlabArena<TNode> Arena { get; }
 
     /// <summary>Parallel refcount array — index <c>i</c> holds the refcount for the node at arena index <c>i</c>.</summary>
-    public RefCountTable<TNode> RefCounts { get; } = refCounts;
+    internal RefCountTable<TNode> RefCounts { get; }
 
     /// <summary>Debug-only assertion that the caller is on the owner thread. Delegates to the
     /// underlying <see cref="RefCountTable{T}"/> which holds the sole <see cref="Threading.SingleThreadedOwner"/>.</summary>
@@ -94,14 +111,14 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
     /// needs a reference back to this store (for same-type child decrement during cascade).
     /// </summary>
-    internal void SetNodeOps(TNodeOps ops) => _nodeOps = ops;
+    public void SetNodeOps(TNodeOps ops) => _nodeOps = ops;
 
     // ── Single-handle operations (used by visitor actions) ─────────────
 
     /// <summary>Increments the refcount for a single handle. Used by <see cref="INodeVisitor"/> implementations
     /// during child enumeration.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void IncrementRefCount(Handle<TNode> handle)
+    public void IncrementRefCount(Handle<TNode> handle)
         => this.RefCounts.Increment(handle);
 
     /// <summary>
@@ -114,7 +131,7 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// A→B→A bounces) push onto the existing pending stack instead of starting a nested loop.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void DecrementRefCount(Handle<TNode> handle)
+    public void DecrementRefCount(Handle<TNode> handle)
     {
         if (!this.RefCounts.Decrement(handle))
             return;

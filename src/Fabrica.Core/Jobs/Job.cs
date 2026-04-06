@@ -52,7 +52,7 @@ internal enum JobState : byte
 ///   the base type for the duration of <see cref="Execute"/>. The goal is that derived job classes
 ///   never interact with <see cref="WorkerContext"/> or scheduling internals directly.
 /// </summary>
-internal abstract class Job
+public abstract class Job
 {
     /// <summary>
     /// Number of prerequisite jobs that must complete before this job is eligible to run.
@@ -60,14 +60,14 @@ internal abstract class Job
     /// completes; the thread that brings it to zero enqueues the job. For root jobs (no
     /// dependencies), leave at default (0).
     /// </summary>
-    internal int RemainingDependencies;
+    public int RemainingDependencies;
 
     /// <summary>
     /// Downstream jobs whose dependency counts should be decremented when this job completes.
     /// The scheduler iterates this array after <see cref="Execute"/> returns. May be null if
     /// this job has no dependents (leaf of the DAG).
     /// </summary>
-    internal Job[]? Dependents;
+    public Job[]? Dependents;
 
     /// <summary>
     /// The <see cref="JobScheduler"/> that owns this job's DAG. Set by <see cref="JobScheduler.Submit"/>
@@ -92,12 +92,12 @@ internal abstract class Job
     /// access to the executing thread's deque (for enqueuing sub-jobs via
     /// <see cref="WorkerContext.Enqueue"/>) and worker index.
     /// </summary>
-    internal abstract void Execute(WorkerContext context);
+    protected internal abstract void Execute(WorkerContext context);
 
     /// <summary>
     /// Resets this job's state for pool reuse. Called by the coordinator during the DAG sweep
     /// after the scheduler's outstanding count reaches zero. Subclasses must clear all
     /// input/output buffer references and any other mutable state.
     /// </summary>
-    internal abstract void Reset();
+    protected internal abstract void Reset();
 }

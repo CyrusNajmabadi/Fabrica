@@ -36,7 +36,7 @@ namespace Fabrica.Core.Memory;
 ///   other conditions via <c>&amp;&amp;</c> — to match the pattern the JIT recognizes for
 ///   reliable dead-branch elimination.
 /// </summary>
-internal interface INodeVisitor
+public interface INodeVisitor
 {
     void Visit<T>(Handle<T> handle)
         where T : struct

@@ -16,10 +16,8 @@ namespace Fabrica.Core.Jobs;
 /// ONE DAG AT A TIME
 ///   <see cref="Submit"/> blocks until the DAG completes, so only one DAG is in flight at a time.
 /// </summary>
-internal sealed class JobScheduler
+public sealed class JobScheduler(WorkerPool pool)
 {
-    private readonly WorkerPool _pool;
-
     /// <summary>
     /// Number of jobs that have been enqueued but not yet completed. Incremented on every enqueue
     /// (submit, sub-job enqueue, dependency propagation); decremented after each execution
@@ -33,8 +31,6 @@ internal sealed class JobScheduler
     /// </summary>
     private readonly ManualResetEventSlim _completionSignal = new(false);
 
-    internal JobScheduler(WorkerPool pool) => _pool = pool;
-
     // ── Coordinator API ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -42,7 +38,7 @@ internal sealed class JobScheduler
     /// completes. Returns <c>true</c> if completed, <c>false</c> if the timeout expired. Pass
     /// <c>-1</c> for no timeout.
     /// </summary>
-    internal bool Submit(Job job, int millisecondsTimeout = -1)
+    public bool Submit(Job job, int millisecondsTimeout = -1)
     {
         this.InjectJob(job);
         return this.WaitForCompletion(millisecondsTimeout);
@@ -77,7 +73,7 @@ internal sealed class JobScheduler
 #endif
         job.Scheduler = this;
         Interlocked.Increment(ref _outstandingJobs);
-        _pool.Inject(job);
+        pool.Inject(job);
     }
 
     private bool WaitForCompletion(int millisecondsTimeout)

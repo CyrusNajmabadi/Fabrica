@@ -10,7 +10,7 @@ namespace Fabrica.Engine.Rendering;
 /// Owns the <see cref="RenderCoordinator"/> that dispatches parallel render work. Builds a <see cref="RenderFrame"/> from the
 /// segment's first (previous) and last (latest) entries and calls the domain renderer.
 /// </summary>
-internal struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) : IConsumer<WorldImage>
+public struct RenderConsumer<TRenderer>(int workerCount, TRenderer renderer) : IConsumer<WorldImage>
     where TRenderer : struct, IRenderer
 {
     private readonly RenderCoordinator _renderCoordinator = new(workerCount);

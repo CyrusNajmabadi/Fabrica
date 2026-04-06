@@ -24,7 +24,7 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded during the work phase (the owning worker). Single-threaded during
 ///   the merge phase (the coordinator or a merge-worker for this type). No synchronization.
 /// </summary>
-internal sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
+public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
 {
     private readonly UnsafeList<T> _list = new(initialCapacity);
     private readonly UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);

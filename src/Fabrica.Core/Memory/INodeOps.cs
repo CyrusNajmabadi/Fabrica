@@ -19,7 +19,7 @@ namespace Fabrica.Core.Memory;
 ///   Both the node ops and the visitor are struct type parameters. The JIT specializes
 ///   each combination into separate method bodies with no interface dispatch.
 /// </summary>
-internal interface INodeOps<TNode> : INodeVisitor where TNode : struct
+public interface INodeOps<TNode> : INodeVisitor where TNode : struct
 {
     void EnumerateChildren<TVisitor>(in TNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor

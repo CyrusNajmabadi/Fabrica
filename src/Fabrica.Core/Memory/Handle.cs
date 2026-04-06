@@ -5,7 +5,7 @@ namespace Fabrica.Core.Memory;
 /// with a different arena/table. <typeparamref name="T"/> is the node struct type this handle
 /// refers to — it is never stored, only used for compile-time discrimination.
 /// </summary>
-internal readonly struct Handle<T>(int index) : IEquatable<Handle<T>> where T : struct
+public readonly struct Handle<T>(int index) : IEquatable<Handle<T>> where T : struct
 {
     public static readonly Handle<T> None = new(-1);
 

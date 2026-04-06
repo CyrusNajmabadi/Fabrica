@@ -16,9 +16,9 @@ namespace Fabrica.Core.Jobs;
 ///   operation. This is safe because <see cref="Enqueue"/> is only called during
 ///   <see cref="Job.Execute"/>, which runs on the thread that owns this context's deque.
 /// </summary>
-internal sealed class WorkerContext(WorkerPool pool, int workerIndex)
+public sealed class WorkerContext(WorkerPool pool, int workerIndex)
 {
-    internal readonly int WorkerIndex = workerIndex;
+    public readonly int WorkerIndex = workerIndex;
     internal readonly WorkStealingDeque<Job> Deque = new();
 
     /// <summary>Round-robin offset for steal target selection. Accessed only by the owning thread.</summary>

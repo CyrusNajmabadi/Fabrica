@@ -177,7 +177,7 @@ public class JobMergePipelineTests : IDisposable
         internal int ValueStart;
         internal Handle<ChildNode>[] AllocatedHandles = null!;
 
-        internal override void Execute(WorkerContext context)
+        protected internal override void Execute(WorkerContext context)
         {
             var tlb = ChildTlbs[context.WorkerIndex];
             AllocatedHandles = new Handle<ChildNode>[ChildCount];
@@ -189,7 +189,7 @@ public class JobMergePipelineTests : IDisposable
             }
         }
 
-        internal override void Reset()
+        protected internal override void Reset()
         {
             ChildTlbs = null!;
             AllocatedHandles = null!;
@@ -207,7 +207,7 @@ public class JobMergePipelineTests : IDisposable
         internal ThreadLocalBuffer<ParentNode>[] ParentTlbs = null!;
         internal CreateChildNodesJob[] ChildSources = null!;
 
-        internal override void Execute(WorkerContext context)
+        protected internal override void Execute(WorkerContext context)
         {
             var tlb = ParentTlbs[context.WorkerIndex];
 
@@ -232,7 +232,7 @@ public class JobMergePipelineTests : IDisposable
                 tlb.MarkRoot(lastHandle);
         }
 
-        internal override void Reset()
+        protected internal override void Reset()
         {
             ParentTlbs = null!;
             ChildSources = null!;

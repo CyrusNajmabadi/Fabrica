@@ -14,14 +14,14 @@ public class JobSchedulerTests
         public int ExecutedOnWorker { get; set; } = -1;
         public Action<WorkerContext>? OnExecute { get; set; }
 
-        internal override void Execute(WorkerContext context)
+        protected internal override void Execute(WorkerContext context)
         {
             this.ExecutedOnWorker = context.WorkerIndex;
             this.Executed = true;
             this.OnExecute?.Invoke(context);
         }
 
-        internal override void Reset()
+        protected internal override void Reset()
         {
             this.Executed = false;
             this.ExecutedOnWorker = -1;
