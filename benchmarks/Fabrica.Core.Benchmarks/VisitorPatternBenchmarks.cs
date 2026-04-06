@@ -13,7 +13,7 @@ namespace Fabrica.Core.Benchmarks;
 ///
 /// Both the increment path (hot path for adding children) and the cascade-decrement path
 /// (OnFreed handler) are benchmarked. The "Visitor" variants use <see cref="INodeChildEnumerator{TNode}"/>
-/// and <see cref="INodeVisitor"/> / <see cref="RefCountTable{TNode}.DecrementNodeRefCountVisitor{THandler}"/> throughout.
+/// and <see cref="INodeVisitor"/> to traverse children and call <see cref="RefCountTable{TNode}.Decrement{THandler}"/>.
 /// The "Direct" variants hand-roll all child traversal.
 /// </summary>
 [ShortRunJob]
@@ -145,13 +145,30 @@ public class VisitorPatternBenchmarks
     // VISITOR — enumerator-based cascade handlers
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// Per-child refcount cascade for <see cref="ChildNode"/> via <see cref="INodeVisitor"/>; mirrors
+    /// <see cref="DirectChildHandler"/> but routes through <see cref="ChildNodeEnumerator"/>.
+    /// </summary>
+    private struct ChildDecrementVisitor(RefCountTable<ChildNode> table, VisitorChildHandler handler) : INodeVisitor
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        {
+            if (typeof(TChild) == typeof(ChildNode))
+            {
+                var c = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child);
+                table.Decrement(c, handler);
+            }
+        }
+    }
+
     private struct VisitorChildHandler(UnsafeSlabArena<ChildNode> arena, ChildNodeEnumerator enumerator) : RefCountTable<ChildNode>.IRefCountHandler
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
+        public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
         {
             ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<ChildNode>.DecrementNodeRefCountVisitor<VisitorChildHandler>(table, this);
+            var visitor = new ChildDecrementVisitor(table, this);
             enumerator.EnumerateChildren(in node, ref visitor);
             arena.Free(handle);
         }
@@ -197,7 +214,7 @@ public class VisitorPatternBenchmarks
         public ParentNodeEnumerator Enumerator;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
+        public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
         {
             ref readonly var node = ref World.ParentArena[handle];
             var visitor = new VisitorParentDecrementNodeVisitor(table, this, World.ChildRefCounts, ChildHandler);

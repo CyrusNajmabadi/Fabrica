@@ -26,6 +26,9 @@ namespace Fabrica.Core.Memory;
 ///   active and a re-entrant <see cref="Decrement{THandler}"/> hits zero, the index is pushed onto the pending
 ///   stack and the outer loop processes it — no nested loops, bounded stack depth.
 ///
+///   In production, <see cref="NodeStore{TNode,TNodeOps}"/> provides the handler via an internal
+///   <c>CascadeAdapter</c> that bridges the <see cref="INodeVisitor"/> pattern to <see cref="IRefCountHandler"/>.
+///
 /// STRUCT GENERIC PATTERN
 ///   <see cref="Decrement{THandler}"/> and <see cref="DecrementBatch{THandler}"/> take a struct type parameter
 ///   constrained to <see cref="IRefCountHandler"/>. The JIT specializes per struct type, eliminating interface
@@ -82,7 +85,7 @@ internal sealed partial class RefCountTable<T> where T : struct
     // ── Thread ownership ──────────────────────────────────────────────────
 
     /// <summary>Debug-only assertion that the caller is on the owner thread. Types that wrap a
-    /// <see cref="RefCountTable{T}"/> (e.g., <see cref="NodeStore{TNode, THandler}"/>) delegate
+    /// <see cref="RefCountTable{T}"/> (e.g., <see cref="NodeStore{TNode, TNodeOps}"/>) delegate
     /// here rather than maintaining their own <see cref="SingleThreadedOwner"/>.</summary>
     [Conditional("DEBUG")]
     internal void AssertOwnerThread()

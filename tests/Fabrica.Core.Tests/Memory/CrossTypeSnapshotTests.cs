@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
@@ -7,7 +6,7 @@ using Xunit;
 namespace Fabrica.Core.Tests.Memory;
 
 /// <summary>
-/// Tests cross-type DAGs: type A nodes referencing type B nodes stored in a different <see cref="NodeStore{TNode,THandler}"/>.
+/// Tests cross-type DAGs: type A nodes referencing type B nodes stored in a different <see cref="NodeStore{TNode,TNodeOps}"/>.
 /// Validates that cascade-free correctly crosses store boundaries.
 /// </summary>
 public class CrossTypeSnapshotTests
@@ -30,87 +29,59 @@ public class CrossTypeSnapshotTests
         public int Value;
     }
 
-    // ── Handlers ─────────────────────────────────────────────────────────
+    // ── Node ops (enumerator + cascade visitor per store) ───────────────
 
-    private struct ChildHandler(UnsafeSlabArena<ChildNode> arena, ChildChildEnumerator enumerator) : RefCountTable<ChildNode>.IRefCountHandler
+    private struct ChildNodeOps : INodeChildEnumerator<ChildNode>, INodeVisitor
     {
-        public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
+        internal NodeStore<ChildNode, ChildNodeOps> ChildStore;
+
+        public readonly void EnumerateChildren<TVisitor>(in ChildNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
-            ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<ChildNode>.DecrementNodeRefCountVisitor<ChildHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
+            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
+            if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
+        }
+
+        public readonly void Visit<TChild>(Handle<TChild> child)
+            where TChild : struct
+        {
+            if (typeof(TChild) == typeof(ChildNode))
+            {
+                var tmp = child;
+                var c = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref tmp);
+                ChildStore.DecrementRefCount(c);
+            }
         }
     }
 
-    /// <summary>
-    /// Cross-type decrement: dispatches to the correct <see cref="RefCountTable{T}"/> based on
-    /// the child's type. The <c>typeof</c> checks are JIT constants — dead branches are eliminated.
-    /// </summary>
-    private struct ParentDecrementNodeVisitor(
-        RefCountTable<ParentNode> parentTable,
-        ParentHandler parentHandler,
-        RefCountTable<ChildNode> childTable,
-        ChildHandler childHandler) : INodeVisitor
+    private struct ParentNodeOps : INodeChildEnumerator<ParentNode>, INodeVisitor
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
-        {
-            if (typeof(TChild) == typeof(ParentNode))
-                this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
-            else if (typeof(TChild) == typeof(ChildNode))
-                this.DecrementChild(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
-        }
+        internal NodeStore<ParentNode, ParentNodeOps> ParentStore;
+        internal NodeStore<ChildNode, ChildNodeOps> ChildStore;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly void DecrementParent(Handle<ParentNode> child)
-        {
-            Debug.Assert(child.IsValid);
-            parentTable.Decrement(child, parentHandler);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly void DecrementChild(Handle<ChildNode> child)
-        {
-            Debug.Assert(child.IsValid);
-            childTable.Decrement(child, childHandler);
-        }
-    }
-
-    private struct ParentHandler(
-        UnsafeSlabArena<ParentNode> parentArena,
-        NodeStore<ChildNode, ChildHandler> childStore,
-        ParentChildEnumerator enumerator) : RefCountTable<ParentNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
-        {
-            ref readonly var node = ref parentArena[handle];
-            var visitor = new ParentDecrementNodeVisitor(table, this, childStore.RefCounts, childStore.GetTestAccessor().Handler);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            parentArena.Free(handle);
-        }
-    }
-
-    // ── Child enumerators (all children, including cross-type) ─────────
-
-    private struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
-    {
-        public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
             if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
-    }
 
-    private struct ChildChildEnumerator : INodeChildEnumerator<ChildNode>
-    {
-        public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void Visit<TChild>(Handle<TChild> child)
+            where TChild : struct
         {
-            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
-            if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
+            if (typeof(TChild) == typeof(ParentNode))
+            {
+                var tmp = child;
+                var c = Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref tmp);
+                ParentStore.DecrementRefCount(c);
+            }
+            else if (typeof(TChild) == typeof(ChildNode))
+            {
+                var tmp = child;
+                var c = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref tmp);
+                ChildStore.DecrementRefCount(c);
+            }
         }
     }
 
@@ -120,8 +91,8 @@ public class CrossTypeSnapshotTests
     private const int ChildTypeId = 1;
 
     private struct CrossStoreAccessor(
-        NodeStore<ParentNode, ParentHandler> parentStore,
-        NodeStore<ChildNode, ChildHandler> childStore) : DagValidator.IWorldAccessor
+        NodeStore<ParentNode, ParentNodeOps> parentStore,
+        NodeStore<ChildNode, ChildNodeOps> childStore) : DagValidator.IWorldAccessor
     {
         public readonly int TypeCount => 2;
 
@@ -158,8 +129,8 @@ public class CrossTypeSnapshotTests
     }
 
     private static void AssertCrossStoreValid(
-        NodeStore<ParentNode, ParentHandler> parentStore,
-        NodeStore<ChildNode, ChildHandler> childStore,
+        NodeStore<ParentNode, ParentNodeOps> parentStore,
+        NodeStore<ChildNode, ChildNodeOps> childStore,
         ReadOnlySpan<Handle<ParentNode>> parentRoots,
         ReadOnlySpan<Handle<ChildNode>> childRoots,
         bool strict = true)
@@ -175,28 +146,26 @@ public class CrossTypeSnapshotTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static (NodeStore<ParentNode, ParentHandler> parentStore, NodeStore<ChildNode, ChildHandler> childStore)
+    private static (NodeStore<ParentNode, ParentNodeOps> parentStore, NodeStore<ChildNode, ChildNodeOps> childStore)
         CreateStores()
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childEnumerator = new ChildChildEnumerator();
-        var childHandler = new ChildHandler(childArena, childEnumerator);
-        var childStore = new NodeStore<ChildNode, ChildHandler>(childArena, childRefCounts, childHandler);
-        childStore.EnableValidation(childEnumerator);
+        var childStore = new NodeStore<ChildNode, ChildNodeOps>(childArena, childRefCounts, default);
+        childStore.SetNodeOps(new ChildNodeOps { ChildStore = childStore });
+        childStore.EnableValidation();
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentEnumerator = new ParentChildEnumerator();
-        var parentHandler = new ParentHandler(parentArena, childStore, parentEnumerator);
-        var parentStore = new NodeStore<ParentNode, ParentHandler>(parentArena, parentRefCounts, parentHandler);
-        parentStore.EnableValidation(parentEnumerator);
+        var parentStore = new NodeStore<ParentNode, ParentNodeOps>(parentArena, parentRefCounts, default);
+        parentStore.SetNodeOps(new ParentNodeOps { ParentStore = parentStore, ChildStore = childStore });
+        parentStore.EnableValidation();
 
         return (parentStore, childStore);
     }
 
     private static Handle<ChildNode> AllocChild(
-        NodeStore<ChildNode, ChildHandler> store,
+        NodeStore<ChildNode, ChildNodeOps> store,
         Handle<ChildNode> left,
         Handle<ChildNode> right,
         int value)
@@ -212,8 +181,8 @@ public class CrossTypeSnapshotTests
     }
 
     private static Handle<ParentNode> AllocParent(
-        NodeStore<ParentNode, ParentHandler> parentStore,
-        NodeStore<ChildNode, ChildHandler> childStore,
+        NodeStore<ParentNode, ParentNodeOps> parentStore,
+        NodeStore<ChildNode, ChildNodeOps> childStore,
         Handle<ParentNode> leftParent,
         Handle<ParentNode> rightParent,
         Handle<ChildNode> childRef)
@@ -255,7 +224,7 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childRoot);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(parentRoot);
         parentSlice.IncrementRootRefCounts();
 
@@ -293,11 +262,11 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childLeaf);
 
-        var slice1 = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var slice1 = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         slice1.AddRoot(parent1);
         slice1.IncrementRootRefCounts();
 
-        var slice2 = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var slice2 = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         slice2.AddRoot(parent2);
         slice2.IncrementRootRefCounts();
 
@@ -324,12 +293,12 @@ public class CrossTypeSnapshotTests
             childNode);
 
         // Parent holds childNode via cross-type reference
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(parentNode);
         parentSlice.IncrementRootRefCounts();
 
         // Child is ALSO a direct root in a child snapshot
-        var childSlice = new SnapshotSlice<ChildNode, ChildHandler>(childStore);
+        var childSlice = new SnapshotSlice<ChildNode, ChildNodeOps>(childStore);
         childSlice.AddRoot(childNode);
         childSlice.IncrementRootRefCounts();
 
@@ -360,11 +329,11 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childRoot);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(parentNode);
         parentSlice.IncrementRootRefCounts();
 
-        var childSlice = new SnapshotSlice<ChildNode, ChildHandler>(childStore);
+        var childSlice = new SnapshotSlice<ChildNode, ChildNodeOps>(childStore);
         childSlice.AddRoot(childRoot);
         childSlice.IncrementRootRefCounts();
 
@@ -418,11 +387,11 @@ public class CrossTypeSnapshotTests
         var cStandalone = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 99);
 
         // Composite snapshot: parent slice has pRoot, child slice has cRoot + cStandalone
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(pRoot);
         parentSlice.IncrementRootRefCounts();
 
-        var childSlice = new SnapshotSlice<ChildNode, ChildHandler>(childStore);
+        var childSlice = new SnapshotSlice<ChildNode, ChildNodeOps>(childStore);
         childSlice.AddRoot(cRoot);
         childSlice.AddRoot(cStandalone);
         childSlice.IncrementRootRefCounts();
@@ -459,11 +428,11 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             cLeaf);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(pNode);
         parentSlice.IncrementRootRefCounts();
 
-        var childSlice = new SnapshotSlice<ChildNode, ChildHandler>(childStore);
+        var childSlice = new SnapshotSlice<ChildNode, ChildNodeOps>(childStore);
         childSlice.AddRoot(cLeaf);
         childSlice.IncrementRootRefCounts();
 
@@ -525,7 +494,7 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             exclusive);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(pRoot1);
         parentSlice.AddRoot(pRoot2);
         parentSlice.AddRoot(pRoot3);
@@ -568,8 +537,8 @@ public class CrossTypeSnapshotTests
         var sharedChild = AllocChild(childStore, cA, cB, 0);
 
         var parentRoots = new Handle<ParentNode>[3];
-        var parentSlices = new SnapshotSlice<ParentNode, ParentHandler>[3];
-        var childSlices = new SnapshotSlice<ChildNode, ChildHandler>[3];
+        var parentSlices = new SnapshotSlice<ParentNode, ParentNodeOps>[3];
+        var childSlices = new SnapshotSlice<ChildNode, ChildNodeOps>[3];
 
         for (var i = 0; i < 3; i++)
         {
@@ -581,12 +550,12 @@ public class CrossTypeSnapshotTests
                 Handle<ParentNode>.None,
                 sharedChild);
 
-            parentSlices[i] = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+            parentSlices[i] = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
             parentSlices[i].AddRoot(parentRoots[i]);
             parentSlices[i].IncrementRootRefCounts();
 
             // Each snapshot also directly roots the shared child
-            childSlices[i] = new SnapshotSlice<ChildNode, ChildHandler>(childStore);
+            childSlices[i] = new SnapshotSlice<ChildNode, ChildNodeOps>(childStore);
             childSlices[i].AddRoot(sharedChild);
             childSlices[i].IncrementRootRefCounts();
         }
@@ -636,7 +605,7 @@ public class CrossTypeSnapshotTests
         var pMid = AllocParent(parentStore, childStore, pLeaf, Handle<ParentNode>.None, cMid);
         var pRoot = AllocParent(parentStore, childStore, pMid, Handle<ParentNode>.None, cRoot);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(pRoot);
         parentSlice.IncrementRootRefCounts();
 
@@ -679,11 +648,11 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             cMid);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(pRoot);
         parentSlice.IncrementRootRefCounts();
 
-        var childSlice = new SnapshotSlice<ChildNode, ChildHandler>(childStore);
+        var childSlice = new SnapshotSlice<ChildNode, ChildNodeOps>(childStore);
         childSlice.AddRoot(cRoot);
         childSlice.AddRoot(cLeaf);
         childSlice.IncrementRootRefCounts();
@@ -817,7 +786,7 @@ public class CrossTypeSnapshotTests
         var pRoot = AllocParent(parentStore, childStore,
             Handle<ParentNode>.None, Handle<ParentNode>.None, cLeaf);
 
-        var parentSlice = new SnapshotSlice<ParentNode, ParentHandler>(parentStore);
+        var parentSlice = new SnapshotSlice<ParentNode, ParentNodeOps>(parentStore);
         parentSlice.AddRoot(pRoot);
         parentSlice.IncrementRootRefCounts();
 

@@ -20,7 +20,7 @@ using Fabrica.Core.Memory;
     AssertRefCount(table, h0, 1, "Visit: after Increment");
 
     var handler = new TreeHandler(arena, default);
-    var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, handler);
+    var visitor = new TreeDecrementVisitor(table, handler);
 
     VisitDifferentType(ref visitor, new Handle<OtherNode>(0));
     AssertRefCount(table, h0, 1, "Visit: after VisitDifferentType (should be unchanged)");
@@ -50,7 +50,7 @@ using Fabrica.Core.Memory;
 
     var enumerator = new TreeChildEnumerator();
     var handler = new TreeHandler(arena, enumerator);
-    var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, handler);
+    var visitor = new TreeDecrementVisitor(table, handler);
 
     // EnumerateDecrement walks root's children and decrements each.
     // This exercises: enumerator.EnumerateChildren → visitor.Visit → table.Decrement.
@@ -83,10 +83,10 @@ using Fabrica.Core.Memory;
     mixedArena[parent] = new MixedNode { SameChild = mixedChild, CrossChild = otherChild };
     mixedTable.Increment(parent);
 
-    // DecrementNodeRefCountVisitor is only for MixedNode — it should decrement mixedChild
+    // MixedDecrementVisitor is only for MixedNode — it should decrement mixedChild
     // but completely ignore otherChild (the typeof(OtherNode) branch is eliminated).
     var handler = new MixedHandler(mixedArena, default);
-    var visitor = new RefCountTable<MixedNode>.DecrementNodeRefCountVisitor<MixedHandler>(mixedTable, handler);
+    var visitor = new MixedDecrementVisitor(mixedTable, handler);
     var enumerator = new MixedChildEnumerator();
 
     EnumerateMixedDecrement(ref enumerator, in mixedArena[parent], ref visitor);
@@ -146,7 +146,7 @@ static void AssertRefCount<T>(RefCountTable<T> table, Handle<T> handle, int expe
 
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void VisitSameType(
-    ref RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler> visitor,
+    ref TreeDecrementVisitor visitor,
     Handle<TreeNode> child)
 {
     visitor.Visit(child);
@@ -154,7 +154,7 @@ static void VisitSameType(
 
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void VisitDifferentType(
-    ref RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler> visitor,
+    ref TreeDecrementVisitor visitor,
     Handle<OtherNode> child)
 {
     visitor.Visit(child);
@@ -165,7 +165,7 @@ static void VisitDifferentType(
 static void EnumerateDecrement(
     ref TreeChildEnumerator enumerator,
     in TreeNode node,
-    ref RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler> visitor)
+    ref TreeDecrementVisitor visitor)
 {
     enumerator.EnumerateChildren(in node, ref visitor);
 }
@@ -176,7 +176,7 @@ static void EnumerateDecrement(
 static void EnumerateMixedDecrement(
     ref MixedChildEnumerator enumerator,
     in MixedNode node,
-    ref RefCountTable<MixedNode>.DecrementNodeRefCountVisitor<MixedHandler> visitor)
+    ref MixedDecrementVisitor visitor)
 {
     enumerator.EnumerateChildren(in node, ref visitor);
 }
@@ -206,7 +206,7 @@ internal struct OtherNode
     public int Value { get; set; }
 }
 
-/// <summary>A node with children of two different types — used with DecrementNodeRefCountVisitor
+/// <summary>A node with children of two different types — used with MixedDecrementVisitor
 /// which only handles one type (the cross-type child is dead-branch eliminated).</summary>
 internal struct MixedNode
 {
@@ -288,9 +288,35 @@ internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
 
 // ── Visitors ─────────────────────────────────────────────────────────────
 
+internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table, TreeHandler handler) : INodeVisitor
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    {
+        if (typeof(TChild) == typeof(TreeNode))
+        {
+            var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+            table.Decrement(c, handler);
+        }
+    }
+}
+
+internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table, MixedHandler handler) : INodeVisitor
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    {
+        if (typeof(TChild) == typeof(MixedNode))
+        {
+            var c = Unsafe.As<Handle<TChild>, Handle<MixedNode>>(ref child);
+            table.Decrement(c, handler);
+        }
+    }
+}
+
 /// <summary>
 /// Custom visitor with two active typeof branches — one for ParentNode, one for ChildNode.
-/// Unlike DecrementNodeRefCountVisitor (which only handles one type), both branches here
+/// Unlike TreeDecrementVisitor / MixedDecrementVisitor (which only handle one type), both branches here
 /// are live: the JIT should resolve each typeof check to the correct Decrement call with
 /// no dead-branch elimination (both are reachable).
 /// </summary>
@@ -325,7 +351,7 @@ internal struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator
     public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
     {
         ref readonly var node = ref arena[handle];
-        var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
+        var visitor = new TreeDecrementVisitor(table, this);
         enumerator.EnumerateChildren(in node, ref visitor);
         arena.Free(handle);
     }
@@ -338,7 +364,7 @@ internal struct MixedHandler(UnsafeSlabArena<MixedNode> arena, MixedChildEnumera
     public readonly void OnFreed(Handle<MixedNode> handle, RefCountTable<MixedNode> table)
     {
         ref readonly var node = ref arena[handle];
-        var visitor = new RefCountTable<MixedNode>.DecrementNodeRefCountVisitor<MixedHandler>(table, this);
+        var visitor = new MixedDecrementVisitor(table, this);
         enumerator.EnumerateChildren(in node, ref visitor);
         arena.Free(handle);
     }

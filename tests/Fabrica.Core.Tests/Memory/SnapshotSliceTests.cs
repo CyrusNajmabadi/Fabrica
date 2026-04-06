@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 using Xunit;
@@ -14,40 +15,40 @@ public class SnapshotSliceTests
         public int Value;
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
+    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
     {
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
-        {
-            ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
-        }
-    }
+        internal NodeStore<TreeNode, TreeNodeOps> Store;
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
-    {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
+
+        public readonly void Visit<TChild>(Handle<TChild> child)
+            where TChild : struct
+        {
+            if (typeof(TChild) == typeof(TreeNode))
+            {
+                var c = child;
+                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref c));
+            }
+        }
     }
 
-    private static NodeStore<TreeNode, TreeHandler> CreateStore()
+    private static NodeStore<TreeNode, TreeNodeOps> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var enumerator = new TreeChildEnumerator();
-        var handler = new TreeHandler(arena, enumerator);
-        var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
-        store.EnableValidation(enumerator);
+        var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        store.SetNodeOps(new TreeNodeOps { Store = store });
+        store.EnableValidation();
         return store;
     }
 
     private static Handle<TreeNode> AllocNode(
-        NodeStore<TreeNode, TreeHandler> store,
+        NodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> left,
         Handle<TreeNode> right,
         int value)
@@ -70,7 +71,7 @@ public class SnapshotSliceTests
         var leaf = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
         var root = AllocNode(store, leaf, Handle<TreeNode>.None, 0);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice.AddRoot(root);
         Assert.Equal(1, slice.Count);
 
@@ -92,7 +93,7 @@ public class SnapshotSliceTests
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
         var c = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 3);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice.AddRoot(a);
         slice.AddRoot(b);
         slice.AddRoot(c);
@@ -117,7 +118,7 @@ public class SnapshotSliceTests
         var b = store.Arena.Allocate();
         store.RefCounts.EnsureCapacity(Math.Max(a.Index, b.Index) + 1);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice.AddRoot(a);
         slice.AddRoot(b);
 
@@ -135,7 +136,7 @@ public class SnapshotSliceTests
         var b = store.Arena.Allocate();
         store.RefCounts.EnsureCapacity(Math.Max(a.Index, b.Index) + 1);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice.AddRoot(a);
         slice.AddRoot(b);
         Assert.Equal(2, slice.Count);
@@ -158,12 +159,12 @@ public class SnapshotSliceTests
 
         var sharedList = new List<Handle<TreeNode>>();
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeHandler>(store, sharedList);
+        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, sharedList);
         slice1.AddRoot(a);
         Assert.Equal(1, slice1.Count);
         slice1.Clear();
 
-        var slice2 = new SnapshotSlice<TreeNode, TreeHandler>(store, sharedList);
+        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, sharedList);
         slice2.AddRoot(b);
         Assert.Equal(1, slice2.Count);
         Assert.Equal(b, slice2.Roots[0]);
@@ -185,11 +186,11 @@ public class SnapshotSliceTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice1.AddRoot(root1);
         slice1.IncrementRootRefCounts();
 
-        var slice2 = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice2.AddRoot(root2);
         slice2.IncrementRootRefCounts();
 
@@ -218,11 +219,11 @@ public class SnapshotSliceTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice1.AddRoot(root1);
         slice1.IncrementRootRefCounts();
 
-        var slice2 = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice2.AddRoot(root2);
         slice2.IncrementRootRefCounts();
 
@@ -257,7 +258,7 @@ public class SnapshotSliceTests
         var b = AllocNode(store, e, f, 2);
         var root = AllocNode(store, a, b, 0);
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice1.AddRoot(root);
         slice1.IncrementRootRefCounts();
 
@@ -266,7 +267,7 @@ public class SnapshotSliceTests
         var aPrime = AllocNode(store, cPrime, d, 1);
         var rootPrime = AllocNode(store, aPrime, b, 0);
 
-        var slice2 = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice2.AddRoot(rootPrime);
         slice2.IncrementRootRefCounts();
 
@@ -320,12 +321,12 @@ public class SnapshotSliceTests
 
         var shared = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 99);
         var roots = new Handle<TreeNode>[3];
-        var slices = new SnapshotSlice<TreeNode, TreeHandler>[3];
+        var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[3];
 
         for (var i = 0; i < 3; i++)
         {
             roots[i] = AllocNode(store, shared, Handle<TreeNode>.None, i);
-            slices[i] = new SnapshotSlice<TreeNode, TreeHandler>(store);
+            slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
             slices[i].AddRoot(roots[i]);
             slices[i].IncrementRootRefCounts();
         }

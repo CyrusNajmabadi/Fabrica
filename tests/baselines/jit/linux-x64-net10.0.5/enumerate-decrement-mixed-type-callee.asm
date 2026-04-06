@@ -1,4 +1,4 @@
-; Assembly listing for method MixedChildEnumerator:EnumerateChildren[Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[MixedNode,MixedHandler]](byref,byref):this (FullOpts)
+; Assembly listing for method MixedChildEnumerator:EnumerateChildren[MixedDecrementVisitor](byref,byref):this (FullOpts)
 ; Emitting BLENDED_CODE for generic X64 on Unix
 ; FullOpts code
 ; optimized code
@@ -24,7 +24,7 @@ G_M000_IG02:                ;; offset=0x000F
 G_M000_IG03:                ;; offset=0x001E
        mov      esi, dword ptr [rbx]
        mov      rdi, r15
-       call     [Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[MixedNode,MixedHandler]:Visit[MixedNode](Fabrica.Core.Memory.Handle`1[MixedNode]):this]
+       call     [MixedDecrementVisitor:Visit[MixedNode](Fabrica.Core.Memory.Handle`1[MixedNode]):this]
  
 G_M000_IG04:                ;; offset=0x0029
        lea      rdi, bword ptr [rbx+0x04]
@@ -46,7 +46,7 @@ G_M000_IG07:                ;; offset=0x0042
        pop      rbx
        pop      r15
        pop      rbp
-       tail.jmp [Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[MixedNode,MixedHandler]:Visit[OtherNode](Fabrica.Core.Memory.Handle`1[OtherNode]):this]
+       tail.jmp [MixedDecrementVisitor:Visit[OtherNode](Fabrica.Core.Memory.Handle`1[OtherNode]):this]
  
 ; Total bytes of code 76
 

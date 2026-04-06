@@ -1,4 +1,4 @@
-; Assembly listing for method TreeChildEnumerator:EnumerateChildren[Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[TreeNode,TreeHandler]](byref,byref):this (FullOpts)
+; Assembly listing for method TreeChildEnumerator:EnumerateChildren[TreeDecrementVisitor](byref,byref):this (FullOpts)
 ; Emitting BLENDED_CODE for generic X64 on Unix
 ; FullOpts code
 ; optimized code
@@ -24,7 +24,7 @@ G_M000_IG02:                ;; offset=0x000F
 G_M000_IG03:                ;; offset=0x001E
        mov      esi, dword ptr [rbx]
        mov      rdi, r15
-       call     [Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[TreeNode,TreeHandler]:Visit[TreeNode](Fabrica.Core.Memory.Handle`1[TreeNode]):this]
+       call     [TreeDecrementVisitor:Visit[TreeNode](Fabrica.Core.Memory.Handle`1[TreeNode]):this]
  
 G_M000_IG04:                ;; offset=0x0029
        lea      rdi, bword ptr [rbx+0x04]
@@ -46,7 +46,7 @@ G_M000_IG07:                ;; offset=0x0042
        pop      rbx
        pop      r15
        pop      rbp
-       tail.jmp [Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[TreeNode,TreeHandler]:Visit[TreeNode](Fabrica.Core.Memory.Handle`1[TreeNode]):this]
+       tail.jmp [TreeDecrementVisitor:Visit[TreeNode](Fabrica.Core.Memory.Handle`1[TreeNode]):this]
  
 ; Total bytes of code 76
 

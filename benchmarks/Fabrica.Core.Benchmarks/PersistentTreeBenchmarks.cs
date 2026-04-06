@@ -23,34 +23,47 @@ public class PersistentTreeBenchmarks
         public Handle<TreeNode> Right;
     }
 
-    // ── Enumerator + cascade handler ────────────────────────────────────
+    // ── Enumerator + raw RefCountTable cascade (not NodeStore) ───────────
 
     private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
+        public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor<TContext>
         {
             if (node.Left.IsValid) visitor.Visit(node.Left, in context);
             if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 
+    private struct TreeDecrementVisitor(RefCountTable<TreeNode> table, TreeHandler handler) : INodeVisitor
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        {
+            if (typeof(TChild) == typeof(TreeNode))
+            {
+                var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+                table.Decrement(c, handler);
+            }
+        }
+    }
+
     private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
+        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
             ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
+            var visitor = new TreeDecrementVisitor(table, this);
             enumerator.EnumerateChildren(in node, ref visitor);
             arena.Free(handle);
         }
@@ -170,8 +183,8 @@ public class PersistentTreeBenchmarks
     {
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena, default);
         var root = _root;
+        var handler = new TreeHandler(_arena, default);
 
         for (var i = 0; i < this.ChangeCount; i++)
         {
@@ -193,7 +206,6 @@ public class PersistentTreeBenchmarks
     {
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena, default);
         var roots = _burstRoots;
         roots[0] = _root;
 
@@ -203,8 +215,8 @@ public class PersistentTreeBenchmarks
             roots[i + 1] = this.PathCopy(roots[i], leaf);
         }
 
-        for (var i = 0; i < this.ChangeCount; i++)
-            _refCounts.Decrement(roots[i], handler);
+        var handler = new TreeHandler(_arena, default);
+        _refCounts.DecrementBatch(roots.AsSpan(0, this.ChangeCount), handler);
 
         return roots[this.ChangeCount].Index;
     }
@@ -219,12 +231,12 @@ public class PersistentTreeBenchmarks
         const int Window = 100;
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena, default);
 
         var roots = _burstRoots;
         roots[0] = _root;
         var produced = 0;
         var consumed = 0;
+        var handler = new TreeHandler(_arena, default);
 
         while (produced < this.ChangeCount)
         {
@@ -239,13 +251,13 @@ public class PersistentTreeBenchmarks
 
             var releaseEnd = produced - Window;
             if (releaseEnd < 0) releaseEnd = 0;
-            for (var i = consumed; i < releaseEnd; i++)
-                _refCounts.Decrement(roots[i], handler);
+            if (releaseEnd > consumed)
+                _refCounts.DecrementBatch(roots.AsSpan(consumed, releaseEnd - consumed), handler);
             consumed = Math.Max(consumed, releaseEnd);
         }
 
-        for (var i = consumed; i < this.ChangeCount; i++)
-            _refCounts.Decrement(roots[i], handler);
+        if (this.ChangeCount > consumed)
+            _refCounts.DecrementBatch(roots.AsSpan(consumed, this.ChangeCount - consumed), handler);
 
         return roots[this.ChangeCount].Index;
     }
@@ -270,34 +282,63 @@ public class SingleForkReleaseBenchmarks
         public Handle<TreeNode> Right;
     }
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
     {
+        internal NodeStore<TreeNode, TreeNodeOps> Store;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
+        public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor<TContext>
         {
             if (node.Left.IsValid) visitor.Visit(node.Left, in context);
             if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
-    }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
-    {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
+        public readonly void EnumerateRefChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
-            ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
+            ref var left = ref node.Left;
+            if (left.IsValid) visitor.VisitRef(ref left);
+            ref var right = ref node.Right;
+            if (right.IsValid) visitor.VisitRef(ref right);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void EnumerateRefChildren<TVisitor, TContext>(ref TreeNode node, in TContext context, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor<TContext>
+        {
+            ref var left = ref node.Left;
+            if (left.IsValid) visitor.VisitRef(ref left, in context);
+            ref var right = ref node.Right;
+            if (right.IsValid) visitor.VisitRef(ref right, in context);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void Visit<TChild>(Handle<TChild> child)
+            where TChild : struct
+        {
+            if (typeof(TChild) == typeof(TreeNode))
+            {
+                var c = child;
+                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref c));
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void VisitRef<TChild>(ref Handle<TChild> child)
+            where TChild : struct
+        {
+            if (typeof(TChild) == typeof(TreeNode))
+                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child));
         }
     }
 
@@ -309,6 +350,7 @@ public class SingleForkReleaseBenchmarks
 
     private UnsafeSlabArena<TreeNode> _arena = null!;
     private RefCountTable<TreeNode> _refCounts = null!;
+    private NodeStore<TreeNode, TreeNodeOps> _store = null!;
     private Handle<TreeNode> _root;
     private int _nodeCount;
 
@@ -338,6 +380,7 @@ public class SingleForkReleaseBenchmarks
         _nodeCount = (1 << (this.TreeDepth + 1)) - 1;
         _arena = new UnsafeSlabArena<TreeNode>();
         _refCounts = new RefCountTable<TreeNode>();
+        _store = new NodeStore<TreeNode, TreeNodeOps>(_arena, _refCounts, default);
         _refCounts.EnsureCapacity(_nodeCount + (this.N * (this.TreeDepth + 1)) + 1024);
 
         for (var i = 0; i < _nodeCount; i++)
@@ -363,6 +406,8 @@ public class SingleForkReleaseBenchmarks
         }
 
         _root = new Handle<TreeNode>(0);
+
+        _store.SetNodeOps(new TreeNodeOps { Store = _store });
     }
 
     private Handle<TreeNode> PathCopy(Handle<TreeNode> currentRoot, int leafAddress)
@@ -440,9 +485,7 @@ public class SingleForkReleaseBenchmarks
     [Benchmark]
     public int Release_Only()
     {
-        var handler = new TreeHandler(_arena, default);
-        for (var i = 0; i < this.N; i++)
-            _refCounts.Decrement(_preForkedRoots[i], handler);
+        _store.DecrementRoots(_preForkedRoots.AsSpan(0, this.N));
         return _preForkedRoots[this.N].Index;
     }
 
@@ -455,14 +498,13 @@ public class SingleForkReleaseBenchmarks
     {
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
-        var handler = new TreeHandler(_arena, default);
         var root = _root;
 
         for (var i = 0; i < this.N; i++)
         {
             var leaf = rng.Next(leafCount);
             var newRoot = this.PathCopy(root, leaf);
-            _refCounts.Decrement(root, handler);
+            _store.DecrementRefCount(root);
             root = newRoot;
         }
 

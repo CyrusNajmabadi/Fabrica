@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 using Xunit;
@@ -13,38 +14,38 @@ public class DagValidatorTests
         public Handle<TreeNode> Right;
     }
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
     {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        internal NodeStore<TreeNode, TreeNodeOps> Store;
+
+        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
-    }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
         {
-            ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
+            if (typeof(TChild) == typeof(TreeNode))
+            {
+                var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+                Store.DecrementRefCount(c);
+            }
         }
     }
 
-    private static NodeStore<TreeNode, TreeHandler> CreateStore()
+    private static NodeStore<TreeNode, TreeNodeOps> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var enumerator = new TreeChildEnumerator();
-        var handler = new TreeHandler(arena, enumerator);
-        return new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+        var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        store.SetNodeOps(new TreeNodeOps { Store = store });
+        return store;
     }
 
     private static Handle<TreeNode> AllocNode(
-        NodeStore<TreeNode, TreeHandler> store,
+        NodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> left,
         Handle<TreeNode> right)
     {
@@ -56,11 +57,11 @@ public class DagValidatorTests
         return handle;
     }
 
-    private static void AssertValid(NodeStore<TreeNode, TreeHandler> store, ReadOnlySpan<Handle<TreeNode>> roots)
-        => DagValidator.AssertValid(store, roots, new TreeChildEnumerator());
+    private static void AssertValid(NodeStore<TreeNode, TreeNodeOps> store, ReadOnlySpan<Handle<TreeNode>> roots)
+        => DagValidator.AssertValid(store, roots, default);
 
-    private static List<string> Validate(NodeStore<TreeNode, TreeHandler> store, ReadOnlySpan<Handle<TreeNode>> roots)
-        => DagValidator.Validate(store, roots, new TreeChildEnumerator());
+    private static List<string> Validate(NodeStore<TreeNode, TreeNodeOps> store, ReadOnlySpan<Handle<TreeNode>> roots)
+        => DagValidator.Validate(store, roots, default);
 
     // ── Valid DAGs pass ──────────────────────────────────────────────────
 
@@ -367,7 +368,7 @@ public class DagValidatorTests
         AssertValid(store, [root, newRoot]);
 
         // Release old root
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice.AddRoot(root);
         slice.DecrementRootRefCounts();
 
@@ -388,7 +389,7 @@ public class DagValidatorTests
             store.RefCounts.Increment(newRoot);
             AssertValid(store, [root, newRoot]);
 
-            var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+            var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
             slice.AddRoot(root);
             slice.DecrementRootRefCounts();
 
@@ -404,7 +405,7 @@ public class DagValidatorTests
         var root = BuildPerfectTree(store, 3);
         store.RefCounts.Increment(root);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
         slice.AddRoot(root);
         slice.DecrementRootRefCounts();
 
@@ -413,7 +414,7 @@ public class DagValidatorTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static Handle<TreeNode> BuildPerfectTree(NodeStore<TreeNode, TreeHandler> store, int depth)
+    private static Handle<TreeNode> BuildPerfectTree(NodeStore<TreeNode, TreeNodeOps> store, int depth)
     {
         if (depth == 0)
             return AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
@@ -424,7 +425,7 @@ public class DagValidatorTests
     }
 
     private static Handle<TreeNode> PathCopyLeftSpine(
-        NodeStore<TreeNode, TreeHandler> store,
+        NodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> oldRoot,
         int depth)
     {

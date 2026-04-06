@@ -6,26 +6,36 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Bundles the three components needed to fully manage a single node type's lifecycle: storage
-/// (<see cref="UnsafeSlabArena{T}"/>), reference counts (<see cref="RefCountTable{T}"/>), and a
-/// cascade-free handler (<typeparamref name="THandler"/>). One instance per node type, shared
+/// (<see cref="UnsafeSlabArena{T}"/>), reference counts (<see cref="RefCountTable{T}"/>), and
+/// node operations (<typeparamref name="TNodeOps"/>). One instance per node type, shared
 /// across all snapshots.
+///
+/// NODE OPERATIONS
+///   <typeparamref name="TNodeOps"/> implements both <see cref="INodeChildEnumerator{TNode}"/>
+///   (structural knowledge of which fields are children) and <see cref="INodeVisitor"/>
+///   (decrement dispatch to the correct store per child type). This eliminates the need for a
+///   separate cascade-free handler interface — the visitor pattern handles everything.
 ///
 /// ROOT OPERATIONS
 ///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
-///   refcount updates for snapshot root sets. The stored handler enables <see cref="DecrementRoots"/>
-///   to trigger cascade-free without the caller needing to construct or pass a handler.
+///   refcount updates for snapshot root sets. Cascade-free is driven by the stored
+///   <typeparamref name="TNodeOps"/> via a private <see cref="CascadeAdapter"/> that bridges
+///   the visitor pattern to <see cref="RefCountTable{T}"/>'s cascade loop.
 ///
 /// VALIDATION (DEBUG ONLY)
-///   Call <see cref="EnableValidation{TEnumerator}"/> in tests to activate automatic DAG invariant
-///   checking after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call. The
-///   store tracks the multi-set of active roots and runs <see cref="DagValidator.AssertValid"/> after
-///   each mutation. All validation state and logic is compiled out in release builds.
+///   Call <see cref="EnableValidation"/> in tests to activate automatic DAG invariant checking
+///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call. The store
+///   uses its own <typeparamref name="TNodeOps"/> as the enumerator — no separate enumerator needed.
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>NodeStore</c>),
-///   <typeparamref name="THandler"/> captures references to those other stores. When
-///   <see cref="RefCountTable{T}.IRefCountHandler.OnFreed"/> fires, the handler decrements children in
-///   whatever stores they belong to.
+///   <typeparamref name="TNodeOps"/>'s <see cref="INodeVisitor.Visit{TChild}"/> dispatches
+///   to the correct store using <c>typeof</c> checks (JIT-eliminated dead branches).
+///
+/// TWO-PHASE INITIALIZATION
+///   When <typeparamref name="TNodeOps"/> needs a reference back to this store (for same-type
+///   cascade), construct the store with <c>default</c> ops, then call <see cref="SetNodeOps"/>
+///   with an ops instance that captures the store reference.
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from the coordinator thread. Debug builds assert via
@@ -36,11 +46,11 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, THandler handler)
+internal sealed class NodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
     where TNode : struct
-    where THandler : struct, RefCountTable<TNode>.IRefCountHandler
+    where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
 {
-    private readonly THandler _handler = handler;
+    private TNodeOps _nodeOps = nodeOps;
 
 #if DEBUG
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
@@ -59,6 +69,12 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     internal void AssertOwnerThread()
         => this.RefCounts.AssertOwnerThread();
 
+    /// <summary>
+    /// Sets the node operations struct. Used for two-phase initialization when the ops struct
+    /// needs a reference back to this store (for same-type child decrement during cascade).
+    /// </summary>
+    internal void SetNodeOps(TNodeOps ops) => _nodeOps = ops;
+
     // ── Single-handle operations (used by visitor actions) ─────────────
 
     /// <summary>Increments the refcount for a single handle. Used by <see cref="INodeVisitor"/> implementations
@@ -68,11 +84,11 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
         => this.RefCounts.Increment(handle);
 
     /// <summary>Decrements the refcount for a single handle, triggering cascade-free if it hits zero.
-    /// Uses the stored handler — no caller involvement needed. Used by <see cref="INodeVisitor"/>
-    /// implementations during child enumeration.</summary>
+    /// Uses the stored <typeparamref name="TNodeOps"/> via <see cref="CascadeAdapter"/> — no caller
+    /// involvement needed. Used by <see cref="INodeVisitor"/> implementations during child enumeration.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void DecrementRefCount(Handle<TNode> handle)
-        => this.RefCounts.Decrement(handle, _handler);
+        => this.RefCounts.Decrement(handle, new CascadeAdapter(this));
 
     // ── Root operations ──────────────────────────────────────────────────
 
@@ -90,14 +106,34 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     /// <summary>
     /// Decrements the refcount for each root handle and triggers cascade-free for any that hit zero.
     /// Called when a snapshot holding these roots is released (e.g., retired by the consumer after
-    /// processing). Uses the stored <typeparamref name="THandler"/> for cascade — no caller involvement
+    /// processing). Uses the stored <typeparamref name="TNodeOps"/> for cascade — no caller involvement
     /// needed.
     /// </summary>
     public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         this.TrackBeforeDecrement(roots);
-        this.RefCounts.DecrementBatch(roots, _handler);
+        this.RefCounts.DecrementBatch(roots, new CascadeAdapter(this));
         this.RunValidation();
+    }
+
+    // ── Cascade adapter ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Bridges the <typeparamref name="TNodeOps"/> visitor pattern to <see cref="RefCountTable{T}"/>'s
+    /// cascade loop. When a node's refcount reaches zero, the cascade loop calls <see cref="OnFreed"/>
+    /// which reads the node, enumerates its children using the ops struct as both enumerator and
+    /// decrement visitor, then frees the arena slot.
+    /// </summary>
+    private readonly struct CascadeAdapter(NodeStore<TNode, TNodeOps> store) : RefCountTable<TNode>.IRefCountHandler
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnFreed(Handle<TNode> handle, RefCountTable<TNode> table)
+        {
+            ref readonly var node = ref store.Arena[handle];
+            var ops = store._nodeOps;
+            ops.EnumerateChildren(in node, ref ops);
+            store.Arena.Free(handle);
+        }
     }
 
     // ── Validation (debug only) ──────────────────────────────────────────
@@ -105,18 +141,18 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     /// <summary>
     /// Enables automatic DAG invariant checking (debug builds only). After every <see cref="IncrementRoots"/>
     /// and <see cref="DecrementRoots"/>, the store runs <see cref="DagValidator.AssertValid"/> in relaxed
-    /// mode with the current set of tracked roots. Compiled out entirely in release builds.
+    /// mode with the current set of tracked roots. Uses the stored <typeparamref name="TNodeOps"/> as
+    /// the enumerator. Compiled out entirely in release builds.
     /// </summary>
     [Conditional("DEBUG")]
-    internal void EnableValidation<TEnumerator>(TEnumerator enumerator)
-        where TEnumerator : struct, INodeChildEnumerator<TNode>
+    internal void EnableValidation()
     {
 #if DEBUG
         _trackedRootCounts = [];
         _runValidation = () =>
         {
             var roots = this.ExpandTrackedRoots();
-            DagValidator.AssertValid(this, roots, enumerator, strict: false);
+            DagValidator.AssertValid(this, roots, _nodeOps, strict: false);
         };
 #endif
     }
@@ -189,8 +225,8 @@ internal sealed class NodeStore<TNode, THandler>(UnsafeSlabArena<TNode> arena, R
     internal TestAccessor GetTestAccessor()
         => new(this);
 
-    internal readonly struct TestAccessor(NodeStore<TNode, THandler> store)
+    internal readonly struct TestAccessor(NodeStore<TNode, TNodeOps> store)
     {
-        public THandler Handler => store._handler;
+        public TNodeOps NodeOps => store._nodeOps;
     }
 }
