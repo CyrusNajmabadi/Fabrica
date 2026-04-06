@@ -262,11 +262,11 @@ internal struct ParentChildEnumerator : INodeOps<ParentNode>
 internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
     {
-        if (typeof(TChild) == typeof(TreeNode))
+        if (typeof(T) == typeof(TreeNode))
         {
-            var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+            var c = Unsafe.As<Handle<T>, Handle<TreeNode>>(ref handle);
             table.Decrement(c);
         }
     }
@@ -275,11 +275,11 @@ internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table) : INodeVisit
 internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
     {
-        if (typeof(TChild) == typeof(MixedNode))
+        if (typeof(T) == typeof(MixedNode))
         {
-            var c = Unsafe.As<Handle<TChild>, Handle<MixedNode>>(ref child);
+            var c = Unsafe.As<Handle<T>, Handle<MixedNode>>(ref handle);
             table.Decrement(c);
         }
     }
@@ -296,12 +296,12 @@ internal struct ParentDecrementVisitor(
     RefCountTable<ChildNode> childTable) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
     {
-        if (typeof(TChild) == typeof(ParentNode))
-            this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
-        else if (typeof(TChild) == typeof(ChildNode))
-            this.DecrementChild(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
+        if (typeof(T) == typeof(ParentNode))
+            this.DecrementParent(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
+        else if (typeof(T) == typeof(ChildNode))
+            this.DecrementChild(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

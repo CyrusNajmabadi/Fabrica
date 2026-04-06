@@ -11,9 +11,9 @@ namespace Fabrica.Core.Memory;
 ///
 /// TWO METHOD FAMILIES
 ///   The read-only path: <see cref="EnumerateChildren{TVisitor}(in TNode, ref TVisitor)"/> with
-///   <see cref="INodeVisitor.Visit{TChild}"/>.
+///   <see cref="INodeVisitor.Visit{T}"/>.
 ///   The ref-mutation path: <see cref="EnumerateRefChildren{TVisitor}(ref TNode, ref TVisitor)"/>
-///   with <see cref="INodeVisitor.VisitRef{TChild}"/>.
+///   with <see cref="INodeVisitor.VisitRef{T}"/>.
 ///
 /// STRUCT GENERIC PATTERN
 ///   Both the node ops and the visitor are struct type parameters. The JIT specializes

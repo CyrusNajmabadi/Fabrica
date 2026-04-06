@@ -23,7 +23,7 @@ namespace Fabrica.Core.Tests.Memory;
 ///
 /// <para><b>HOW WE VERIFY typeof ELIMINATION</b></para>
 /// <para>
-/// When the JIT constant-folds <c>typeof(TChild) == typeof(SomeType)</c> in a generic struct method,
+/// When the JIT constant-folds <c>typeof(T) == typeof(SomeType)</c> in a generic struct method,
 /// it emits only the surviving branch body (or nothing at all for false branches). If the check were
 /// NOT eliminated, the ASM would contain one of:
 /// <list type="bullet">

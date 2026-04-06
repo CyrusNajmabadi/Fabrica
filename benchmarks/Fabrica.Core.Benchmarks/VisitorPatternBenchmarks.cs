@@ -7,7 +7,7 @@ namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
 /// Measures the overhead (if any) of the visitor pattern — where
-/// <see cref="INodeVisitor.Visit{TChild}"/> receives only <c>Handle&lt;TChild&gt;</c> — vs.
+/// <see cref="INodeVisitor.Visit{T}"/> receives only <c>Handle&lt;T&gt;</c> — vs.
 /// hand-rolled direct code.
 ///
 /// Both the increment path (hot path for adding children) and the cascade-decrement path
@@ -53,19 +53,19 @@ public class VisitorPatternBenchmarks
 
     /// <summary>
     /// Captures the world's refcount tables and increments the appropriate one per child type.
-    /// typeof(TChild) comparisons are JIT constants — dead branches are eliminated entirely.
+    /// typeof(T) comparisons are JIT constants — dead branches are eliminated entirely.
     /// </summary>
     private struct IncrementNodeVisitor(
         RefCountTable<ParentNode> parentRC,
         RefCountTable<ChildNode> childRC) : INodeVisitor
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(ParentNode))
-                parentRC.Increment(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
-            else if (typeof(TChild) == typeof(ChildNode))
-                childRC.Increment(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
+            if (typeof(T) == typeof(ParentNode))
+                parentRC.Increment(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
+            else if (typeof(T) == typeof(ChildNode))
+                childRC.Increment(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
         }
     }
 
@@ -121,17 +121,17 @@ public class VisitorPatternBenchmarks
         public ChildNodeEnumerator ChildEnum;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(ParentNode))
+            if (typeof(T) == typeof(ParentNode))
             {
-                var h = Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child);
+                var h = Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle);
                 if (World.ParentRefCounts.Decrement(h))
                     ProcessParentCascadeVisitor(ref World, ref ParentEnum, ref ChildEnum, h);
             }
-            else if (typeof(TChild) == typeof(ChildNode))
+            else if (typeof(T) == typeof(ChildNode))
             {
-                var h = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child);
+                var h = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle);
                 if (World.ChildRefCounts.Decrement(h))
                     ProcessChildCascadeVisitor(ref World, ref ChildEnum, h);
             }
@@ -144,11 +144,11 @@ public class VisitorPatternBenchmarks
         public ChildNodeEnumerator ChildEnum;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(ChildNode))
+            if (typeof(T) == typeof(ChildNode))
             {
-                var h = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child);
+                var h = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle);
                 if (World.ChildRefCounts.Decrement(h))
                     ProcessChildCascadeVisitor(ref World, ref ChildEnum, h);
             }

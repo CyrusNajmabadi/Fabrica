@@ -13,7 +13,7 @@ namespace Fabrica.Core.Memory;
 /// NODE OPERATIONS
 ///   <typeparamref name="TNodeOps"/> implements <see cref="INodeOps{TNode}"/> which unifies
 ///   structural knowledge of which fields are children (<see cref="INodeOps{TNode}.EnumerateChildren{TVisitor}"/>)
-///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{TChild}"/>).
+///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{T}"/>).
 ///   This eliminates the need for a separate cascade-free handler interface — the visitor pattern
 ///   handles everything.
 ///
@@ -23,7 +23,7 @@ namespace Fabrica.Core.Memory;
 ///   enumerator and visitor), and frees the arena slot. Re-entrant decrements (same-type children)
 ///   push onto the pending stack and the outer loop processes them — no nested loops, bounded stack
 ///   depth. Cross-type cascades trigger the other store's cascade via
-///   <see cref="INodeVisitor.Visit{TChild}"/> dispatch.
+///   <see cref="INodeVisitor.Visit{T}"/> dispatch.
 ///
 /// ROOT OPERATIONS
 ///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
@@ -36,7 +36,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>NodeStore</c>),
-///   <typeparamref name="TNodeOps"/>'s <see cref="INodeVisitor.Visit{TChild}"/> dispatches
+///   <typeparamref name="TNodeOps"/>'s <see cref="INodeVisitor.Visit{T}"/> dispatches
 ///   to the correct store using <c>typeof</c> checks (JIT-eliminated dead branches).
 ///
 /// TWO-PHASE INITIALIZATION

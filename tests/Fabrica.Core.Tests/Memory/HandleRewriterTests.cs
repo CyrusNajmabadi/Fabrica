@@ -29,13 +29,13 @@ public class HandleRewriterTests
     /// </summary>
     private struct TestVisitor(int[] remap) : INodeVisitor
     {
-        public readonly void VisitRef<TChild>(ref Handle<TChild> child) where TChild : struct
+        public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
         {
-            var index = child.Index;
+            var index = handle.Index;
             if (TaggedHandle.IsLocal(index))
             {
                 var localIndex = TaggedHandle.DecodeLocalIndex(index);
-                child = new Handle<TChild>(remap[localIndex]);
+                handle = new Handle<T>(remap[localIndex]);
             }
         }
     }

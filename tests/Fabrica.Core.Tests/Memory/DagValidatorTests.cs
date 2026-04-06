@@ -25,11 +25,11 @@ public class DagValidatorTests
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
 
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(TreeNode))
+            if (typeof(T) == typeof(TreeNode))
             {
-                var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+                var c = Unsafe.As<Handle<T>, Handle<TreeNode>>(ref handle);
                 Store.DecrementRefCount(c);
             }
         }

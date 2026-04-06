@@ -42,13 +42,13 @@ public class CrossTypeSnapshotTests
             if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
         }
 
-        public readonly void Visit<TChild>(Handle<TChild> child)
-            where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle)
+            where T : struct
         {
-            if (typeof(TChild) == typeof(ChildNode))
+            if (typeof(T) == typeof(ChildNode))
             {
-                var tmp = child;
-                var c = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref tmp);
+                var tmp = handle;
+                var c = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref tmp);
                 ChildStore.DecrementRefCount(c);
             }
         }
@@ -67,19 +67,19 @@ public class CrossTypeSnapshotTests
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
 
-        public readonly void Visit<TChild>(Handle<TChild> child)
-            where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle)
+            where T : struct
         {
-            if (typeof(TChild) == typeof(ParentNode))
+            if (typeof(T) == typeof(ParentNode))
             {
-                var tmp = child;
-                var c = Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref tmp);
+                var tmp = handle;
+                var c = Unsafe.As<Handle<T>, Handle<ParentNode>>(ref tmp);
                 ParentStore.DecrementRefCount(c);
             }
-            else if (typeof(TChild) == typeof(ChildNode))
+            else if (typeof(T) == typeof(ChildNode))
             {
-                var tmp = child;
-                var c = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref tmp);
+                var tmp = handle;
+                var c = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref tmp);
                 ChildStore.DecrementRefCount(c);
             }
         }

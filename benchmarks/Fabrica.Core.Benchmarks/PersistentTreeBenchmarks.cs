@@ -299,22 +299,22 @@ public class SingleForkReleaseBenchmarks
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child)
-            where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle)
+            where T : struct
         {
-            if (typeof(TChild) == typeof(TreeNode))
+            if (typeof(T) == typeof(TreeNode))
             {
-                var c = child;
-                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref c));
+                var c = handle;
+                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref c));
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void VisitRef<TChild>(ref Handle<TChild> child)
-            where TChild : struct
+        public readonly void VisitRef<T>(ref Handle<T> handle)
+            where T : struct
         {
-            if (typeof(TChild) == typeof(TreeNode))
-                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child));
+            if (typeof(T) == typeof(TreeNode))
+                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref handle));
         }
     }
 

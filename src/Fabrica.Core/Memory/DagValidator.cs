@@ -299,16 +299,16 @@ internal static class DagValidator
 
     /// <summary>
     /// <see cref="INodeVisitor"/> that collects only same-type children as <see cref="NodeRef"/> values
-    /// with typeId 0. Cross-type children are silently ignored. The <c>typeof(TChild) == typeof(TNode)</c>
+    /// with typeId 0. Cross-type children are silently ignored. The <c>typeof(T) == typeof(TNode)</c>
     /// check is a JIT constant — the dead branch is eliminated entirely.
     /// </summary>
     private struct CollectSameTypeNodeVisitor<TNode>(List<NodeRef> children) : INodeVisitor where TNode : struct
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(TNode))
-                this.CollectTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));
+            if (typeof(T) == typeof(TNode))
+                this.CollectTyped(Unsafe.As<Handle<T>, Handle<TNode>>(ref handle));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
