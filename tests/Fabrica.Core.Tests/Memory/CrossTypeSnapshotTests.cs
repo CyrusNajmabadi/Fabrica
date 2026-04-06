@@ -102,14 +102,6 @@ public class CrossTypeSnapshotTests
             if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
-
-        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent, in context);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-        }
     }
 
     private struct ChildChildEnumerator : INodeChildEnumerator<ChildNode>
@@ -119,13 +111,6 @@ public class CrossTypeSnapshotTests
         {
             if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
             if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
-        }
-
-        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild, in context);
-            if (node.RightChild.IsValid) visitor.Visit(node.RightChild, in context);
         }
     }
 

@@ -41,7 +41,8 @@ namespace Fabrica.Core.Memory;
 internal interface INodeVisitor
 {
     void Visit<TChild>(Handle<TChild> child)
-        where TChild : struct;
+        where TChild : struct
+        => throw new NotSupportedException();
 
     void VisitRef<TChild>(ref Handle<TChild> child)
         where TChild : struct
@@ -68,7 +69,8 @@ internal interface INodeVisitor
 internal interface INodeVisitor<TContext>
 {
     void Visit<TChild>(Handle<TChild> child, in TContext context)
-        where TChild : struct;
+        where TChild : struct
+        => throw new NotSupportedException();
 
     void VisitRef<TChild>(ref Handle<TChild> child, in TContext context)
         where TChild : struct

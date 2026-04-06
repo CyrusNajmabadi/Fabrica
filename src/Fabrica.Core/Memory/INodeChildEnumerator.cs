@@ -23,10 +23,12 @@ namespace Fabrica.Core.Memory;
 internal interface INodeChildEnumerator<TNode> where TNode : struct
 {
     void EnumerateChildren<TVisitor>(in TNode node, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor;
+        where TVisitor : struct, INodeVisitor
+        => throw new NotSupportedException();
 
     void EnumerateChildren<TVisitor, TContext>(in TNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>;
+        where TVisitor : struct, INodeVisitor<TContext>
+        => throw new NotSupportedException();
 
     void EnumerateRefChildren<TVisitor>(ref TNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor

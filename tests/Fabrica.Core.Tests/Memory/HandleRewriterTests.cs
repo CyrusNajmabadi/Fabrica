@@ -16,20 +16,6 @@ public class HandleRewriterTests
 
     private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
     {
-        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
-            where TVisitor : struct, INodeVisitor
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
-        }
-
-        public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
-            where TVisitor : struct, INodeVisitor<TContext>
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
-        }
-
         public readonly void EnumerateRefChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
         {
@@ -43,9 +29,6 @@ public class HandleRewriterTests
     /// </summary>
     private struct TestVisitor(int[] remap) : INodeVisitor
     {
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
-            => throw new NotSupportedException();
-
         public readonly void VisitRef<TChild>(ref Handle<TChild> child) where TChild : struct
         {
             var index = child.Index;
