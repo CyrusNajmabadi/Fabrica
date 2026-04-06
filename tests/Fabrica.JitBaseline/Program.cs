@@ -265,7 +265,7 @@ static void EnumerateMultiOpsChild(
 }
 
 // Constrained generic call — the JIT specializes TOps.EnumerateChildren for the concrete types
-// without boxing, exactly as NodeStore.RunCascade calls through its TNodeOps constraint.
+// without boxing, exactly as GlobalNodeStore.RunCascade calls through its TNodeOps constraint.
 [MethodImpl(MethodImplOptions.AggressiveInlining)]
 static void ConstrainedEnumerate<TOps, TNode, TVisitor>(ref TOps ops, in TNode node, ref TVisitor visitor)
     where TOps : struct, INodeOps<TNode>

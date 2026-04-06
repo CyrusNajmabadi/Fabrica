@@ -6,9 +6,11 @@ using Xunit;
 namespace Fabrica.Core.Tests.Memory;
 
 /// <summary>
-/// Tests the 3-phase coordinator merge pipeline: Phase 1 (allocate + copy + remap),
-/// Phase 2a (fixup: rewrite local handles to global), Phase 2b (refcount: increment children).
-/// Uses a 2-type cross-thread scenario with <see cref="ParentNode"/> and <see cref="ChildNode"/>.
+/// Tests the coordinator merge pipeline: Phase 1 (allocate + copy + remap), then fixup and
+/// refcount (rewrite local handles to global and increment child refcounts via
+/// <see cref="GlobalNodeStore{TNode,TNodeOps}.RewriteAndIncrementRefCounts"/>), root collection,
+/// and validation. Uses a 2-type cross-thread scenario with <see cref="ParentNode"/> and
+/// <see cref="ChildNode"/>.
 /// </summary>
 public class CoordinatorMergeTests
 {
@@ -31,8 +33,8 @@ public class CoordinatorMergeTests
 
     private struct MergeNodeOps : INodeOps<ParentNode>, INodeOps<ChildNode>
     {
-        internal NodeStore<ParentNode, MergeNodeOps> ParentStore;
-        internal NodeStore<ChildNode, MergeNodeOps> ChildStore;
+        internal GlobalNodeStore<ParentNode, MergeNodeOps> ParentStore;
+        internal GlobalNodeStore<ChildNode, MergeNodeOps> ChildStore;
 
         readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         {
@@ -90,8 +92,8 @@ public class CoordinatorMergeTests
 
     private struct RefcountVisitor : INodeVisitor
     {
-        internal NodeStore<ParentNode, MergeNodeOps> ParentStore;
-        internal NodeStore<ChildNode, MergeNodeOps> ChildStore;
+        internal GlobalNodeStore<ParentNode, MergeNodeOps> ParentStore;
+        internal GlobalNodeStore<ChildNode, MergeNodeOps> ChildStore;
 
         public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
@@ -108,8 +110,8 @@ public class CoordinatorMergeTests
     private const int ChildTypeId = 1;
 
     private struct MergeWorldAccessor(
-        NodeStore<ParentNode, MergeNodeOps> parentStore,
-        NodeStore<ChildNode, MergeNodeOps> childStore) : DagValidator.IWorldAccessor
+        GlobalNodeStore<ParentNode, MergeNodeOps> parentStore,
+        GlobalNodeStore<ChildNode, MergeNodeOps> childStore) : DagValidator.IWorldAccessor
     {
         public readonly int TypeCount => 2;
 
@@ -140,16 +142,16 @@ public class CoordinatorMergeTests
 
     // ── Store creation ───────────────────────────────────────────────────
 
-    private static (NodeStore<ParentNode, MergeNodeOps> ParentStore, NodeStore<ChildNode, MergeNodeOps> ChildStore)
+    private static (GlobalNodeStore<ParentNode, MergeNodeOps> ParentStore, GlobalNodeStore<ChildNode, MergeNodeOps> ChildStore)
         CreateStores()
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = new NodeStore<ChildNode, MergeNodeOps>(childArena, childRefCounts, default);
+        var childStore = new GlobalNodeStore<ChildNode, MergeNodeOps>(childArena, childRefCounts, default);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = new NodeStore<ParentNode, MergeNodeOps>(parentArena, parentRefCounts, default);
+        var parentStore = new GlobalNodeStore<ParentNode, MergeNodeOps>(parentArena, parentRefCounts, default);
 
         var ops = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
@@ -180,7 +182,7 @@ public class CoordinatorMergeTests
         tlbs[1][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
 
         var remap = new RemapTable(ThreadCount);
-        var (start, count) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, tlbs, remap);
+        var (start, count) = childStore.DrainBuffers(tlbs, remap);
 
         Assert.Equal(0, start);
         Assert.Equal(3, count);
@@ -205,7 +207,7 @@ public class CoordinatorMergeTests
         tlbs[1] = new ThreadLocalBuffer<ChildNode>(1);
 
         var remap = new RemapTable(ThreadCount);
-        var (start, count) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, tlbs, remap);
+        var (start, count) = childStore.DrainBuffers(tlbs, remap);
 
         Assert.Equal(0, start);
         Assert.Equal(0, count);
@@ -232,7 +234,7 @@ public class CoordinatorMergeTests
         tlbs[2][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
 
         var remap = new RemapTable(ThreadCount);
-        var (start, count) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, tlbs, remap);
+        var (start, count) = childStore.DrainBuffers(tlbs, remap);
 
         Assert.Equal(0, start);
         Assert.Equal(2, count);
@@ -268,13 +270,13 @@ public class CoordinatorMergeTests
         var childRemap = new RemapTable(1);
         var parentRemap = new RemapTable(1);
 
-        MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, childTlbs, childRemap);
-        var (parentStart, parentCount) = MergePipeline.DrainBuffers(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+        childStore.DrainBuffers(childTlbs, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
-        var nodeOps = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
+        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        MergePipeline.RewriteHandles(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
         Assert.Equal(Handle<ParentNode>.None, parent.LeftParent);
@@ -302,12 +304,12 @@ public class CoordinatorMergeTests
 
         var childRemap = new RemapTable(1);
         var parentRemap = new RemapTable(1);
-        var (parentStart, parentCount) = MergePipeline.DrainBuffers(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
-        var nodeOps = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
+        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        MergePipeline.RewriteHandles(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
         Assert.Equal(globalChild, parent.ChildRef);
@@ -316,7 +318,7 @@ public class CoordinatorMergeTests
     // ═══════════════════════════ End-to-end ══════════════════════════════
 
     /// <summary>
-    /// Full 2-type, 2-thread merge pipeline: production, Phase 1, Phase 2a, Phase 2b,
+    /// Full 2-type, 2-thread merge pipeline: production, Phase 1, rewrite + refcount,
     /// root increment, and DagValidator verification.
     ///
     /// Thread 0: child[0]={Value=10}, parent[0]={ChildRef→child[0]}
@@ -376,8 +378,8 @@ public class CoordinatorMergeTests
         var childRemap = new RemapTable(ThreadCount);
         var parentRemap = new RemapTable(ThreadCount);
 
-        var (childStart, childCount) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, childTlbs, childRemap);
-        var (parentStart, parentCount) = MergePipeline.DrainBuffers(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers(childTlbs, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
 
         Assert.Equal(0, childStart);
         Assert.Equal(3, childCount);
@@ -395,14 +397,14 @@ public class CoordinatorMergeTests
         Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
         Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(2)].Value);
 
-        // ── Phase 2a: Fixup ──────────────────────────────────────────────
-        // Barrier: all types finished Phase 1 before any fixup begins.
+        // ── Rewrite + refcount ───────────────────────────────────────────
+        // Barrier: all types finished Phase 1 before fixup begins.
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
-        var nodeOps = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
+        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        MergePipeline.RewriteHandles(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
-        MergePipeline.RewriteHandles(childStore.Arena, childStart, childCount, ref nodeOps, ref remapVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
+        childStore.RewriteAndIncrementRefCounts(childStart, childCount, ref remapVisitor, ref refcountVisitor);
 
         // Verify all handles are now global
         ref readonly var p0 = ref parentStore.Arena[new Handle<ParentNode>(0)];
@@ -421,13 +423,6 @@ public class CoordinatorMergeTests
         Assert.Equal(2, p2.ChildRef.Index);
         Assert.True(TaggedHandle.IsGlobal(p2.ChildRef.Index));
 
-        // ── Phase 2b: Refcount ───────────────────────────────────────────
-
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-
-        MergePipeline.IncrementChildRefCounts(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
-        MergePipeline.IncrementChildRefCounts(childStore.Arena, childStart, childCount, ref nodeOps, ref refcountVisitor);
-
         // child[0]: from parent[0] → RC=1
         // child[1]: from parent[1] → RC=1
         // child[2]: from parent[2] → RC=1
@@ -444,7 +439,7 @@ public class CoordinatorMergeTests
         // ── Root collection + remap + increment ──────────────────────────
 
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
@@ -487,21 +482,16 @@ public class CoordinatorMergeTests
         // DrainBuffers
         var childRemap = new RemapTable(ThreadCount);
         var parentRemap = new RemapTable(ThreadCount);
-        var (childStart, childCount) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, childTlbs, childRemap);
-        var (parentStart, parentCount) = MergePipeline.DrainBuffers(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers(childTlbs, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
 
-        // RewriteHandles
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
-        var nodeOps = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
-        MergePipeline.RewriteHandles(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
-
-        // IncrementChildRefCounts
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-        MergePipeline.IncrementChildRefCounts(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
 
         // Root collection + remap + increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
@@ -523,7 +513,7 @@ public class CoordinatorMergeTests
     /// <summary>
     /// Verifies the post-Phase2b invariant: root nodes have RC=0 (only structural refcounts from
     /// children have been applied), while non-root nodes referenced by other nodes have RC>0.
-    /// After <see cref="NodeStore{TNode,TNodeOps}.IncrementRoots"/>, every root gains RC=1.
+    /// After <see cref="GlobalNodeStore{TNode,TNodeOps}.IncrementRoots"/>, every root gains RC=1.
     ///
     /// Graph: root(parent[1]) → inner(parent[0]) → leaf(child[0])
     /// </summary>
@@ -553,27 +543,24 @@ public class CoordinatorMergeTests
             ChildRef = Handle<ChildNode>.None,
         };
 
-        // Merge: DrainBuffers → RewriteHandles → IncrementChildRefCounts
+        // Merge: DrainBuffers → RewriteAndIncrementRefCounts
         var childRemap = new RemapTable(ThreadCount);
         var parentRemap = new RemapTable(ThreadCount);
-        MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, childTlbs, childRemap);
-        var (parentStart, parentCount) = MergePipeline.DrainBuffers(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+        childStore.DrainBuffers(childTlbs, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
-        var nodeOps = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
-        MergePipeline.RewriteHandles(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
-
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-        MergePipeline.IncrementChildRefCounts(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
 
-        // Post-Phase2b: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
+        // After structural refcount pass: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
         Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
         Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
 
         // Collect + remap roots, then increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);

@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 namespace Fabrica.Core.Memory;
 
 /// <summary>
-/// A typed root set within a snapshot, associated with a single <see cref="NodeStore{TNode, TNodeOps}"/>.
+/// A typed root set within a snapshot, associated with a single <see cref="GlobalNodeStore{TNode, TNodeOps}"/>.
 /// Holds the <see cref="Handle{T}"/> values that are roots for this node type in this snapshot, and provides
 /// self-contained lifecycle operations for the build and publish phases.
 ///
@@ -29,17 +29,17 @@ namespace Fabrica.Core.Memory;
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from the coordinator thread. Debug builds assert via
-///   the underlying <see cref="NodeStore{TNode, TNodeOps}"/>'s <see cref="SingleThreadedOwner"/>.
+///   the underlying <see cref="GlobalNodeStore{TNode, TNodeOps}"/>'s <see cref="SingleThreadedOwner"/>.
 ///
 /// PORTABILITY
-///   In Rust: a struct holding a reference to the <c>NodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
+///   In Rust: a struct holding a reference to the <c>GlobalNodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
 ///   In C++: same, with <c>std::vector&lt;Handle&gt;</c>.
 /// </summary>
-internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
+internal readonly struct SnapshotSlice<TNode, TNodeOps>(GlobalNodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
-    private readonly NodeStore<TNode, TNodeOps> _store = store;
+    private readonly GlobalNodeStore<TNode, TNodeOps> _store = store;
     private readonly UnsafeList<Handle<TNode>> _rootHandles = rootHandles;
 
     /// <summary>The underlying root handle list. The coordinator uses this to reset and return the list to
@@ -73,7 +73,7 @@ internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOp
     }
 
     /// <summary>Debug-only assertion that the caller is on the store's owner thread. Delegates to the
-    /// underlying <see cref="NodeStore{TNode, TNodeOps}"/> which maintains the thread-ownership tracking.</summary>
+    /// underlying <see cref="GlobalNodeStore{TNode, TNodeOps}"/> which maintains the thread-ownership tracking.</summary>
     [Conditional("DEBUG")]
     private readonly void AssertOwnerThread()
         => _store.AssertOwnerThread();

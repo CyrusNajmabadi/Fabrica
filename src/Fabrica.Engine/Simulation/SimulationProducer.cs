@@ -16,7 +16,7 @@ namespace Fabrica.Engine.Simulation;
 ///   1. Rent a fresh <see cref="WorldImage"/> from the pool.
 ///   2. Reset per-worker <see cref="ThreadLocalBuffer{T}"/> instances.
 ///   3. Build the job DAG for this tick and call <see cref="JobScheduler.Submit"/> (blocks until complete).
-///   4. Run <see cref="MergePipeline"/> phases to drain TLBs into global arenas with correct refcounts.
+///   4. Call <see cref="GlobalNodeStore{TNode,TNodeOps}.DrainBuffers"/> / <see cref="GlobalNodeStore{TNode,TNodeOps}.RewriteAndIncrementRefCounts{TRemapVisitor,TRefcountVisitor}"/> per type.
 ///   5. Build <see cref="SnapshotSlice{TNode,TNodeOps}"/> instances from collected roots.
 ///   6. Return the populated image.
 /// </summary>
@@ -43,8 +43,8 @@ internal readonly struct SimulationProducer(
         //   1. Reset per-worker TLBs for each node type.
         //   2. Build the tick's job DAG (concrete Job subclasses that allocate nodes in TLBs).
         //   3. _scheduler.Submit(rootJob) — blocks until the entire DAG completes.
-        //   4. MergePipeline.DrainBuffers / RewriteHandles / IncrementChildRefCounts per type.
-        //   5. MergePipeline.CollectAndRemapRoots + store.IncrementRoots per type.
+        //   4. store.DrainBuffers / store.RewriteAndIncrementRefCounts per type.
+        //   5. store.CollectAndRemapRoots + store.IncrementRoots per type.
         //   6. Populate SnapshotSlices on the WorldImage.
         //
         // The integration test in JobMergePipelineTests proves this pipeline end-to-end

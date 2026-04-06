@@ -7,7 +7,7 @@ namespace Fabrica.Core.Memory;
 /// decrement, validate, collect, rewrite, etc.).
 ///
 /// Inherits <see cref="INodeVisitor"/> so a single struct satisfies the
-/// <see cref="NodeStore{TNode,TNodeOps}"/> constraint with one type parameter.
+/// <see cref="GlobalNodeStore{TNode,TNodeOps}"/> constraint with one type parameter.
 ///
 /// TWO METHOD FAMILIES
 ///   The read-only path: <see cref="EnumerateChildren{TVisitor}(in TNode, ref TVisitor)"/> with

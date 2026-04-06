@@ -21,7 +21,7 @@ public class SnapshotLifecycleTests
 
     private struct TreeNodeOps : INodeOps<TreeNode>
     {
-        internal NodeStore<TreeNode, TreeNodeOps> Store;
+        internal GlobalNodeStore<TreeNode, TreeNodeOps> Store;
 
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
@@ -40,13 +40,13 @@ public class SnapshotLifecycleTests
         }
     }
 
-    private readonly NodeStore<TreeNode, TreeNodeOps> _store;
+    private readonly GlobalNodeStore<TreeNode, TreeNodeOps> _store;
 
     public SnapshotLifecycleTests()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        _store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        _store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
         _store.SetNodeOps(new TreeNodeOps { Store = _store });
         _store.EnableValidation();
     }
@@ -445,7 +445,7 @@ public class SnapshotLifecycleTests
             // Fresh store per permutation so freed nodes from prior iterations don't interfere.
             var arena = new UnsafeSlabArena<TreeNode>();
             var refCounts = new RefCountTable<TreeNode>();
-            var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+            var store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
             store.SetNodeOps(new TreeNodeOps { Store = store });
 
             var root = BuildPerfectTreeInStore(store, 3);
@@ -469,7 +469,7 @@ public class SnapshotLifecycleTests
         }
     }
 
-    private static Handle<TreeNode> AllocNodeInStore(NodeStore<TreeNode, TreeNodeOps> store, Handle<TreeNode> left, Handle<TreeNode> right)
+    private static Handle<TreeNode> AllocNodeInStore(GlobalNodeStore<TreeNode, TreeNodeOps> store, Handle<TreeNode> left, Handle<TreeNode> right)
     {
         var handle = store.Arena.Allocate();
         store.RefCounts.EnsureCapacity(handle.Index + 1);
@@ -479,7 +479,7 @@ public class SnapshotLifecycleTests
         return handle;
     }
 
-    private static Handle<TreeNode> BuildPerfectTreeInStore(NodeStore<TreeNode, TreeNodeOps> store, int depth)
+    private static Handle<TreeNode> BuildPerfectTreeInStore(GlobalNodeStore<TreeNode, TreeNodeOps> store, int depth)
     {
         if (depth == 0)
             return AllocNodeInStore(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
@@ -489,7 +489,7 @@ public class SnapshotLifecycleTests
         return AllocNodeInStore(store, left, right);
     }
 
-    private static Handle<TreeNode> PathCopyLeftSpineInStore(NodeStore<TreeNode, TreeNodeOps> store, Handle<TreeNode> oldRoot, int depth)
+    private static Handle<TreeNode> PathCopyLeftSpineInStore(GlobalNodeStore<TreeNode, TreeNodeOps> store, Handle<TreeNode> oldRoot, int depth)
     {
         if (depth == 0)
             return AllocNodeInStore(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
