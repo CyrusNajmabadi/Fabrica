@@ -4,6 +4,7 @@
   <Project Path="src/Fabrica.Engine/Fabrica.Engine.csproj" />
   <Project Path="src/Fabrica.ConsoleApp/Fabrica.ConsoleApp.csproj" />
   <Project Path="src/Fabrica.Game/Fabrica.Game.csproj" />
+  <Project Path="src/Fabrica.Game.ConsoleApp/Fabrica.Game.ConsoleApp.csproj" />
   <Project Path="tests/Fabrica.Core.Tests/Fabrica.Core.Tests.csproj" />
   <Project Path="tests/Fabrica.Pipeline.Tests/Fabrica.Pipeline.Tests.csproj" />
   <Project Path="tests/Fabrica.Engine.Tests/Fabrica.Engine.Tests.csproj" />
