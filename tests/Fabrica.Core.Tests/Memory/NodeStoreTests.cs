@@ -9,9 +9,9 @@ public class NodeStoreTests
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public Handle<TreeNode> Left { get; set; }
-        public Handle<TreeNode> Right { get; set; }
-        public int Value { get; set; }
+        public Handle<TreeNode> Left;
+        public Handle<TreeNode> Right;
+        public int Value;
     }
 
     private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
@@ -32,13 +32,6 @@ public class NodeStoreTests
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
-        }
-
-        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 

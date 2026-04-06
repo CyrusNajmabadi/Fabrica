@@ -165,7 +165,7 @@ internal sealed class WorkerPool : IDisposable
     private bool TryStealAndExecute(WorkerContext context)
     {
         var count = _allContexts.Length;
-        var start = ++context._stealOffset;
+        var start = ++context.StealOffset;
 
         for (var i = 0; i < count; i++)
         {
@@ -196,44 +196,44 @@ internal sealed class WorkerPool : IDisposable
 
     private void ExecuteJob(Job job, WorkerContext context)
     {
-        var scheduler = job._scheduler!;
-        context._currentScheduler = scheduler;
+        var scheduler = job.Scheduler!;
+        context.CurrentScheduler = scheduler;
 
 #if DEBUG
-        job._state = JobState.Executing;
+        job.State = JobState.Executing;
 #endif
 
         job.Execute(context);
 
 #if DEBUG
-        job._state = JobState.Completed;
+        job.State = JobState.Completed;
 #endif
 
         this.PropagateCompletion(job, context);
         scheduler.DecrementOutstanding();
 
-        context._currentScheduler = null;
+        context.CurrentScheduler = null;
     }
 
     private void PropagateCompletion(Job job, WorkerContext context)
     {
-        if (job._dependents is not { } dependents)
+        if (job.Dependents is not { } dependents)
             return;
 
-        var scheduler = context._currentScheduler!;
+        var scheduler = context.CurrentScheduler!;
 
         foreach (var dependent in dependents)
         {
-            var remaining = Interlocked.Decrement(ref dependent._remainingDependencies);
+            var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
             Debug.Assert(remaining >= 0);
             if (remaining != 0)
                 continue;
 
 #if DEBUG
-            Debug.Assert(dependent._state == JobState.Pending);
-            dependent._state = JobState.Queued;
+            Debug.Assert(dependent.State == JobState.Pending);
+            dependent.State = JobState.Queued;
 #endif
-            dependent._scheduler = scheduler;
+            dependent.Scheduler = scheduler;
             scheduler.IncrementOutstanding();
             context.Deque.Push(dependent);
             this.NotifyWorkAvailable();

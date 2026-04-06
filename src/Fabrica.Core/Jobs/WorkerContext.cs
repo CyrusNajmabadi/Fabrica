@@ -22,14 +22,14 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex)
     internal readonly WorkStealingDeque<Job> Deque = new();
 
     /// <summary>Round-robin offset for steal target selection. Accessed only by the owning thread.</summary>
-    internal int _stealOffset;
+    internal int StealOffset;
 
     /// <summary>
     /// The scheduler that owns the currently executing job's DAG. Set by
     /// <see cref="WorkerPool.ExecuteJob"/> before calling <see cref="Job.Execute"/> and cleared
     /// after. Used by <see cref="Enqueue"/> to stamp sub-jobs with the correct scheduler.
     /// </summary>
-    internal JobScheduler? _currentScheduler;
+    internal JobScheduler? CurrentScheduler;
 
     /// <summary>
     /// Pushes a ready-to-execute sub-job onto this worker's deque. The sub-job is automatically
@@ -38,13 +38,13 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex)
     /// </summary>
     internal void Enqueue(Job job)
     {
-        var scheduler = _currentScheduler!;
+        var scheduler = CurrentScheduler!;
 
 #if DEBUG
-        Debug.Assert(job._state == JobState.Pending);
-        job._state = JobState.Queued;
+        Debug.Assert(job.State == JobState.Pending);
+        job.State = JobState.Queued;
 #endif
-        job._scheduler = scheduler;
+        job.Scheduler = scheduler;
         scheduler.IncrementOutstanding();
         Deque.Push(job);
         pool.NotifyWorkAvailable();

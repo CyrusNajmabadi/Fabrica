@@ -6,21 +6,35 @@ namespace Fabrica.Core.Memory;
 /// specific node type — which fields are child handles — and are reused across all operations
 /// (increment, decrement, validate, collect, etc.).
 ///
-/// TWO OVERLOADS
-///   The context-free overload works with <see cref="INodeVisitor"/> for simple operations.
-///   The context overload works with <see cref="INodeVisitor{TContext}"/> for operations that
-///   need data (refcount tables, world state, etc.) passed from the caller through to the visitor.
-///   Both overloads encode the same structural knowledge.
+/// FOUR METHOD FAMILIES
+///   The read-only pair: <see cref="EnumerateChildren{TVisitor}(in TNode, ref TVisitor)"/> with
+///   <see cref="INodeVisitor"/> / <see cref="INodeVisitor.Visit{TChild}"/>, and the context overload
+///   <see cref="EnumerateChildren{TVisitor, TContext}(in TNode, in TContext, ref TVisitor)"/> with
+///   <see cref="INodeVisitor{TContext}"/> / <see cref="INodeVisitor{TContext}.Visit{TChild}"/>.
+///   The ref-mutation pair: <see cref="EnumerateRefChildren{TVisitor}(ref TNode, ref TVisitor)"/> with
+///   <see cref="INodeVisitor.VisitRef{TChild}"/>, and the context overload
+///   <see cref="EnumerateRefChildren{TVisitor, TContext}(ref TNode, in TContext, ref TVisitor)"/> with
+///   <see cref="INodeVisitor{TContext}.VisitRef{TChild}"/>. All four encode the same structural knowledge.
 ///
 /// STRUCT GENERIC PATTERN
-///   Both the enumerator and the visitor are struct type parameters. The JIT specializes each
-///   combination into separate method bodies with no interface dispatch.
+///   Both the enumerator and the visitor are struct type parameters. The JIT specializes
+///   each combination into separate method bodies with no interface dispatch.
 /// </summary>
 internal interface INodeChildEnumerator<TNode> where TNode : struct
 {
     void EnumerateChildren<TVisitor>(in TNode node, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor;
+        where TVisitor : struct, INodeVisitor
+        => throw new NotImplementedException();
 
     void EnumerateChildren<TVisitor, TContext>(in TNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>;
+        where TVisitor : struct, INodeVisitor<TContext>
+        => throw new NotImplementedException();
+
+    void EnumerateRefChildren<TVisitor>(ref TNode node, ref TVisitor visitor)
+        where TVisitor : struct, INodeVisitor
+        => throw new NotImplementedException();
+
+    void EnumerateRefChildren<TVisitor, TContext>(ref TNode node, in TContext context, ref TVisitor visitor)
+        where TVisitor : struct, INodeVisitor<TContext>
+        => throw new NotImplementedException();
 }

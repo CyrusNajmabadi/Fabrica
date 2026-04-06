@@ -211,19 +211,19 @@ public class UnsafeListTests
     public void StructByRef_MutatesInPlace()
     {
         var list = new UnsafeList<Point>();
-        list.Add(new Point { _x = 1, _y = 2 });
+        list.Add(new Point { X = 1, Y = 2 });
 
         ref var p = ref list[0];
-        p._x = 10;
-        p._y = 20;
+        p.X = 10;
+        p.Y = 20;
 
-        Assert.Equal(10, list[0]._x);
-        Assert.Equal(20, list[0]._y);
+        Assert.Equal(10, list[0].X);
+        Assert.Equal(20, list[0].Y);
     }
 
     private struct Point
     {
-        public int _x;
-        public int _y;
+        public int X;
+        public int Y;
     }
 }
