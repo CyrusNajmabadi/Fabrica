@@ -24,17 +24,17 @@ internal interface INodeChildEnumerator<TNode> where TNode : struct
 {
     void EnumerateChildren<TVisitor>(in TNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
-        => throw new NotSupportedException();
+        => throw new NotImplementedException();
 
     void EnumerateChildren<TVisitor, TContext>(in TNode node, in TContext context, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor<TContext>
-        => throw new NotSupportedException();
+        => throw new NotImplementedException();
 
     void EnumerateRefChildren<TVisitor>(ref TNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
-        => throw new NotSupportedException();
+        => throw new NotImplementedException();
 
     void EnumerateRefChildren<TVisitor, TContext>(ref TNode node, in TContext context, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor<TContext>
-        => throw new NotSupportedException();
+        => throw new NotImplementedException();
 }

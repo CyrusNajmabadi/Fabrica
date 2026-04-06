@@ -42,11 +42,11 @@ internal interface INodeVisitor
 {
     void Visit<TChild>(Handle<TChild> child)
         where TChild : struct
-        => throw new NotSupportedException();
+        => throw new NotImplementedException();
 
     void VisitRef<TChild>(ref Handle<TChild> child)
         where TChild : struct
-        => throw new NotSupportedException();
+        => throw new NotImplementedException();
 }
 
 /// <summary>
