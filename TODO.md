@@ -46,14 +46,11 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 
 ## Engine / Architecture — Coordinator Merge
 
-- [ ] **Root tracking for SnapshotSlice integration** — the merge pipeline currently establishes refcounts for internal
-  children but does not identify which newly-merged nodes are snapshot roots. The likely approach: jobs explicitly mark
-  root handles at creation time via a per-thread `RootCollector` buffer (alongside the TLB). After merge, the
-  coordinator remaps collected root handles from local to global and feeds them into `SnapshotSlice.AddRoot`.
-  - **Why not refcount-zero:** a zero refcount could indicate a bug (leaked node), not a root. The correct invariant
-    is: debug-assert that all declared roots have refcount zero after Phase 2b, and no non-roots have refcount zero.
-  - **Why not root-job-output:** pushes root-marking responsibility far from the creation point, making it hard to
-    reason about. Jobs know at creation time what they're building; marking roots there keeps the decision local.
+- [x] **Root tracking for SnapshotSlice integration** — root tracking integrated directly into `ThreadLocalBuffer<T>`
+  via `UnsafeList<Handle<T>>`. Jobs mark roots at creation time via `Allocate(isRoot: true)` or `MarkRoot(Handle<T>)`.
+  Root handles can reference nodes from any TLB (cross-thread). The coordinator collects and remaps root handles from
+  all TLBs after merge, then feeds them into `IncrementRoots`. Verified with post-Phase2b invariant test: roots have
+  RC=0 before increment, non-roots referenced by others have RC>0.
 
 ## Engine / Architecture — Coordinator Merge Optimizations
 
