@@ -18,7 +18,7 @@ namespace Fabrica.Core.Memory;
 /// CASCADE-FREE OWNERSHIP
 ///   This table is a pure refcount array — it does not own cascade logic. When a refcount reaches
 ///   zero, <see cref="Decrement"/> returns <c>true</c> and the caller (typically
-///   <see cref="NodeStore{TNode,TNodeOps}"/>) is responsible for cascading child decrements and
+///   <see cref="GlobalNodeStore{TNode,TNodeOps}"/>) is responsible for cascading child decrements and
 ///   freeing the arena slot.
 ///
 /// THREAD MODEL
@@ -58,7 +58,7 @@ internal sealed class RefCountTable<T> where T : struct
     // ── Thread ownership ──────────────────────────────────────────────────
 
     /// <summary>Debug-only assertion that the caller is on the owner thread. Types that wrap a
-    /// <see cref="RefCountTable{T}"/> (e.g., <see cref="NodeStore{TNode, TNodeOps}"/>) delegate
+    /// <see cref="RefCountTable{T}"/> (e.g., <see cref="GlobalNodeStore{TNode, TNodeOps}"/>) delegate
     /// here rather than maintaining their own <see cref="SingleThreadedOwner"/>.</summary>
     [Conditional("DEBUG")]
     internal void AssertOwnerThread()

@@ -6,7 +6,7 @@ using Xunit;
 namespace Fabrica.Core.Tests.Memory;
 
 /// <summary>
-/// Tests cross-type DAGs: type A nodes referencing type B nodes stored in a different <see cref="NodeStore{TNode,TNodeOps}"/>.
+/// Tests cross-type DAGs: type A nodes referencing type B nodes stored in a different <see cref="GlobalNodeStore{TNode,TNodeOps}"/>.
 /// Validates that cascade-free correctly crosses store boundaries.
 /// </summary>
 public class CrossTypeSnapshotTests
@@ -37,8 +37,8 @@ public class CrossTypeSnapshotTests
 
     private struct CrossTypeNodeOps : INodeOps<ParentNode>, INodeOps<ChildNode>
     {
-        internal NodeStore<ParentNode, CrossTypeNodeOps> ParentStore;
-        internal NodeStore<ChildNode, CrossTypeNodeOps> ChildStore;
+        internal GlobalNodeStore<ParentNode, CrossTypeNodeOps> ParentStore;
+        internal GlobalNodeStore<ChildNode, CrossTypeNodeOps> ChildStore;
 
         readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         {
@@ -73,8 +73,8 @@ public class CrossTypeSnapshotTests
     private const int ChildTypeId = 1;
 
     private struct CrossStoreAccessor(
-        NodeStore<ParentNode, CrossTypeNodeOps> parentStore,
-        NodeStore<ChildNode, CrossTypeNodeOps> childStore) : DagValidator.IWorldAccessor
+        GlobalNodeStore<ParentNode, CrossTypeNodeOps> parentStore,
+        GlobalNodeStore<ChildNode, CrossTypeNodeOps> childStore) : DagValidator.IWorldAccessor
     {
         public readonly int TypeCount => 2;
 
@@ -111,8 +111,8 @@ public class CrossTypeSnapshotTests
     }
 
     private static void AssertCrossStoreValid(
-        NodeStore<ParentNode, CrossTypeNodeOps> parentStore,
-        NodeStore<ChildNode, CrossTypeNodeOps> childStore,
+        GlobalNodeStore<ParentNode, CrossTypeNodeOps> parentStore,
+        GlobalNodeStore<ChildNode, CrossTypeNodeOps> childStore,
         ReadOnlySpan<Handle<ParentNode>> parentRoots,
         ReadOnlySpan<Handle<ChildNode>> childRoots,
         bool strict = true)
@@ -128,16 +128,16 @@ public class CrossTypeSnapshotTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static (NodeStore<ParentNode, CrossTypeNodeOps> parentStore, NodeStore<ChildNode, CrossTypeNodeOps> childStore)
+    private static (GlobalNodeStore<ParentNode, CrossTypeNodeOps> parentStore, GlobalNodeStore<ChildNode, CrossTypeNodeOps> childStore)
         CreateStores()
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = new NodeStore<ChildNode, CrossTypeNodeOps>(childArena, childRefCounts, default);
+        var childStore = new GlobalNodeStore<ChildNode, CrossTypeNodeOps>(childArena, childRefCounts, default);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = new NodeStore<ParentNode, CrossTypeNodeOps>(parentArena, parentRefCounts, default);
+        var parentStore = new GlobalNodeStore<ParentNode, CrossTypeNodeOps>(parentArena, parentRefCounts, default);
 
         var ops = new CrossTypeNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
@@ -149,7 +149,7 @@ public class CrossTypeSnapshotTests
     }
 
     private static Handle<ChildNode> AllocChild(
-        NodeStore<ChildNode, CrossTypeNodeOps> store,
+        GlobalNodeStore<ChildNode, CrossTypeNodeOps> store,
         Handle<ChildNode> left,
         Handle<ChildNode> right,
         int value)
@@ -165,8 +165,8 @@ public class CrossTypeSnapshotTests
     }
 
     private static Handle<ParentNode> AllocParent(
-        NodeStore<ParentNode, CrossTypeNodeOps> parentStore,
-        NodeStore<ChildNode, CrossTypeNodeOps> childStore,
+        GlobalNodeStore<ParentNode, CrossTypeNodeOps> parentStore,
+        GlobalNodeStore<ChildNode, CrossTypeNodeOps> childStore,
         Handle<ParentNode> leftParent,
         Handle<ParentNode> rightParent,
         Handle<ChildNode> childRef)

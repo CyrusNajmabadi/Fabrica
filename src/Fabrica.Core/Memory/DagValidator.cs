@@ -5,7 +5,7 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Validates structural invariants of arena-backed DAGs, including heterogeneous graphs that span
-/// multiple <see cref="NodeStore{TNode,TNodeOps}"/> instances of different node types.
+/// multiple <see cref="GlobalNodeStore{TNode,TNodeOps}"/> instances of different node types.
 ///
 /// CROSS-STORE VALIDATION
 ///   The primary API takes an <see cref="IWorldAccessor"/> that provides type-erased access to all
@@ -13,7 +13,7 @@ namespace Fabrica.Core.Memory;
 ///   DFS walks across store boundaries, detecting cross-store cycles and verifying refcounts globally.
 ///
 /// SINGLE-STORE CONVENIENCE
-///   Overloads that take a single <see cref="NodeStore{TNode,TNodeOps}"/> and an
+///   Overloads that take a single <see cref="GlobalNodeStore{TNode,TNodeOps}"/> and an
 ///   <see cref="INodeOps{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,TNodeOps}"/>
 ///   internally. Cross-type children from the enumerator are ignored (they contribute external
 ///   refcounts that this store can't verify).
@@ -43,7 +43,7 @@ internal static class DagValidator
 
     /// <summary>
     /// Struct callback that provides the validator type-erased access to a heterogeneous DAG world.
-    /// Implementations dispatch on <c>typeId</c> to access the correct <see cref="NodeStore{TNode,THandler}"/>.
+    /// Implementations dispatch on <c>typeId</c> to access the correct <see cref="GlobalNodeStore{TNode,THandler}"/>.
     /// </summary>
     internal interface IWorldAccessor
     {
@@ -241,7 +241,7 @@ internal static class DagValidator
     /// for full heterogeneous validation.
     /// </summary>
     internal static void AssertValid<TNode, TNodeOps>(
-        NodeStore<TNode, TNodeOps> store,
+        GlobalNodeStore<TNode, TNodeOps> store,
         ReadOnlySpan<Handle<TNode>> roots,
         TNodeOps enumerator,
         bool strict = true)
@@ -255,7 +255,7 @@ internal static class DagValidator
 
     /// <summary>Single-store validate returning issues list.</summary>
     internal static List<string> Validate<TNode, TNodeOps>(
-        NodeStore<TNode, TNodeOps> store,
+        GlobalNodeStore<TNode, TNodeOps> store,
         ReadOnlySpan<Handle<TNode>> roots,
         TNodeOps enumerator,
         bool strict = true)
@@ -273,12 +273,12 @@ internal static class DagValidator
     // ── SingleStoreAccessor ─────────────────────────────────────────────
 
     /// <summary>
-    /// Adapts a single <see cref="NodeStore{TNode,TNodeOps}"/> + <see cref="INodeOps{TNode}"/>
+    /// Adapts a single <see cref="GlobalNodeStore{TNode,TNodeOps}"/> + <see cref="INodeOps{TNode}"/>
     /// into an <see cref="IWorldAccessor"/> with one type (typeId = 0). Cross-type children from the
     /// enumerator are silently filtered out.
     /// </summary>
     private struct SingleStoreAccessor<TNode, TNodeOps>(
-        NodeStore<TNode, TNodeOps> store,
+        GlobalNodeStore<TNode, TNodeOps> store,
         TNodeOps enumerator) : IWorldAccessor
         where TNode : struct
         where TNodeOps : struct, INodeOps<TNode>

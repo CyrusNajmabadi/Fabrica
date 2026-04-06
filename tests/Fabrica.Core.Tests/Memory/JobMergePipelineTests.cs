@@ -9,8 +9,8 @@ namespace Fabrica.Core.Tests.Memory;
 /// <summary>
 /// End-to-end integration test proving the full production-side pipeline: real <see cref="WorkerPool"/>
 /// + <see cref="JobScheduler"/>, concrete job subclasses that allocate nodes in <see cref="ThreadLocalBuffer{T}"/>
-/// instances, followed by <see cref="MergePipeline"/> drain/rewrite/refcount, and <see cref="DagValidator"/>
-/// verification.
+/// instances, followed by <see cref="GlobalNodeStore{TNode, TNodeOps}"/> merge (drain, rewrite, refcount), and
+/// <see cref="DagValidator"/> verification.
 /// </summary>
 public class JobMergePipelineTests : IDisposable
 {
@@ -33,8 +33,8 @@ public class JobMergePipelineTests : IDisposable
 
     private struct TestNodeOps : INodeOps<ParentNode>, INodeOps<ChildNode>
     {
-        internal NodeStore<ParentNode, TestNodeOps> ParentStore;
-        internal NodeStore<ChildNode, TestNodeOps> ChildStore;
+        internal GlobalNodeStore<ParentNode, TestNodeOps> ParentStore;
+        internal GlobalNodeStore<ChildNode, TestNodeOps> ChildStore;
 
         readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         {
@@ -90,8 +90,8 @@ public class JobMergePipelineTests : IDisposable
 
     private struct RefcountVisitor : INodeVisitor
     {
-        internal NodeStore<ParentNode, TestNodeOps> ParentStore;
-        internal NodeStore<ChildNode, TestNodeOps> ChildStore;
+        internal GlobalNodeStore<ParentNode, TestNodeOps> ParentStore;
+        internal GlobalNodeStore<ChildNode, TestNodeOps> ChildStore;
 
         public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
@@ -108,8 +108,8 @@ public class JobMergePipelineTests : IDisposable
     private const int ChildTypeId = 1;
 
     private struct TestWorldAccessor(
-        NodeStore<ParentNode, TestNodeOps> parentStore,
-        NodeStore<ChildNode, TestNodeOps> childStore) : DagValidator.IWorldAccessor
+        GlobalNodeStore<ParentNode, TestNodeOps> parentStore,
+        GlobalNodeStore<ChildNode, TestNodeOps> childStore) : DagValidator.IWorldAccessor
     {
         public readonly int TypeCount => 2;
 
@@ -144,16 +144,16 @@ public class JobMergePipelineTests : IDisposable
 
     public void Dispose() => _pool.Dispose();
 
-    private static (NodeStore<ParentNode, TestNodeOps> ParentStore, NodeStore<ChildNode, TestNodeOps> ChildStore)
+    private static (GlobalNodeStore<ParentNode, TestNodeOps> ParentStore, GlobalNodeStore<ChildNode, TestNodeOps> ChildStore)
         CreateStores()
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = new NodeStore<ChildNode, TestNodeOps>(childArena, childRefCounts, default);
+        var childStore = new GlobalNodeStore<ChildNode, TestNodeOps>(childArena, childRefCounts, default);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = new NodeStore<ParentNode, TestNodeOps>(parentArena, parentRefCounts, default);
+        var parentStore = new GlobalNodeStore<ParentNode, TestNodeOps>(parentArena, parentRefCounts, default);
 
         var ops = new TestNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
@@ -305,22 +305,17 @@ public class JobMergePipelineTests : IDisposable
         var childRemap = new RemapTable(WorkerCount);
         var parentRemap = new RemapTable(WorkerCount);
 
-        var (childStart, childCount) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, childTlbs, childRemap);
-        var (parentStart, parentCount) = MergePipeline.DrainBuffers(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers(childTlbs, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
 
         Assert.Equal(3, childCount);
         Assert.Equal(3, parentCount);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
-        var nodeOps = new TestNodeOps { ParentStore = parentStore, ChildStore = childStore };
-
-        MergePipeline.RewriteHandles(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
-        MergePipeline.RewriteHandles(childStore.Arena, childStart, childCount, ref nodeOps, ref remapVisitor);
-
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        MergePipeline.IncrementChildRefCounts(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
-        MergePipeline.IncrementChildRefCounts(childStore.Arena, childStart, childCount, ref nodeOps, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
+        childStore.RewriteAndIncrementRefCounts(childStart, childCount, ref remapVisitor, ref refcountVisitor);
 
         // All parent handles should now be global
         for (var i = parentStart; i < parentStart + parentCount; i++)
@@ -335,7 +330,7 @@ public class JobMergePipelineTests : IDisposable
         // ── Root collection ──────────────────────────────────────────────
 
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");
 
@@ -396,7 +391,7 @@ public class JobMergePipelineTests : IDisposable
 
         // Merge and verify all handles resolve correctly
         var remap = new RemapTable(WorkerCount);
-        var (start, count) = MergePipeline.DrainBuffers(childStore.Arena, childStore.RefCounts, childTlbs, remap);
+        var (start, count) = childStore.DrainBuffers(childTlbs, remap);
         Assert.Equal(32, count);
 
         // Every node should be accessible via the arena

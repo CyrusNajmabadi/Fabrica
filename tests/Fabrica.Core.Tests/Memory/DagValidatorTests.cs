@@ -16,7 +16,7 @@ public class DagValidatorTests
 
     private struct TreeNodeOps : INodeOps<TreeNode>
     {
-        internal NodeStore<TreeNode, TreeNodeOps> Store;
+        internal GlobalNodeStore<TreeNode, TreeNodeOps> Store;
 
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
@@ -35,17 +35,17 @@ public class DagValidatorTests
         }
     }
 
-    private static NodeStore<TreeNode, TreeNodeOps> CreateStore()
+    private static GlobalNodeStore<TreeNode, TreeNodeOps> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        var store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
         store.SetNodeOps(new TreeNodeOps { Store = store });
         return store;
     }
 
     private static Handle<TreeNode> AllocNode(
-        NodeStore<TreeNode, TreeNodeOps> store,
+        GlobalNodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> left,
         Handle<TreeNode> right)
     {
@@ -57,10 +57,10 @@ public class DagValidatorTests
         return handle;
     }
 
-    private static void AssertValid(NodeStore<TreeNode, TreeNodeOps> store, ReadOnlySpan<Handle<TreeNode>> roots)
+    private static void AssertValid(GlobalNodeStore<TreeNode, TreeNodeOps> store, ReadOnlySpan<Handle<TreeNode>> roots)
         => DagValidator.AssertValid(store, roots, default);
 
-    private static List<string> Validate(NodeStore<TreeNode, TreeNodeOps> store, ReadOnlySpan<Handle<TreeNode>> roots)
+    private static List<string> Validate(GlobalNodeStore<TreeNode, TreeNodeOps> store, ReadOnlySpan<Handle<TreeNode>> roots)
         => DagValidator.Validate(store, roots, default);
 
     // ── Valid DAGs pass ──────────────────────────────────────────────────
@@ -414,7 +414,7 @@ public class DagValidatorTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static Handle<TreeNode> BuildPerfectTree(NodeStore<TreeNode, TreeNodeOps> store, int depth)
+    private static Handle<TreeNode> BuildPerfectTree(GlobalNodeStore<TreeNode, TreeNodeOps> store, int depth)
     {
         if (depth == 0)
             return AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
@@ -425,7 +425,7 @@ public class DagValidatorTests
     }
 
     private static Handle<TreeNode> PathCopyLeftSpine(
-        NodeStore<TreeNode, TreeNodeOps> store,
+        GlobalNodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> oldRoot,
         int depth)
     {

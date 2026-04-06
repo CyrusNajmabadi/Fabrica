@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
 
-public class NodeStoreTests
+public class GlobalNodeStoreTests
 {
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
@@ -17,7 +17,7 @@ public class NodeStoreTests
 
     private struct TreeNodeOps : INodeOps<TreeNode>
     {
-        internal NodeStore<TreeNode, TreeNodeOps> Store;
+        internal GlobalNodeStore<TreeNode, TreeNodeOps> Store;
 
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
@@ -36,18 +36,18 @@ public class NodeStoreTests
         }
     }
 
-    private static NodeStore<TreeNode, TreeNodeOps> CreateStore()
+    private static GlobalNodeStore<TreeNode, TreeNodeOps> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        var store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
         store.SetNodeOps(new TreeNodeOps { Store = store });
         store.EnableValidation();
         return store;
     }
 
     private static Handle<TreeNode> AllocNode(
-        NodeStore<TreeNode, TreeNodeOps> store,
+        GlobalNodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> left,
         Handle<TreeNode> right,
         int value)
