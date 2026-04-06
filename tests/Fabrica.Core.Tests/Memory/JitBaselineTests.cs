@@ -50,6 +50,12 @@ namespace Fabrica.Core.Tests.Memory;
 ///   <item><term>enumerate-decrement-multi-type (2)</term>
 ///     <description><c>ParentDecrementVisitor</c> has two live typeof branches (ParentNode + ChildNode);
 ///       both resolve → 2 Decrements from two different tables</description></item>
+///   <item><term>enumerate-multi-ops-parent (2)</term>
+///     <description><c>MultiTypeOps : INodeOps&lt;ParentNode&gt;, INodeOps&lt;ChildNode&gt;</c> called through
+///       <c>INodeOps&lt;ParentNode&gt;</c> path; both typeof branches (ParentNode + ChildNode) are live → 2 Decrements</description></item>
+///   <item><term>enumerate-multi-ops-child (2)</term>
+///     <description><c>MultiTypeOps</c> called through <c>INodeOps&lt;ChildNode&gt;</c> path;
+///       enumerates two <c>ChildNode</c> children → 2 Decrements (ParentNode branch eliminated)</description></item>
 /// </list>
 ///
 /// <para><b>BASELINE DIRECTORY STRUCTURE</b></para>
@@ -85,6 +91,8 @@ public partial class JitBaselineTests
     [InlineData("EnumerateDecrement", "enumerate-decrement-same-type", 2)]
     [InlineData("EnumerateMixedDecrement", "enumerate-decrement-mixed-type", 1)]
     [InlineData("EnumerateParentDecrement", "enumerate-decrement-multi-type", 2)]
+    [InlineData("EnumerateMultiOpsParent", "enumerate-multi-ops-parent", 2)]
+    [InlineData("EnumerateMultiOpsChild", "enumerate-multi-ops-child", 2)]
     public void JitOutput_MatchesBaseline(string methodFilter, string baselineName, int expectedDecrements) => this.VerifyBaseline(methodFilter, baselineName, expectedDecrements, requireOutput: true);
 
     /// <summary>
