@@ -19,8 +19,8 @@ public class PersistentTreeBenchmarks
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public Handle<TreeNode> Left { get; set; }
-        public Handle<TreeNode> Right { get; set; }
+        public Handle<TreeNode> Left;
+        public Handle<TreeNode> Right;
     }
 
     // ── Enumerator + cascade handler ────────────────────────────────────
@@ -274,8 +274,8 @@ public class SingleForkReleaseBenchmarks
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public Handle<TreeNode> Left { get; set; }
-        public Handle<TreeNode> Right { get; set; }
+        public Handle<TreeNode> Left;
+        public Handle<TreeNode> Right;
     }
 
     private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>

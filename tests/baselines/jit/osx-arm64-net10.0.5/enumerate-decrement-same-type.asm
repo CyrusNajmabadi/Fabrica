@@ -5,7 +5,7 @@
 ; fp based frame
 ; partially interruptible
 ; No PGO data
-; 0 inlinees with PGO data; 16 single block inlinees; 7 inlinees without PGO data
+; 0 inlinees with PGO data; 12 single block inlinees; 7 inlinees without PGO data
 
 G_M000_IG01:                ;; offset=0x0000
             stp     fp, lr, [sp, #-0x70]!
@@ -20,8 +20,8 @@ G_M000_IG01:                ;; offset=0x0000
             mov     x20, x2
  
 G_M000_IG02:                ;; offset=0x0028
-            ldr     w21, [x19]
-            tbnz    w21, #31, G_M000_IG07
+            ldr     w0, [x19]
+            tbnz    w0, #31, G_M000_IG07
  
 G_M000_IG03:                ;; offset=0x0030
             ldr     w21, [x19]
@@ -78,8 +78,8 @@ G_M000_IG06:                ;; offset=0x00B0
             blr     x3
  
 G_M000_IG07:                ;; offset=0x00E8
-            ldr     w21, [x19, #0x04]
-            tbnz    w21, #31, G_M000_IG12
+            ldr     w0, [x19, #0x04]
+            tbnz    w0, #31, G_M000_IG12
  
 G_M000_IG08:                ;; offset=0x00F0
             ldr     w19, [x19, #0x04]

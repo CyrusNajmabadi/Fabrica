@@ -17,17 +17,17 @@ public class CrossTypeSnapshotTests
     [StructLayout(LayoutKind.Sequential)]
     private struct ParentNode
     {
-        public Handle<ParentNode> LeftParent { get; set; }
-        public Handle<ParentNode> RightParent { get; set; }
-        public Handle<ChildNode> ChildRef { get; set; }
+        public Handle<ParentNode> LeftParent;
+        public Handle<ParentNode> RightParent;
+        public Handle<ChildNode> ChildRef;
     }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ChildNode
     {
-        public Handle<ChildNode> LeftChild { get; set; }
-        public Handle<ChildNode> RightChild { get; set; }
-        public int Value { get; set; }
+        public Handle<ChildNode> LeftChild;
+        public Handle<ChildNode> RightChild;
+        public int Value;
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────

@@ -197,8 +197,8 @@ static void EnumerateParentDecrement(
 
 internal struct TreeNode
 {
-    public Handle<TreeNode> Left { get; set; }
-    public Handle<TreeNode> Right { get; set; }
+    public Handle<TreeNode> Left;
+    public Handle<TreeNode> Right;
 }
 
 internal struct OtherNode
@@ -210,16 +210,16 @@ internal struct OtherNode
 /// which only handles one type (the cross-type child is dead-branch eliminated).</summary>
 internal struct MixedNode
 {
-    public Handle<MixedNode> SameChild { get; set; }
-    public Handle<OtherNode> CrossChild { get; set; }
+    public Handle<MixedNode> SameChild;
+    public Handle<OtherNode> CrossChild;
 }
 
 /// <summary>A node with children of two different types — used with ParentDecrementVisitor
 /// which has active typeof branches for BOTH types (neither is eliminated).</summary>
 internal struct ParentNode
 {
-    public Handle<ParentNode> ParentRef { get; set; }
-    public Handle<ChildNode> ChildRef { get; set; }
+    public Handle<ParentNode> ParentRef;
+    public Handle<ChildNode> ChildRef;
 }
 
 internal struct ChildNode

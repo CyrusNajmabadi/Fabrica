@@ -9,8 +9,8 @@ public class ThreadLocalBufferTests
     [StructLayout(LayoutKind.Sequential)]
     private struct TestNode
     {
-        public int _value;
-        public Handle<TestNode> _child;
+        public int Value;
+        public Handle<TestNode> Child;
     }
 
     // ═══════════════════════════ Basic allocation ═════════════════════════
@@ -68,10 +68,10 @@ public class ThreadLocalBufferTests
         var handle = tlb.Allocate();
         var localIndex = TaggedHandle.DecodeLocalIndex(handle.Index);
 
-        tlb[localIndex] = new TestNode { _value = 42, _child = Handle<TestNode>.None };
+        tlb[localIndex] = new TestNode { Value = 42, Child = Handle<TestNode>.None };
 
-        Assert.Equal(42, tlb[localIndex]._value);
-        Assert.Equal(Handle<TestNode>.None, tlb[localIndex]._child);
+        Assert.Equal(42, tlb[localIndex].Value);
+        Assert.Equal(Handle<TestNode>.None, tlb[localIndex].Child);
     }
 
     [Fact]
@@ -81,9 +81,9 @@ public class ThreadLocalBufferTests
         tlb.Allocate();
 
         ref var node = ref tlb[0];
-        node._value = 99;
+        node.Value = 99;
 
-        Assert.Equal(99, tlb[0]._value);
+        Assert.Equal(99, tlb[0].Value);
     }
 
     // ═══════════════════════════ WrittenSpan ══════════════════════════════
@@ -93,14 +93,14 @@ public class ThreadLocalBufferTests
     {
         var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
         tlb.Allocate();
-        tlb[0] = new TestNode { _value = 10 };
+        tlb[0] = new TestNode { Value = 10 };
         tlb.Allocate();
-        tlb[1] = new TestNode { _value = 20 };
+        tlb[1] = new TestNode { Value = 20 };
 
         var span = tlb.WrittenSpan;
         Assert.Equal(2, span.Length);
-        Assert.Equal(10, span[0]._value);
-        Assert.Equal(20, span[1]._value);
+        Assert.Equal(10, span[0].Value);
+        Assert.Equal(20, span[1].Value);
     }
 
     [Fact]
@@ -150,13 +150,13 @@ public class ThreadLocalBufferTests
         {
             var handle = tlb.Allocate();
             var localIndex = TaggedHandle.DecodeLocalIndex(handle.Index);
-            tlb[localIndex] = new TestNode { _value = i };
+            tlb[localIndex] = new TestNode { Value = i };
         }
 
         Assert.Equal(100, tlb.Count);
 
         for (var i = 0; i < 100; i++)
-            Assert.Equal(i, tlb[i]._value);
+            Assert.Equal(i, tlb[i].Value);
     }
 
     // ═══════════════════════════ Cross-thread references ══════════════════
@@ -168,12 +168,12 @@ public class ThreadLocalBufferTests
         var tlbB = new ThreadLocalBuffer<TestNode>(threadId: 1);
 
         var handleB = tlbB.Allocate();
-        tlbB[0] = new TestNode { _value = 42 };
+        tlbB[0] = new TestNode { Value = 42 };
 
         var handleA = tlbA.Allocate();
-        tlbA[0] = new TestNode { _value = 1, _child = handleB };
+        tlbA[0] = new TestNode { Value = 1, Child = handleB };
 
-        Assert.Equal(1, TaggedHandle.DecodeThreadId(tlbA[0]._child.Index));
-        Assert.Equal(0, TaggedHandle.DecodeLocalIndex(tlbA[0]._child.Index));
+        Assert.Equal(1, TaggedHandle.DecodeThreadId(tlbA[0].Child.Index));
+        Assert.Equal(0, TaggedHandle.DecodeLocalIndex(tlbA[0].Child.Index));
     }
 }

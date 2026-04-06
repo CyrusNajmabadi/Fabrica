@@ -77,11 +77,9 @@ public class ProducerConsumerQueueSpscWithCleanupStressTest
 
     private struct LongCountingCleanupHandler : ProducerConsumerQueue<long>.ICleanupHandler
     {
-        public long _count;
-
-        public readonly long Count => _count;
+        public long Count;
 
         public void HandleCleanup(long position, in long item)
-            => _count++;
+            => Count++;
     }
 }

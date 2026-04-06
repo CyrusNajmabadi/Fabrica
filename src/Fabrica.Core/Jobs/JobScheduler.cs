@@ -72,10 +72,10 @@ internal sealed class JobScheduler
     private void InjectJob(Job job)
     {
 #if DEBUG
-        Debug.Assert(job._state == JobState.Pending);
-        job._state = JobState.Queued;
+        Debug.Assert(job.State == JobState.Pending);
+        job.State = JobState.Queued;
 #endif
-        job._scheduler = this;
+        job.Scheduler = this;
         Interlocked.Increment(ref _outstandingJobs);
         _pool.Inject(job);
     }

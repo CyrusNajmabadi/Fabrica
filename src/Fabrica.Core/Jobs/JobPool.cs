@@ -53,7 +53,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// <summary>
     /// Returns a pooled instance if available, or allocates a new one. The returned job is in a
     /// clean state (reset during the previous return) — the caller must configure
-    /// <see cref="Job.Counter"/>, <see cref="Job.Dependents"/>, and subclass-specific fields
+    /// <see cref="Job.RemainingDependencies"/>, <see cref="Job.Dependents"/>, and subclass-specific fields
     /// before submitting.
     /// </summary>
     public TJob Rent()
@@ -66,7 +66,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
             if (head is null)
                 return new TJob();
 
-            var next = (TJob?)head._poolNext;
+            var next = (TJob?)head.PoolNext;
 
 #if DEBUG
             this.DebugBeforeRentCas?.Invoke();
@@ -74,7 +74,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
 
             if (Interlocked.CompareExchange(ref _head, next, head) == head)
             {
-                head._poolNext = null;
+                head.PoolNext = null;
                 return head;
             }
 
@@ -89,11 +89,11 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// </summary>
     public void Return(TJob item)
     {
-        item._remainingDependencies = 0;
-        item._dependents = null;
-        item._scheduler = null;
+        item.RemainingDependencies = 0;
+        item.Dependents = null;
+        item.Scheduler = null;
 #if DEBUG
-        item._state = default;
+        item.State = default;
 #endif
         item.Reset();
 
@@ -102,7 +102,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
         while (true)
         {
             var head = Volatile.Read(ref _head);
-            item._poolNext = head;
+            item.PoolNext = head;
 
 #if DEBUG
             this.DebugBeforeReturnCas?.Invoke();
@@ -128,7 +128,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
             while (current is not null)
             {
                 count++;
-                current = (TJob?)current._poolNext;
+                current = (TJob?)current.PoolNext;
             }
 
             return count;

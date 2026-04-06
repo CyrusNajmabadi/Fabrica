@@ -252,13 +252,13 @@ public sealed class ConsumptionLoopTests
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal(0, deferredState._callCount);
+        Assert.Equal(0, deferredState.CallCount);
     }
 
     [Fact]
     public void DeferredConsumer_IsCalledWhenDue_AndPinsPosition()
     {
-        var deferredState = new TestDeferredConsumerState { _nextRunTime = long.MaxValue };
+        var deferredState = new TestDeferredConsumerState { NextRunTime = long.MaxValue };
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
@@ -270,7 +270,7 @@ public sealed class ConsumptionLoopTests
 
         test.Accessor.RunOneIteration(CancellationToken.None);
 
-        Assert.Equal(1, deferredState._callCount);
+        Assert.Equal(1, deferredState.CallCount);
         Assert.True(test.PinnedVersions.IsPinned(1));
     }
 
@@ -278,7 +278,7 @@ public sealed class ConsumptionLoopTests
     public void DeferredConsumer_Unpins_WhenTaskCompletes()
     {
         var taskCompletionSource = new TaskCompletionSource<long>();
-        var deferredState = new TestDeferredConsumerState { _taskToReturn = taskCompletionSource.Task };
+        var deferredState = new TestDeferredConsumerState { TaskToReturn = taskCompletionSource.Task };
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
 
@@ -302,7 +302,7 @@ public sealed class ConsumptionLoopTests
     {
         var deferredState = new TestDeferredConsumerState
         {
-            _exceptionToThrow = new InvalidOperationException("dispatch failed"),
+            ExceptionToThrow = new InvalidOperationException("dispatch failed"),
         };
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState)]);
@@ -324,7 +324,7 @@ public sealed class ConsumptionLoopTests
     public void DeferredConsumer_FaultedTask_UnpinsAndReschedulesWithErrorRetryDelay()
     {
         var taskCompletionSource = new TaskCompletionSource<long>();
-        var deferredState = new TestDeferredConsumerState { _taskToReturn = taskCompletionSource.Task };
+        var deferredState = new TestDeferredConsumerState { TaskToReturn = taskCompletionSource.Task };
         const long ErrorRetryDelay = 500_000_000L;
         var test = ConsumptionLoopTestContext.Create(
             deferredConsumers: [new TestDeferredConsumer(deferredState, errorRetryDelayNanoseconds: ErrorRetryDelay)]);
@@ -336,7 +336,7 @@ public sealed class ConsumptionLoopTests
         test.ClockState.NowNanoseconds = 100L;
 
         test.Accessor.RunOneIteration(CancellationToken.None);
-        Assert.Equal(1, deferredState._callCount);
+        Assert.Equal(1, deferredState.CallCount);
         Assert.True(test.PinnedVersions.IsPinned(1));
 
         taskCompletionSource.SetException(new InvalidOperationException("save failed"));
@@ -350,15 +350,15 @@ public sealed class ConsumptionLoopTests
         test.AppendEntry();
         test.ClockState.NowNanoseconds = 1000L;
         test.Accessor.RunOneIteration(CancellationToken.None);
-        Assert.Equal(1, deferredState._callCount);
+        Assert.Equal(1, deferredState.CallCount);
 
         // Running past the retry delay should trigger it again.
-        deferredState._taskToReturn = null;
-        deferredState._nextRunTime = long.MaxValue;
+        deferredState.TaskToReturn = null;
+        deferredState.NextRunTime = long.MaxValue;
         test.AppendEntry();
         test.ClockState.NowNanoseconds = 200L + ErrorRetryDelay + 1;
         test.Accessor.RunOneIteration(CancellationToken.None);
-        Assert.Equal(2, deferredState._callCount);
+        Assert.Equal(2, deferredState.CallCount);
     }
 
     [Fact]
@@ -392,10 +392,10 @@ public sealed class ConsumptionLoopTests
 
     private sealed class TestDeferredConsumerState
     {
-        public int _callCount;
-        public long _nextRunTime = long.MaxValue;
-        public Task<long>? _taskToReturn;
-        public Exception? _exceptionToThrow;
+        public int CallCount;
+        public long NextRunTime = long.MaxValue;
+        public Task<long>? TaskToReturn;
+        public Exception? ExceptionToThrow;
     }
 
     private sealed class TestDeferredConsumer(
@@ -411,12 +411,12 @@ public sealed class ConsumptionLoopTests
 
         public Task<long> ConsumeAsync(TestPayload payload, CancellationToken cancellationToken)
         {
-            _state._callCount++;
+            _state.CallCount++;
 
-            if (_state._exceptionToThrow is { } ex)
+            if (_state.ExceptionToThrow is { } ex)
                 throw ex;
 
-            return _state._taskToReturn ?? Task.FromResult(_state._nextRunTime);
+            return _state.TaskToReturn ?? Task.FromResult(_state.NextRunTime);
         }
     }
 

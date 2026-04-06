@@ -9,9 +9,9 @@ public class HandleRewriterTests
     [StructLayout(LayoutKind.Sequential)]
     private struct TreeNode
     {
-        public Handle<TreeNode> Left { get; set; }
-        public Handle<TreeNode> Right { get; set; }
-        public int Value { get; set; }
+        public Handle<TreeNode> Left;
+        public Handle<TreeNode> Right;
+        public int Value;
     }
 
     private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>

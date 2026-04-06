@@ -71,11 +71,11 @@ public class JobSchedulerTests
         var order = new ConcurrentQueue<string>();
 
         var jobA = new TestJob { OnExecute = _ => order.Enqueue("A") };
-        var jobB = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("B") };
-        var jobC = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("C") };
+        var jobB = new TestJob { RemainingDependencies = 1, OnExecute = _ => order.Enqueue("B") };
+        var jobC = new TestJob { RemainingDependencies = 1, OnExecute = _ => order.Enqueue("C") };
 
-        jobA._dependents = [jobB];
-        jobB._dependents = [jobC];
+        jobA.Dependents = [jobB];
+        jobB.Dependents = [jobC];
 
         Assert.True(scheduler.Submit(jobA, millisecondsTimeout: 5000));
 
@@ -93,13 +93,13 @@ public class JobSchedulerTests
         var order = new ConcurrentQueue<string>();
 
         var root = new TestJob { OnExecute = _ => order.Enqueue("root") };
-        var left = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("left") };
-        var right = new TestJob { _remainingDependencies = 1, OnExecute = _ => order.Enqueue("right") };
-        var join = new TestJob { _remainingDependencies = 2, OnExecute = _ => order.Enqueue("join") };
+        var left = new TestJob { RemainingDependencies = 1, OnExecute = _ => order.Enqueue("left") };
+        var right = new TestJob { RemainingDependencies = 1, OnExecute = _ => order.Enqueue("right") };
+        var join = new TestJob { RemainingDependencies = 2, OnExecute = _ => order.Enqueue("join") };
 
-        root._dependents = [left, right];
-        left._dependents = [join];
-        right._dependents = [join];
+        root.Dependents = [left, right];
+        left.Dependents = [join];
+        right.Dependents = [join];
 
         Assert.True(scheduler.Submit(root, millisecondsTimeout: 5000));
 
@@ -122,17 +122,17 @@ public class JobSchedulerTests
         var joinExecutionCount = 0;
 
         var root = new TestJob();
-        var left = new TestJob { _remainingDependencies = 1 };
-        var right = new TestJob { _remainingDependencies = 1 };
+        var left = new TestJob { RemainingDependencies = 1 };
+        var right = new TestJob { RemainingDependencies = 1 };
         var join = new TestJob
         {
-            _remainingDependencies = 2,
+            RemainingDependencies = 2,
             OnExecute = _ => Interlocked.Increment(ref joinExecutionCount),
         };
 
-        root._dependents = [left, right];
-        left._dependents = [join];
-        right._dependents = [join];
+        root.Dependents = [left, right];
+        left.Dependents = [join];
+        right.Dependents = [join];
 
         Assert.True(scheduler.Submit(root, millisecondsTimeout: 5000));
 
@@ -186,21 +186,21 @@ public class JobSchedulerTests
         var jobPool = new JobPool<TestJob>();
 
         var job = jobPool.Rent();
-        job._remainingDependencies = 3;
-        job._dependents = [new TestJob()];
+        job.RemainingDependencies = 3;
+        job.Dependents = [new TestJob()];
 #if DEBUG
-        job._state = JobState.Completed;
+        job.State = JobState.Completed;
 #endif
 
         jobPool.Return(job);
         var reused = jobPool.Rent();
 
         Assert.Same(job, reused);
-        Assert.Equal(0, reused._remainingDependencies);
-        Assert.Null(reused._dependents);
-        Assert.Null(reused._scheduler);
+        Assert.Equal(0, reused.RemainingDependencies);
+        Assert.Null(reused.Dependents);
+        Assert.Null(reused.Scheduler);
 #if DEBUG
-        Assert.Equal(JobState.Pending, reused._state);
+        Assert.Equal(JobState.Pending, reused.State);
 #endif
     }
 
@@ -244,13 +244,13 @@ public class JobSchedulerTests
             var idx = i;
             jobs[i] = new TestJob
             {
-                _remainingDependencies = i == 0 ? 0 : 1,
+                RemainingDependencies = i == 0 ? 0 : 1,
                 OnExecute = _ => order.Enqueue(idx),
             };
         }
 
         for (var i = 0; i < Depth - 1; i++)
-            jobs[i]._dependents = [jobs[i + 1]];
+            jobs[i].Dependents = [jobs[i + 1]];
 
         Assert.True(scheduler.Submit(jobs[0], millisecondsTimeout: 10000));
 
@@ -271,7 +271,7 @@ public class JobSchedulerTests
 
         var join = new TestJob
         {
-            _remainingDependencies = FanWidth,
+            RemainingDependencies = FanWidth,
         };
 
         var root = new TestJob();
@@ -280,13 +280,13 @@ public class JobSchedulerTests
         {
             children[i] = new TestJob
             {
-                _remainingDependencies = 1,
+                RemainingDependencies = 1,
                 OnExecute = _ => Interlocked.Increment(ref executionCount),
-                _dependents = [join],
+                Dependents = [join],
             };
         }
 
-        root._dependents = children;
+        root.Dependents = children;
         Assert.True(scheduler.Submit(root, millisecondsTimeout: 10000));
 
         Assert.Equal(FanWidth, executionCount);
