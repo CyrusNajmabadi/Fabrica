@@ -22,10 +22,12 @@ using Fabrica.Core.Memory;
     var handler = new TreeHandler(arena, default);
     var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, handler);
 
-    VisitDifferentType(ref visitor, new Handle<OtherNode>(0));
+    var otherH = new Handle<OtherNode>(0);
+    VisitDifferentType(ref visitor, ref otherH);
     AssertRefCount(table, h0, 1, "Visit: after VisitDifferentType (should be unchanged)");
 
-    VisitSameType(ref visitor, h0);
+    var visitH0 = h0;
+    VisitSameType(ref visitor, ref visitH0);
     AssertRefCount(table, h0, 0, "Visit: after VisitSameType (should be freed)");
 }
 
@@ -54,7 +56,7 @@ using Fabrica.Core.Memory;
 
     // EnumerateDecrement walks root's children and decrements each.
     // This exercises: enumerator.EnumerateChildren → visitor.Visit → table.Decrement.
-    EnumerateDecrement(ref enumerator, in arena[root], ref visitor);
+    EnumerateDecrement(ref enumerator, ref arena[root], ref visitor);
     AssertRefCount(table, left, 0, "EnumerateDecrement: left child after enumerate (should be freed)");
     AssertRefCount(table, right, 0, "EnumerateDecrement: right child after enumerate (should be freed)");
     AssertRefCount(table, root, 1, "EnumerateDecrement: root refcount unchanged");
@@ -89,7 +91,7 @@ using Fabrica.Core.Memory;
     var visitor = new RefCountTable<MixedNode>.DecrementNodeRefCountVisitor<MixedHandler>(mixedTable, handler);
     var enumerator = new MixedChildEnumerator();
 
-    EnumerateMixedDecrement(ref enumerator, in mixedArena[parent], ref visitor);
+    EnumerateMixedDecrement(ref enumerator, ref mixedArena[parent], ref visitor);
     AssertRefCount(mixedTable, mixedChild, 0, "MixedEnumerate: same-type child (should be freed)");
     AssertRefCount(otherTable, otherChild, 1, "MixedEnumerate: cross-type child (should be unchanged)");
 }
@@ -124,7 +126,7 @@ using Fabrica.Core.Memory;
     var parentHandler = new ParentHandler(parentArena, enumerator, childTable, childHandler);
     var visitor = new ParentDecrementVisitor(parentTable, parentHandler, childTable, childHandler);
 
-    EnumerateParentDecrement(ref enumerator, in parentArena[root], ref visitor);
+    EnumerateParentDecrement(ref enumerator, ref parentArena[root], ref visitor);
     AssertRefCount(parentTable, parentChild, 0, "ParentDecrement: parent-type child (should be freed)");
     AssertRefCount(childTable, childRef, 0, "ParentDecrement: child-type child (should be freed)");
     AssertRefCount(parentTable, root, 1, "ParentDecrement: root refcount unchanged");
@@ -147,27 +149,27 @@ static void AssertRefCount<T>(RefCountTable<T> table, Handle<T> handle, int expe
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void VisitSameType(
     ref RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler> visitor,
-    Handle<TreeNode> child)
+    ref Handle<TreeNode> child)
 {
-    visitor.Visit(child);
+    visitor.Visit(ref child);
 }
 
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void VisitDifferentType(
     ref RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler> visitor,
-    Handle<OtherNode> child)
+    ref Handle<OtherNode> child)
 {
-    visitor.Visit(child);
+    visitor.Visit(ref child);
 }
 
 // End-to-end: enumerator walks TreeNode children (both same-type) through the decrement visitor.
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void EnumerateDecrement(
     ref TreeChildEnumerator enumerator,
-    in TreeNode node,
+    ref TreeNode node,
     ref RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler> visitor)
 {
-    enumerator.EnumerateChildren(in node, ref visitor);
+    enumerator.EnumerateChildren(ref node, ref visitor);
 }
 
 // End-to-end: enumerator walks MixedNode children (one same-type, one cross-type) through the
@@ -175,10 +177,10 @@ static void EnumerateDecrement(
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void EnumerateMixedDecrement(
     ref MixedChildEnumerator enumerator,
-    in MixedNode node,
+    ref MixedNode node,
     ref RefCountTable<MixedNode>.DecrementNodeRefCountVisitor<MixedHandler> visitor)
 {
-    enumerator.EnumerateChildren(in node, ref visitor);
+    enumerator.EnumerateChildren(ref node, ref visitor);
 }
 
 // End-to-end: ParentChildEnumerator walks ParentNode children (Handle<ParentNode> + Handle<ChildNode>)
@@ -187,10 +189,10 @@ static void EnumerateMixedDecrement(
 [MethodImpl(MethodImplOptions.NoInlining)]
 static void EnumerateParentDecrement(
     ref ParentChildEnumerator enumerator,
-    in ParentNode node,
+    ref ParentNode node,
     ref ParentDecrementVisitor visitor)
 {
-    enumerator.EnumerateChildren(in node, ref visitor);
+    enumerator.EnumerateChildren(ref node, ref visitor);
 }
 
 // ── Node types ───────────────────────────────────────────────────────────
@@ -232,81 +234,57 @@ internal struct ChildNode
 internal struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+    public readonly void EnumerateChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
     {
-        if (node.Left.IsValid) visitor.Visit(node.Left);
-        if (node.Right.IsValid) visitor.Visit(node.Right);
+        if (node.Left.Index != -1) visitor.Visit(ref node.Left);
+        if (node.Right.Index != -1) visitor.Visit(ref node.Right);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
+    public readonly void EnumerateChildren<TVisitor, TContext>(ref TreeNode node, in TContext context, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor<TContext>
     {
-        if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-        if (node.Right.IsValid) visitor.Visit(node.Right, in context);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void RewriteChildren<TRewriter>(ref TreeNode node, ref TRewriter rewriter)
-        where TRewriter : struct, INodeHandleRewriter
-    {
-        if (node.Left.Index != -1) { var h = node.Left; rewriter.Rewrite(ref h); node.Left = h; }
-        if (node.Right.Index != -1) { var h = node.Right; rewriter.Rewrite(ref h); node.Right = h; }
+        if (node.Left.Index != -1) visitor.Visit(ref node.Left, in context);
+        if (node.Right.Index != -1) visitor.Visit(ref node.Right, in context);
     }
 }
 
 internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor>(in MixedNode node, ref TVisitor visitor)
+    public readonly void EnumerateChildren<TVisitor>(ref MixedNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
     {
-        if (node.SameChild.IsValid) visitor.Visit(node.SameChild);
-        if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild);
+        if (node.SameChild.Index != -1) visitor.Visit(ref node.SameChild);
+        if (node.CrossChild.Index != -1) visitor.Visit(ref node.CrossChild);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in MixedNode node, in TContext context, ref TVisitor visitor)
+    public readonly void EnumerateChildren<TVisitor, TContext>(ref MixedNode node, in TContext context, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor<TContext>
     {
-        if (node.SameChild.IsValid) visitor.Visit(node.SameChild, in context);
-        if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild, in context);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void RewriteChildren<TRewriter>(ref MixedNode node, ref TRewriter rewriter)
-        where TRewriter : struct, INodeHandleRewriter
-    {
-        if (node.SameChild.Index != -1) { var h = node.SameChild; rewriter.Rewrite(ref h); node.SameChild = h; }
-        if (node.CrossChild.Index != -1) { var h = node.CrossChild; rewriter.Rewrite(ref h); node.CrossChild = h; }
+        if (node.SameChild.Index != -1) visitor.Visit(ref node.SameChild, in context);
+        if (node.CrossChild.Index != -1) visitor.Visit(ref node.CrossChild, in context);
     }
 }
 
 internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
+    public readonly void EnumerateChildren<TVisitor>(ref ParentNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
     {
-        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef);
-        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+        if (node.ParentRef.Index != -1) visitor.Visit(ref node.ParentRef);
+        if (node.ChildRef.Index != -1) visitor.Visit(ref node.ChildRef);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in ParentNode node, in TContext context, ref TVisitor visitor)
+    public readonly void EnumerateChildren<TVisitor, TContext>(ref ParentNode node, in TContext context, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor<TContext>
     {
-        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef, in context);
-        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void RewriteChildren<TRewriter>(ref ParentNode node, ref TRewriter rewriter)
-        where TRewriter : struct, INodeHandleRewriter
-    {
-        if (node.ParentRef.Index != -1) { var h = node.ParentRef; rewriter.Rewrite(ref h); node.ParentRef = h; }
-        if (node.ChildRef.Index != -1) { var h = node.ChildRef; rewriter.Rewrite(ref h); node.ChildRef = h; }
+        if (node.ParentRef.Index != -1) visitor.Visit(ref node.ParentRef, in context);
+        if (node.ChildRef.Index != -1) visitor.Visit(ref node.ChildRef, in context);
     }
 }
 
@@ -325,7 +303,7 @@ internal struct ParentDecrementVisitor(
     ChildHandler childHandler) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<TChild>(ref Handle<TChild> child) where TChild : struct
     {
         if (typeof(TChild) == typeof(ParentNode))
             this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
@@ -348,9 +326,9 @@ internal struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
     {
-        ref readonly var node = ref arena[handle];
+        ref var node = ref arena[handle];
         var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-        enumerator.EnumerateChildren(in node, ref visitor);
+        enumerator.EnumerateChildren(ref node, ref visitor);
         arena.Free(handle);
     }
 }
@@ -361,9 +339,9 @@ internal struct MixedHandler(UnsafeSlabArena<MixedNode> arena, MixedChildEnumera
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnFreed(Handle<MixedNode> handle, RefCountTable<MixedNode> table)
     {
-        ref readonly var node = ref arena[handle];
+        ref var node = ref arena[handle];
         var visitor = new RefCountTable<MixedNode>.DecrementNodeRefCountVisitor<MixedHandler>(table, this);
-        enumerator.EnumerateChildren(in node, ref visitor);
+        enumerator.EnumerateChildren(ref node, ref visitor);
         arena.Free(handle);
     }
 }
@@ -375,9 +353,9 @@ internal struct ParentHandler(UnsafeSlabArena<ParentNode> arena, ParentChildEnum
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
     {
-        ref readonly var node = ref arena[handle];
+        ref var node = ref arena[handle];
         var visitor = new ParentDecrementVisitor(table, this, childTable, childHandler);
-        enumerator.EnumerateChildren(in node, ref visitor);
+        enumerator.EnumerateChildren(ref node, ref visitor);
         arena.Free(handle);
     }
 }

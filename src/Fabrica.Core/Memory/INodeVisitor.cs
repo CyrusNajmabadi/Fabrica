@@ -2,29 +2,31 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Visitor callback invoked by <see cref="INodeChildEnumerator{TNode}"/> for each child of a node.
-/// Receives only the child's typed <see cref="Handle{T}"/> — the visitor struct captures whatever
-/// context it needs at construction time.
+/// Receives only the child's typed <see cref="Handle{T}"/> by reference — the visitor struct captures
+/// whatever context it needs at construction time. Ref semantics allow read-only traversal and
+/// in-place handle mutation (e.g. local-to-global fixup) through the same API.
 ///
 /// For visitors that need context passed through from the caller, see <see cref="INodeVisitor{TContext}"/>.
 ///
 /// CONTRACT
-///   Enumerators must only call <see cref="Visit{TChild}"/> with valid handles (i.e.,
-///   <see cref="Handle{T}.IsValid"/> is true). Visitors may assert this in debug builds but
+///   Enumerators must only call <see cref="Visit{TChild}"/> for child slots that are not the None
+///   sentinel (<see cref="Handle{T}.None"/>, i.e. <c>Index == -1</c>). For tagged local handles,
+///   indices are negative but not -1. Visitors may assert a non-None handle in debug builds but
 ///   should not re-check in release builds.
 ///
 /// IMPLEMENTATION PATTERN
 ///   Implementations should dispatch on the child type using standalone <c>typeof</c> checks and
 ///   delegate to a typed helper method. This is the canonical pattern for JIT dead-branch elimination:
 ///   <code>
-///   public void Visit&lt;TChild&gt;(Handle&lt;TChild&gt; child) where TChild : struct
+///   public void Visit&lt;TChild&gt;(ref Handle&lt;TChild&gt; child) where TChild : struct
 ///   {
 ///       if (typeof(TChild) == typeof(MyNode))
-///           VisitMyNode(Unsafe.As&lt;Handle&lt;TChild&gt;, Handle&lt;MyNode&gt;&gt;(ref child));
+///           VisitMyNode(ref Unsafe.As&lt;Handle&lt;TChild&gt;, Handle&lt;MyNode&gt;&gt;(ref child));
 ///   }
 ///
-///   private void VisitMyNode(Handle&lt;MyNode&gt; child)
+///   private void VisitMyNode(ref Handle&lt;MyNode&gt; child)
 ///   {
-///       Debug.Assert(child.IsValid);
+///       Debug.Assert(child.Index != -1);
 ///       table.Decrement(child, handler);
 ///   }
 ///   </code>
@@ -34,14 +36,14 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 internal interface INodeVisitor
 {
-    void Visit<TChild>(Handle<TChild> child)
+    void Visit<TChild>(ref Handle<TChild> child)
         where TChild : struct;
 }
 
 /// <summary>
 /// Visitor callback invoked by <see cref="INodeChildEnumerator{TNode}"/> for each child of a node.
-/// Receives the child's typed <see cref="Handle{T}"/> and a strongly-typed context that flows
-/// from the top-level operation through the enumerator. The context type is determined by the
+/// Receives the child's typed <see cref="Handle{T}"/> by reference and a strongly-typed context that
+/// flows from the top-level operation through the enumerator. The context type is determined by the
 /// caller — it can carry refcount tables, world state, or any operation-specific data.
 ///
 /// For visitors that don't need context, see <see cref="INodeVisitor"/>.
@@ -52,6 +54,6 @@ internal interface INodeVisitor
 /// </summary>
 internal interface INodeVisitor<TContext>
 {
-    void Visit<TChild>(Handle<TChild> child, in TContext context)
+    void Visit<TChild>(ref Handle<TChild> child, in TContext context)
         where TChild : struct;
 }

@@ -294,9 +294,9 @@ internal static class DagValidator
 
         public void GetChildren(int typeId, int index, List<NodeRef> children)
         {
-            ref readonly var node = ref store.Arena[new Handle<TNode>(index)];
+            ref var node = ref store.Arena[new Handle<TNode>(index)];
             var visitor = new CollectSameTypeNodeVisitor<TNode>(children);
-            enumerator.EnumerateChildren(in node, ref visitor);
+            enumerator.EnumerateChildren(ref node, ref visitor);
         }
     }
 
@@ -308,7 +308,7 @@ internal static class DagValidator
     private struct CollectSameTypeNodeVisitor<TNode>(List<NodeRef> children) : INodeVisitor where TNode : struct
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(ref Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(TNode))
                 this.CollectTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));

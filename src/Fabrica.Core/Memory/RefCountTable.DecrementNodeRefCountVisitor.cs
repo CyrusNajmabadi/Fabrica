@@ -20,7 +20,7 @@ internal sealed partial class RefCountTable<T>
         where THandler : struct, IRefCountHandler
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(ref Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(T))
                 this.DecrementTyped(Unsafe.As<Handle<TChild>, Handle<T>>(ref child));

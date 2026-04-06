@@ -36,9 +36,9 @@ public class CrossTypeSnapshotTests
     {
         public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table)
         {
-            ref readonly var node = ref arena[handle];
+            ref var node = ref arena[handle];
             var visitor = new RefCountTable<ChildNode>.DecrementNodeRefCountVisitor<ChildHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
+            enumerator.EnumerateChildren(ref node, ref visitor);
             arena.Free(handle);
         }
     }
@@ -54,7 +54,7 @@ public class CrossTypeSnapshotTests
         ChildHandler childHandler) : INodeVisitor
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<TChild>(ref Handle<TChild> child) where TChild : struct
         {
             if (typeof(TChild) == typeof(ParentNode))
                 this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
@@ -84,9 +84,9 @@ public class CrossTypeSnapshotTests
     {
         public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
         {
-            ref readonly var node = ref parentArena[handle];
+            ref var node = ref parentArena[handle];
             var visitor = new ParentDecrementNodeVisitor(table, this, childStore.RefCounts, childStore.GetTestAccessor().Handler);
-            enumerator.EnumerateChildren(in node, ref visitor);
+            enumerator.EnumerateChildren(ref node, ref visitor);
             parentArena.Free(handle);
         }
     }
@@ -95,52 +95,37 @@ public class CrossTypeSnapshotTests
 
     private struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
     {
-        public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
+        public readonly void EnumerateChildren<TAction>(ref ParentNode node, ref TAction visitor)
             where TAction : struct, INodeVisitor
         {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+            if (node.LeftParent.Index != -1) visitor.Visit(ref node.LeftParent);
+            if (node.RightParent.Index != -1) visitor.Visit(ref node.RightParent);
+            if (node.ChildRef.Index != -1) visitor.Visit(ref node.ChildRef);
         }
 
-        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction visitor)
+        public readonly void EnumerateChildren<TAction, TContext>(ref ParentNode node, in TContext context, ref TAction visitor)
             where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent, in context);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-        }
-
-        public readonly void RewriteChildren<TRewriter>(ref ParentNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
-        {
-            if (node.LeftParent.Index != -1) { var h = node.LeftParent; rewriter.Rewrite(ref h); node.LeftParent = h; }
-            if (node.RightParent.Index != -1) { var h = node.RightParent; rewriter.Rewrite(ref h); node.RightParent = h; }
-            if (node.ChildRef.Index != -1) { var h = node.ChildRef; rewriter.Rewrite(ref h); node.ChildRef = h; }
+            if (node.LeftParent.Index != -1) visitor.Visit(ref node.LeftParent, in context);
+            if (node.RightParent.Index != -1) visitor.Visit(ref node.RightParent, in context);
+            if (node.ChildRef.Index != -1) visitor.Visit(ref node.ChildRef, in context);
         }
     }
 
     private struct ChildChildEnumerator : INodeChildEnumerator<ChildNode>
     {
-        public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
+        public readonly void EnumerateChildren<TAction>(ref ChildNode node, ref TAction visitor)
             where TAction : struct, INodeVisitor
         {
-            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
-            if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
+            if (node.LeftChild.Index != -1) visitor.Visit(ref node.LeftChild);
+            if (node.RightChild.Index != -1) visitor.Visit(ref node.RightChild);
         }
 
-        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction visitor)
+        public readonly void EnumerateChildren<TAction, TContext>(ref ChildNode node, in TContext context, ref TAction visitor)
             where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild, in context);
-            if (node.RightChild.IsValid) visitor.Visit(node.RightChild, in context);
-        }
-
-        public readonly void RewriteChildren<TRewriter>(ref ChildNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
-        {
-            if (node.LeftChild.Index != -1) { var h = node.LeftChild; rewriter.Rewrite(ref h); node.LeftChild = h; }
-            if (node.RightChild.Index != -1) { var h = node.RightChild; rewriter.Rewrite(ref h); node.RightChild = h; }
+            if (node.LeftChild.Index != -1) visitor.Visit(ref node.LeftChild, in context);
+            if (node.RightChild.Index != -1) visitor.Visit(ref node.RightChild, in context);
         }
     }
 

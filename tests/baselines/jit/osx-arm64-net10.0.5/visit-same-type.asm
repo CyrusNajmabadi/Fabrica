@@ -1,4 +1,4 @@
-; Assembly listing for method Program:<<Main>$>g__VisitSameType|0_N(byref,Fabrica.Core.Memory.Handle`1[TreeNode]) (FullOpts)
+; Assembly listing for method Program:<<Main>$>g__VisitSameType|0_N(byref,byref) (FullOpts)
 ; Emitting BLENDED_CODE for generic ARM64 on Apple
 ; FullOpts code
 ; optimized code
@@ -14,9 +14,9 @@ G_M000_IG01:                ;; offset=0x0000
             str     x23, [sp, #0x48]
             mov     fp, sp
             str     xzr, [fp, #0x18]
-            mov     w19, w1
  
-G_M000_IG02:                ;; offset=0x001C
+G_M000_IG02:                ;; offset=0x0018
+            ldr     w19, [x1]
             ldr     x20, [x0]
  
 G_M000_IG03:                ;; offset=0x0020

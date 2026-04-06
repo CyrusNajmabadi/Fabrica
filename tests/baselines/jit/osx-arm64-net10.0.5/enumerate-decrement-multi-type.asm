@@ -5,7 +5,7 @@
 ; fp based frame
 ; partially interruptible
 ; No PGO data
-; 0 inlinees with PGO data; 12 single block inlinees; 7 inlinees without PGO data
+; 0 inlinees with PGO data; 10 single block inlinees; 7 inlinees without PGO data
 
 G_M000_IG01:                ;; offset=0x0000
             stp     fp, lr, [sp, #-0x70]!
@@ -21,19 +21,20 @@ G_M000_IG01:                ;; offset=0x0000
  
 G_M000_IG02:                ;; offset=0x0028
             ldr     w0, [x19]
-            tbnz    w0, #31, G_M000_IG07
+            cmn     w0, #1
+            beq     G_M000_IG07
  
-G_M000_IG03:                ;; offset=0x0030
+G_M000_IG03:                ;; offset=0x0034
             ldr     w21, [x19]
             ldr     x22, [x20]
  
-G_M000_IG04:                ;; offset=0x0038
+G_M000_IG04:                ;; offset=0x003C
             ldp     x0, x1, [x20, #0x10]
             stp     x0, x1, [fp, #0x18]
             ldp     x0, x1, [x20, #0x20]
             stp     x0, x1, [fp, #0x28]
  
-G_M000_IG05:                ;; offset=0x0048
+G_M000_IG05:                ;; offset=0x004C
             ldr     x0, [x22, #0x08]
             ldp     w1, w2, [x0, #0x14]
             asr     w1, w21, w1
@@ -63,7 +64,7 @@ G_M000_IG05:                ;; offset=0x0048
             blr     x1
             mov     x25, x0
  
-G_M000_IG06:                ;; offset=0x00B8
+G_M000_IG06:                ;; offset=0x00BC
             ldrsb   wzr, [x25]
             add     x1, x25, #16
             str     w21, [x1, w24, SXTW #2]
@@ -79,11 +80,12 @@ G_M000_IG06:                ;; offset=0x00B8
             ldr     x2, [x2]
             blr     x2
  
-G_M000_IG07:                ;; offset=0x00F0
+G_M000_IG07:                ;; offset=0x00F4
             ldr     w0, [x19, #0x04]
-            tbnz    w0, #31, G_M000_IG10
+            cmn     w0, #1
+            beq     G_M000_IG10
  
-G_M000_IG08:                ;; offset=0x00F8
+G_M000_IG08:                ;; offset=0x0100
             ldr     w19, [x19, #0x04]
             ldr     x21, [x20, #0x08]
             ldr     x20, [x20, #0x30]
@@ -116,7 +118,7 @@ G_M000_IG08:                ;; offset=0x00F8
             blr     x1
             mov     x24, x0
  
-G_M000_IG09:                ;; offset=0x0174
+G_M000_IG09:                ;; offset=0x017C
             ldrsb   wzr, [x24]
             add     x0, x24, #16
             str     w19, [x0, w23, SXTW #2]
@@ -132,7 +134,7 @@ G_M000_IG09:                ;; offset=0x0174
             ldr     x2, [x2]
             blr     x2
  
-G_M000_IG10:                ;; offset=0x01AC
+G_M000_IG10:                ;; offset=0x01B4
             ldr     x25, [sp, #0x68]
             ldp     x23, x24, [sp, #0x58]
             ldp     x21, x22, [sp, #0x48]
@@ -140,5 +142,5 @@ G_M000_IG10:                ;; offset=0x01AC
             ldp     fp, lr, [sp], #0x70
             ret     lr
  
-; Total bytes of code 452
+; Total bytes of code 460
 

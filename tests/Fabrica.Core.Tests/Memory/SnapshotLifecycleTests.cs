@@ -22,34 +22,27 @@ public class SnapshotLifecycleTests
     {
         public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
         {
-            ref readonly var node = ref arena[handle];
+            ref var node = ref arena[handle];
             var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
+            enumerator.EnumerateChildren(ref node, ref visitor);
             arena.Free(handle);
         }
     }
 
     private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
     {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
+        public readonly void EnumerateChildren<TAction>(ref TreeNode node, ref TAction visitor)
             where TAction : struct, INodeVisitor
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
+            if (node.Left.Index != -1) visitor.Visit(ref node.Left);
+            if (node.Right.Index != -1) visitor.Visit(ref node.Right);
         }
 
-        public readonly void EnumerateChildren<TAction, TContext>(in TreeNode node, in TContext context, ref TAction visitor)
+        public readonly void EnumerateChildren<TAction, TContext>(ref TreeNode node, in TContext context, ref TAction visitor)
             where TAction : struct, INodeVisitor<TContext>
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
-        }
-
-        public readonly void RewriteChildren<TRewriter>(ref TreeNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
-        {
-            if (node.Left.Index != -1) { var h = node.Left; rewriter.Rewrite(ref h); node.Left = h; }
-            if (node.Right.Index != -1) { var h = node.Right; rewriter.Rewrite(ref h); node.Right = h; }
+            if (node.Left.Index != -1) visitor.Visit(ref node.Left, in context);
+            if (node.Right.Index != -1) visitor.Visit(ref node.Right, in context);
         }
     }
 
