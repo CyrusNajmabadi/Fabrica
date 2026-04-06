@@ -29,28 +29,43 @@ internal static class MergePipeline
         RemapTable remap)
         where TNode : struct
     {
+        // Remember where the arena was before we started so we can report the range of newly merged
+        // nodes to the caller (they need this to know which nodes to fixup and refcount).
         var startIndex = arena.HighWater;
 
-        // Each worker thread wrote nodes into its own TLB during the parallel work phase. Now we
-        // need to move them into the single shared arena so that all handles become globally valid.
-        // For each thread's TLB we reserve a contiguous block in the arena (AllocateBatch), copy the
-        // node data in, and record where each local index landed so that later phases can rewrite
-        // local handles (tagged with threadId + localIndex) into their final global arena indices.
+        // Each worker thread wrote nodes into its own TLB during the parallel work phase. Those nodes
+        // still carry local handles (tagged with threadId + localIndex) that are only meaningful within
+        // the originating TLB. We need to move them into the single shared arena so that every handle
+        // in the system can be resolved to a global arena slot.
+        //
+        // For each thread's TLB:
+        //   1. Reserve a contiguous block of global slots in the arena sized to fit this TLB's output.
+        //   2. Copy the raw node data from the TLB into those slots.
+        //   3. Record the local→global mapping (thread t, local index i → global batchStart+i) in the
+        //      remap table so that RewriteHandles can later translate tagged local handles into their
+        //      final global indices.
         for (var t = 0; t < tlbs.Length; t++)
         {
             var tlb = tlbs[t];
             if (tlb.Count == 0)
                 continue;
 
+            // Reserve tlb.Count contiguous slots starting at batchStart. This is O(1) — just a
+            // high-water bump — and guarantees the slots are contiguous for cache-friendly iteration
+            // in later phases.
             var batchStart = arena.AllocateBatch(tlb.Count);
             var span = tlb.WrittenSpan;
             for (var i = 0; i < span.Length; i++)
             {
+                // Copy node data into its global slot and record where it landed so the remap table
+                // can translate any local handle pointing to (thread=t, index=i) into batchStart+i.
                 arena[new Handle<TNode>(batchStart + i)] = span[i];
                 remap.SetMapping(t, i, batchStart + i);
             }
         }
 
+        // The refcount table must be large enough to cover all the new global indices we just created,
+        // otherwise IncrementChildRefCounts would write out of bounds.
         var count = arena.HighWater - startIndex;
         refCounts.EnsureCapacity(arena.HighWater);
 
@@ -76,6 +91,12 @@ internal static class MergePipeline
         where TNodeOps : struct, INodeOps<TNode>
         where TVisitor : struct, INodeVisitor
     {
+        // Walk every newly merged node in the arena. At this point the nodes have been copied verbatim
+        // from TLBs, so any Handle<T> fields still contain tagged local values (threadId + localIndex).
+        // EnumerateRefChildren hands each handle field *by reference* to the visitor, which resolves
+        // the local handle through the appropriate remap table and overwrites it in place with the
+        // global arena index. After this loop every handle field in the merged range points to a valid
+        // global slot.
         for (var i = 0; i < count; i++)
         {
             ref var node = ref arena[new Handle<TNode>(startIndex + i)];
@@ -98,6 +119,11 @@ internal static class MergePipeline
         where TNodeOps : struct, INodeOps<TNode>
         where TVisitor : struct, INodeVisitor
     {
+        // Walk every newly merged node (handles are now global after RewriteHandles). For each node,
+        // EnumerateChildren yields each child handle *by value* to the visitor, which increments that
+        // child's refcount in the appropriate RefCountTable. This establishes the structural refcount
+        // invariant: every node's RC equals the number of parent fields pointing to it. Root nodes
+        // are not yet counted — they get their +1 from IncrementRoots after CollectAndRemapRoots.
         for (var i = 0; i < count; i++)
         {
             ref readonly var node = ref arena[new Handle<TNode>(startIndex + i)];
@@ -121,6 +147,11 @@ internal static class MergePipeline
         UnsafeList<Handle<TNode>> destination)
         where TNode : struct
     {
+        // Workers marked certain nodes as roots during the parallel phase (via Allocate(isRoot: true)
+        // or MarkRoot). Those root handles may be local (pointing into the originating TLB) or already
+        // global (referencing a pre-existing node from a prior snapshot that the job decided to re-root).
+        // We remap local handles through the same remap table that DrainBuffers built, translating
+        // (threadId, localIndex) → globalIndex. Global handles pass through unchanged.
         foreach (var tlb in tlbs)
         {
             foreach (var handle in tlb.RootHandles)
