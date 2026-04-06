@@ -11,7 +11,7 @@ G_M000_IG01:                ;; offset=0x0000
  
 G_M000_IG02:                ;; offset=0x0001
        mov      byte  ptr [(reloc <addr>)], 1
-       call     [MixedChildEnumerator:EnumerateChildren[Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[MixedNode,MixedHandler]](byref,byref):this]
+       call     [MixedChildEnumerator:EnumerateChildren[MixedDecrementVisitor](byref,byref):this]
        mov      byte  ptr [(reloc <addr>)], 1
  
 G_M000_IG03:                ;; offset=0x0015

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 using Xunit;
@@ -14,40 +15,40 @@ public class NodeStoreTests
         public int Value;
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
+    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
     {
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
-        {
-            ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
-        }
-    }
+        internal NodeStore<TreeNode, TreeNodeOps> Store;
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
-    {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
+
+        public readonly void Visit<TChild>(Handle<TChild> child)
+            where TChild : struct
+        {
+            if (typeof(TChild) == typeof(TreeNode))
+            {
+                var c = child;
+                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref c));
+            }
+        }
     }
 
-    private static NodeStore<TreeNode, TreeHandler> CreateStore()
+    private static NodeStore<TreeNode, TreeNodeOps> CreateStore()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var enumerator = new TreeChildEnumerator();
-        var handler = new TreeHandler(arena, enumerator);
-        var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
-        store.EnableValidation(enumerator);
+        var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        store.SetNodeOps(new TreeNodeOps { Store = store });
+        store.EnableValidation();
         return store;
     }
 
     private static Handle<TreeNode> AllocNode(
-        NodeStore<TreeNode, TreeHandler> store,
+        NodeStore<TreeNode, TreeNodeOps> store,
         Handle<TreeNode> left,
         Handle<TreeNode> right,
         int value)

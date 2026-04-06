@@ -5,7 +5,7 @@
 ; fp based frame
 ; partially interruptible
 ; No PGO data
-; 0 inlinees with PGO data; 8 single block inlinees; 5 inlinees without PGO data
+; 0 inlinees with PGO data; 7 single block inlinees; 5 inlinees without PGO data
 
 G_M000_IG01:                ;; offset=0x0000
             stp     fp, lr, [sp, #-0x50]!

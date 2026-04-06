@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 using Xunit;
@@ -18,37 +19,36 @@ public class SnapshotLifecycleTests
         public Handle<TreeNode> Right;
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
+    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
     {
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
-        {
-            ref readonly var node = ref arena[handle];
-            var visitor = new RefCountTable<TreeNode>.DecrementNodeRefCountVisitor<TreeHandler>(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
-        }
-    }
+        internal NodeStore<TreeNode, TreeNodeOps> Store;
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
-    {
-        public readonly void EnumerateChildren<TAction>(in TreeNode node, ref TAction visitor)
-            where TAction : struct, INodeVisitor
+        public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
+
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        {
+            if (typeof(TChild) == typeof(TreeNode))
+            {
+                var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+                Store.DecrementRefCount(c);
+            }
+        }
     }
 
-    private readonly NodeStore<TreeNode, TreeHandler> _store;
+    private readonly NodeStore<TreeNode, TreeNodeOps> _store;
 
     public SnapshotLifecycleTests()
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var enumerator = new TreeChildEnumerator();
-        var handler = new TreeHandler(arena, enumerator);
-        _store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
-        _store.EnableValidation(enumerator);
+        _store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        _store.SetNodeOps(new TreeNodeOps { Store = _store });
+        _store.EnableValidation();
     }
 
     private Handle<TreeNode> AllocNode(Handle<TreeNode> left, Handle<TreeNode> right)
@@ -97,16 +97,16 @@ public class SnapshotLifecycleTests
     public void FIFO_Release_SequentialSnapshots(int snapshotCount)
     {
         var root = this.BuildPerfectTree(3);
-        var slices = new SnapshotSlice<TreeNode, TreeHandler>[snapshotCount];
+        var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[snapshotCount];
 
-        slices[0] = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+        slices[0] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
         slices[0].AddRoot(root);
         slices[0].IncrementRootRefCounts();
 
         for (var i = 1; i < snapshotCount; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            slices[i] = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+            slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
             slices[i].AddRoot(newRoot);
             slices[i].IncrementRootRefCounts();
             root = newRoot;
@@ -135,16 +135,16 @@ public class SnapshotLifecycleTests
     public void LIFO_Release_SequentialSnapshots(int snapshotCount)
     {
         var root = this.BuildPerfectTree(3);
-        var slices = new SnapshotSlice<TreeNode, TreeHandler>[snapshotCount];
+        var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[snapshotCount];
 
-        slices[0] = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+        slices[0] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
         slices[0].AddRoot(root);
         slices[0].IncrementRootRefCounts();
 
         for (var i = 1; i < snapshotCount; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            slices[i] = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+            slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
             slices[i].AddRoot(newRoot);
             slices[i].IncrementRootRefCounts();
             root = newRoot;
@@ -169,7 +169,7 @@ public class SnapshotLifecycleTests
     {
         var root = this.BuildPerfectTree(3);
 
-        var prevSlice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+        var prevSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
         prevSlice.AddRoot(root);
         prevSlice.IncrementRootRefCounts();
 
@@ -178,7 +178,7 @@ public class SnapshotLifecycleTests
         for (var i = 0; i < 50; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var newSlice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+            var newSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
             newSlice.AddRoot(newRoot);
             newSlice.IncrementRootRefCounts();
 
@@ -208,7 +208,7 @@ public class SnapshotLifecycleTests
         var root2 = this.BuildPerfectTree(2);
         var root3 = this.BuildPerfectTree(2);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
         slice.AddRoot(root1);
         slice.AddRoot(root2);
         slice.AddRoot(root3);
@@ -234,7 +234,7 @@ public class SnapshotLifecycleTests
         var root1 = this.AllocNode(shared, Handle<TreeNode>.None);
         var root2 = this.AllocNode(Handle<TreeNode>.None, shared);
 
-        var slice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
         slice.AddRoot(root1);
         slice.AddRoot(root2);
         slice.IncrementRootRefCounts();
@@ -257,9 +257,9 @@ public class SnapshotLifecycleTests
     public void WindowedRelease_ProducerAhead_ConsumerCatchesUp(int windowSize)
     {
         var root = this.BuildPerfectTree(3);
-        var queue = new Queue<SnapshotSlice<TreeNode, TreeHandler>>();
+        var queue = new Queue<SnapshotSlice<TreeNode, TreeNodeOps>>();
 
-        var initialSlice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+        var initialSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
         initialSlice.AddRoot(root);
         initialSlice.IncrementRootRefCounts();
         queue.Enqueue(initialSlice);
@@ -267,7 +267,7 @@ public class SnapshotLifecycleTests
         for (var i = 0; i < 30; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var newSlice = new SnapshotSlice<TreeNode, TreeHandler>(_store);
+            var newSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
             newSlice.AddRoot(newRoot);
             newSlice.IncrementRootRefCounts();
             queue.Enqueue(newSlice);
@@ -303,12 +303,11 @@ public class SnapshotLifecycleTests
             // Fresh store per permutation so freed nodes from prior iterations don't interfere.
             var arena = new UnsafeSlabArena<TreeNode>();
             var refCounts = new RefCountTable<TreeNode>();
-            var enumerator = new TreeChildEnumerator();
-            var handler = new TreeHandler(arena, enumerator);
-            var store = new NodeStore<TreeNode, TreeHandler>(arena, refCounts, handler);
+            var store = new NodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+            store.SetNodeOps(new TreeNodeOps { Store = store });
 
             var root = BuildPerfectTreeInStore(store, 3);
-            var slices = new SnapshotSlice<TreeNode, TreeHandler>[4];
+            var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[4];
             var currentRoot = root;
 
             for (var i = 0; i < 4; i++)
@@ -316,7 +315,7 @@ public class SnapshotLifecycleTests
                 if (i > 0)
                     currentRoot = PathCopyLeftSpineInStore(store, currentRoot, 3);
 
-                slices[i] = new SnapshotSlice<TreeNode, TreeHandler>(store);
+                slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(store);
                 slices[i].AddRoot(currentRoot);
                 slices[i].IncrementRootRefCounts();
             }
@@ -328,7 +327,7 @@ public class SnapshotLifecycleTests
         }
     }
 
-    private static Handle<TreeNode> AllocNodeInStore(NodeStore<TreeNode, TreeHandler> store, Handle<TreeNode> left, Handle<TreeNode> right)
+    private static Handle<TreeNode> AllocNodeInStore(NodeStore<TreeNode, TreeNodeOps> store, Handle<TreeNode> left, Handle<TreeNode> right)
     {
         var handle = store.Arena.Allocate();
         store.RefCounts.EnsureCapacity(handle.Index + 1);
@@ -338,7 +337,7 @@ public class SnapshotLifecycleTests
         return handle;
     }
 
-    private static Handle<TreeNode> BuildPerfectTreeInStore(NodeStore<TreeNode, TreeHandler> store, int depth)
+    private static Handle<TreeNode> BuildPerfectTreeInStore(NodeStore<TreeNode, TreeNodeOps> store, int depth)
     {
         if (depth == 0)
             return AllocNodeInStore(store, Handle<TreeNode>.None, Handle<TreeNode>.None);
@@ -348,7 +347,7 @@ public class SnapshotLifecycleTests
         return AllocNodeInStore(store, left, right);
     }
 
-    private static Handle<TreeNode> PathCopyLeftSpineInStore(NodeStore<TreeNode, TreeHandler> store, Handle<TreeNode> oldRoot, int depth)
+    private static Handle<TreeNode> PathCopyLeftSpineInStore(NodeStore<TreeNode, TreeNodeOps> store, Handle<TreeNode> oldRoot, int depth)
     {
         if (depth == 0)
             return AllocNodeInStore(store, Handle<TreeNode>.None, Handle<TreeNode>.None);

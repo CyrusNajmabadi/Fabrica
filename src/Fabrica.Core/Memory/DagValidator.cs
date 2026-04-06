@@ -5,7 +5,7 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Validates structural invariants of arena-backed DAGs, including heterogeneous graphs that span
-/// multiple <see cref="NodeStore{TNode,THandler}"/> instances of different node types.
+/// multiple <see cref="NodeStore{TNode,TNodeOps}"/> instances of different node types.
 ///
 /// CROSS-STORE VALIDATION
 ///   The primary API takes an <see cref="IWorldAccessor"/> that provides type-erased access to all
@@ -13,8 +13,8 @@ namespace Fabrica.Core.Memory;
 ///   DFS walks across store boundaries, detecting cross-store cycles and verifying refcounts globally.
 ///
 /// SINGLE-STORE CONVENIENCE
-///   Overloads that take a single <see cref="NodeStore{TNode,THandler}"/> and an
-///   <see cref="INodeChildEnumerator{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,THandler,TEnumerator}"/>
+///   Overloads that take a single <see cref="NodeStore{TNode,TNodeOps}"/> and an
+///   <see cref="INodeChildEnumerator{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,TNodeOps}"/>
 ///   internally. Cross-type children from the enumerator are ignored (they contribute external
 ///   refcounts that this store can't verify).
 ///
@@ -240,14 +240,13 @@ internal static class DagValidator
     /// Cross-type children produced by the enumerator are ignored — use the cross-store overload
     /// for full heterogeneous validation.
     /// </summary>
-    internal static void AssertValid<TNode, THandler, TEnumerator>(
-        NodeStore<TNode, THandler> store,
+    internal static void AssertValid<TNode, TNodeOps>(
+        NodeStore<TNode, TNodeOps> store,
         ReadOnlySpan<Handle<TNode>> roots,
-        TEnumerator enumerator,
+        TNodeOps enumerator,
         bool strict = true)
         where TNode : struct
-        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, INodeChildEnumerator<TNode>
+        where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
     {
         var issues = Validate(store, roots, enumerator, strict);
         if (issues.Count > 0)
@@ -255,16 +254,15 @@ internal static class DagValidator
     }
 
     /// <summary>Single-store validate returning issues list.</summary>
-    internal static List<string> Validate<TNode, THandler, TEnumerator>(
-        NodeStore<TNode, THandler> store,
+    internal static List<string> Validate<TNode, TNodeOps>(
+        NodeStore<TNode, TNodeOps> store,
         ReadOnlySpan<Handle<TNode>> roots,
-        TEnumerator enumerator,
+        TNodeOps enumerator,
         bool strict = true)
         where TNode : struct
-        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, INodeChildEnumerator<TNode>
+        where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
     {
-        var accessor = new SingleStoreAccessor<TNode, THandler, TEnumerator>(store, enumerator);
+        var accessor = new SingleStoreAccessor<TNode, TNodeOps>(store, enumerator);
         var nodeRefs = roots.Length <= 128 ? stackalloc NodeRef[roots.Length] : new NodeRef[roots.Length];
         for (var i = 0; i < roots.Length; i++)
             nodeRefs[i] = new NodeRef(0, roots[i].Index);
@@ -279,12 +277,11 @@ internal static class DagValidator
     /// into an <see cref="IWorldAccessor"/> with one type (typeId = 0). Cross-type children from the
     /// enumerator are silently filtered out.
     /// </summary>
-    private struct SingleStoreAccessor<TNode, THandler, TEnumerator>(
-        NodeStore<TNode, THandler> store,
-        TEnumerator enumerator) : IWorldAccessor
+    private struct SingleStoreAccessor<TNode, TNodeOps>(
+        NodeStore<TNode, TNodeOps> store,
+        TNodeOps enumerator) : IWorldAccessor
         where TNode : struct
-        where THandler : struct, RefCountTable<TNode>.IRefCountHandler
-        where TEnumerator : struct, INodeChildEnumerator<TNode>
+        where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
     {
         public readonly int TypeCount => 1;
 

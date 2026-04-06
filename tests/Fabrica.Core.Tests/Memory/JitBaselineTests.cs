@@ -45,7 +45,7 @@ namespace Fabrica.Core.Tests.Memory;
 ///   <item><term>enumerate-decrement-same-type (2)</term>
 ///     <description>Both children are <c>TreeNode</c> → 2 Decrements inlined</description></item>
 ///   <item><term>enumerate-decrement-mixed-type (1)</term>
-///     <description><c>DecrementNodeRefCountVisitor&lt;MixedNode&gt;</c> handles only <c>MixedNode</c>;
+///     <description><c>MixedDecrementVisitor</c> handles only <c>MixedNode</c>;
 ///       the <c>OtherNode</c> branch is dead-code eliminated → 1 Decrement</description></item>
 ///   <item><term>enumerate-decrement-multi-type (2)</term>
 ///     <description><c>ParentDecrementVisitor</c> has two live typeof branches (ParentNode + ChildNode);

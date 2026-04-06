@@ -10,7 +10,7 @@ G_M000_IG01:                ;; offset=0x0000
        push     rax
  
 G_M000_IG02:                ;; offset=0x0001
-       call     [TreeChildEnumerator:EnumerateChildren[Fabrica.Core.Memory.RefCountTable`1+DecrementNodeRefCountVisitor`1[TreeNode,TreeHandler]](byref,byref):this]
+       call     [TreeChildEnumerator:EnumerateChildren[TreeDecrementVisitor](byref,byref):this]
        nop      
  
 G_M000_IG03:                ;; offset=0x0008
