@@ -1,5 +1,5 @@
 ; Assembly listing for method Program:<<Main>$>g__VisitSameType|0_N(byref,Fabrica.Core.Memory.Handle`1[TreeNode]) (FullOpts)
-; Emitting BLENDED_CODE for generic X64 + VEX on Unix
+; Emitting BLENDED_CODE for generic X64 on Unix
 ; FullOpts code
 ; optimized code
 ; rsp based frame

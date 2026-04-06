@@ -259,15 +259,19 @@ public partial class JitBaselineTests
 
     /// <summary>
     /// Normalizes JIT disasm output by replacing volatile values with stable placeholders:
-    /// (1) absolute address immediates in <c>movz/movk</c> (ARM64) and <c>mov</c> (x64),
-    /// (2) local function ordinals in method names (e.g., <c>|0_2</c> → <c>|0_N</c>),
+    /// (1) ISA extension lists in the header (e.g., <c>VEX + EVEX</c> varies by CPU),
+    /// (2) absolute address immediates in <c>movz/movk</c> (ARM64) and <c>mov</c> (x64),
+    /// (3) local function ordinals in method names (e.g., <c>|0_2</c> → <c>|0_N</c>),
     ///     which shift when helper functions are added/removed.
     /// Instruction structure, registers, and code flow are preserved.
     /// </summary>
     private static string NormalizeAsm(string asm)
     {
+        // ISA extensions vary by hardware (e.g., "VEX" vs "VEX + EVEX" depending on AVX-512 support)
+        var result = IsaExtensionPattern().Replace(asm, "; Emitting BLENDED_CODE for generic ${arch} on ${os}");
+
         // Local function ordinals: g__MethodName|0_2 → g__MethodName|0_N
-        var result = LocalFunctionOrdinalPattern().Replace(asm, "${prefix}|0_N${suffix}");
+        result = LocalFunctionOrdinalPattern().Replace(result, "${prefix}|0_N${suffix}");
 
         // ARM64: movz/movk with hex immediates for address loading
         result = MovzMovkAddressPattern().Replace(result, match =>
@@ -411,6 +415,9 @@ public partial class JitBaselineTests
 
         throw new InvalidOperationException("Could not find repository root (.git directory) from " + AppContext.BaseDirectory);
     }
+
+    [GeneratedRegex(@"; Emitting BLENDED_CODE for generic (?<arch>\w+)[\w\s+]*on (?<os>\w+)")]
+    private static partial Regex IsaExtensionPattern();
 
     [GeneratedRegex(@"(?<prefix>g__\w+)(\|0_\d+)(?<suffix>\()")]
     private static partial Regex LocalFunctionOrdinalPattern();

@@ -1,5 +1,5 @@
 ; Assembly listing for method Program:<<Main>$>g__EnumerateMixedDecrement|0_N(byref,byref,byref) (FullOpts)
-; Emitting BLENDED_CODE for generic X64 + VEX on Unix
+; Emitting BLENDED_CODE for generic X64 on Unix
 ; FullOpts code
 ; optimized code
 ; rsp based frame
