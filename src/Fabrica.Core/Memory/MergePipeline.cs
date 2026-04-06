@@ -31,6 +31,11 @@ internal static class MergePipeline
     {
         var startIndex = arena.HighWater;
 
+        // Each worker thread wrote nodes into its own TLB during the parallel work phase. Now we
+        // need to move them into the single shared arena so that all handles become globally valid.
+        // For each thread's TLB we reserve a contiguous block in the arena (AllocateBatch), copy the
+        // node data in, and record where each local index landed so that later phases can rewrite
+        // local handles (tagged with threadId + localIndex) into their final global arena indices.
         for (var t = 0; t < tlbs.Length; t++)
         {
             var tlb = tlbs[t];
@@ -101,16 +106,21 @@ internal static class MergePipeline
     }
 
     /// <summary>
-    /// Collects root handles from all TLBs for one node type, remapping local handles to global indices
-    /// via <paramref name="remap"/>. Handles that are already global (e.g., references to pre-existing
+    /// Collects root handles from all TLBs for one node type into the caller-provided
+    /// <paramref name="destination"/> list, remapping local handles to global indices via
+    /// <paramref name="remap"/>. Handles that are already global (e.g., references to pre-existing
     /// nodes from a prior snapshot) pass through unchanged.
+    ///
+    /// The caller owns the <see cref="UnsafeList{T}"/> and is responsible for resetting it between
+    /// ticks. In steady state this is zero-allocation: the list's backing array grows to the
+    /// high-water root count and is reused across ticks.
     /// </summary>
-    public static Handle<TNode>[] CollectAndRemapRoots<TNode>(
+    public static void CollectAndRemapRoots<TNode>(
         ThreadLocalBuffer<TNode>[] tlbs,
-        RemapTable remap)
+        RemapTable remap,
+        UnsafeList<Handle<TNode>> destination)
         where TNode : struct
     {
-        var roots = new List<Handle<TNode>>();
         foreach (var tlb in tlbs)
         {
             foreach (var handle in tlb.RootHandles)
@@ -120,15 +130,13 @@ internal static class MergePipeline
                 {
                     var threadId = TaggedHandle.DecodeThreadId(index);
                     var localIndex = TaggedHandle.DecodeLocalIndex(index);
-                    roots.Add(new Handle<TNode>(remap.Resolve(threadId, localIndex)));
+                    destination.Add(new Handle<TNode>(remap.Resolve(threadId, localIndex)));
                 }
                 else
                 {
-                    roots.Add(handle);
+                    destination.Add(handle);
                 }
             }
         }
-
-        return [.. roots];
     }
 }

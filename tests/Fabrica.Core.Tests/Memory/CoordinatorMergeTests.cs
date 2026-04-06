@@ -443,7 +443,9 @@ public class CoordinatorMergeTests
 
         // ── Root collection + remap + increment ──────────────────────────
 
-        var roots = MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap);
+        var rootList = new UnsafeList<Handle<ParentNode>>();
+        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
         Assert.Equal(0, roots[0].Index); // p0T0 → global 0
@@ -498,8 +500,10 @@ public class CoordinatorMergeTests
         MergePipeline.IncrementChildRefCounts(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
 
         // Root collection + remap + increment
-        var roots = MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap);
-        Assert.Single(roots);
+        var rootList = new UnsafeList<Handle<ParentNode>>();
+        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        var roots = rootList.WrittenSpan;
+        Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
 
         parentStore.IncrementRoots(roots);
@@ -568,8 +572,10 @@ public class CoordinatorMergeTests
         Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
 
         // Collect + remap roots, then increment
-        var roots = MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap);
-        Assert.Single(roots);
+        var rootList = new UnsafeList<Handle<ParentNode>>();
+        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        var roots = rootList.WrittenSpan;
+        Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);
 
         parentStore.IncrementRoots(roots);

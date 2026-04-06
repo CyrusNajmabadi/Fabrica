@@ -334,14 +334,18 @@ public class JobMergePipelineTests : IDisposable
 
         // ── Root collection ──────────────────────────────────────────────
 
-        var roots = MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap);
+        var rootList = new UnsafeList<Handle<ParentNode>>();
+        MergePipeline.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");
 
         parentStore.IncrementRoots(roots);
 
         // ── DagValidator ─────────────────────────────────────────────────
 
-        var dagRoots = roots.Select(r => new DagValidator.NodeRef(ParentTypeId, r.Index)).ToArray();
+        var dagRoots = new DagValidator.NodeRef[roots.Length];
+        for (var i = 0; i < roots.Length; i++)
+            dagRoots[i] = new DagValidator.NodeRef(ParentTypeId, roots[i].Index);
         DagValidator.AssertValid(dagRoots, new TestWorldAccessor(parentStore, childStore), strict: true);
 
         // ── Cascade-free ─────────────────────────────────────────────────
