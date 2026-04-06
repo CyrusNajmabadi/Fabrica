@@ -1,5 +1,5 @@
 ; Assembly listing for method Program:<<Main>$>g__VisitDifferentType|0_N(byref,Fabrica.Core.Memory.Handle`1[OtherNode]) (FullOpts)
-; Emitting BLENDED_CODE for generic X64 + VEX on Unix
+; Emitting BLENDED_CODE for generic X64 on Unix
 ; FullOpts code
 ; optimized code
 ; rsp based frame

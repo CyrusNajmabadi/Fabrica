@@ -1,5 +1,5 @@
 ; Assembly listing for method ParentChildEnumerator:EnumerateChildren[ParentDecrementVisitor](byref,byref):this (FullOpts)
-; Emitting BLENDED_CODE for generic X64 + VEX on Unix
+; Emitting BLENDED_CODE for generic X64 on Unix
 ; FullOpts code
 ; optimized code
 ; rbp based frame
