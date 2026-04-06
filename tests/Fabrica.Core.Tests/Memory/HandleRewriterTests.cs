@@ -30,26 +30,29 @@ public class HandleRewriterTests
             if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
 
-        public readonly void RewriteChildren<TRewriter>(ref TreeNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
+        public readonly void EnumerateRefChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
+            where TVisitor : struct, INodeVisitor
         {
-            if (node.Left.Index != -1) { var h = node.Left; rewriter.Rewrite(ref h); node.Left = h; }
-            if (node.Right.Index != -1) { var h = node.Right; rewriter.Rewrite(ref h); node.Right = h; }
+            if (node.Left.Index != -1) visitor.VisitRef(ref node.Left);
+            if (node.Right.Index != -1) visitor.VisitRef(ref node.Right);
         }
     }
 
     /// <summary>
-    /// Simple rewriter that maps local handles to global handles using a flat remap array.
+    /// Simple visitor that maps local handles to global handles using a flat remap array.
     /// </summary>
-    private struct TestRewriter(int[] remap) : INodeHandleRewriter
+    private struct TestVisitor(int[] remap) : INodeVisitor
     {
-        public readonly void Rewrite<TChild>(ref Handle<TChild> handle) where TChild : struct
+        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+            => throw new NotSupportedException();
+
+        public readonly void VisitRef<TChild>(ref Handle<TChild> child) where TChild : struct
         {
-            var index = handle.Index;
+            var index = child.Index;
             if (TaggedHandle.IsLocal(index))
             {
                 var localIndex = TaggedHandle.DecodeLocalIndex(index);
-                handle = new Handle<TChild>(remap[localIndex]);
+                child = new Handle<TChild>(remap[localIndex]);
             }
         }
     }
@@ -70,10 +73,10 @@ public class HandleRewriterTests
         };
 
         int[] remap = [100, 200];
-        var rewriter = new TestRewriter(remap);
+        var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
-        enumerator.RewriteChildren(ref node, ref rewriter);
+        enumerator.EnumerateRefChildren(ref node, ref visitor);
 
         Assert.Equal(100, node.Left.Index);
         Assert.Equal(200, node.Right.Index);
@@ -92,10 +95,10 @@ public class HandleRewriterTests
         };
 
         int[] remap = [999];
-        var rewriter = new TestRewriter(remap);
+        var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
-        enumerator.RewriteChildren(ref node, ref rewriter);
+        enumerator.EnumerateRefChildren(ref node, ref visitor);
 
         Assert.Equal(50, node.Left.Index);
         Assert.Equal(60, node.Right.Index);
@@ -111,10 +114,10 @@ public class HandleRewriterTests
         };
 
         int[] remap = [999];
-        var rewriter = new TestRewriter(remap);
+        var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
-        enumerator.RewriteChildren(ref node, ref rewriter);
+        enumerator.EnumerateRefChildren(ref node, ref visitor);
 
         Assert.Equal(Handle<TreeNode>.None, node.Left);
         Assert.Equal(Handle<TreeNode>.None, node.Right);
@@ -134,10 +137,10 @@ public class HandleRewriterTests
         var remap = new int[6];
         remap[5] = 300;
 
-        var rewriter = new TestRewriter(remap);
+        var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
-        enumerator.RewriteChildren(ref node, ref rewriter);
+        enumerator.EnumerateRefChildren(ref node, ref visitor);
 
         Assert.Equal(300, node.Left.Index);
         Assert.Equal(42, node.Right.Index);
@@ -159,11 +162,11 @@ public class HandleRewriterTests
         tlb[parentIndex] = new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None };
 
         int[] remap = [500, 501];
-        var rewriter = new TestRewriter(remap);
+        var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
         var parent = tlb[parentIndex];
-        enumerator.RewriteChildren(ref parent, ref rewriter);
+        enumerator.EnumerateRefChildren(ref parent, ref visitor);
 
         Assert.Equal(500, parent.Left.Index);
         Assert.True(TaggedHandle.IsGlobal(parent.Left.Index));
