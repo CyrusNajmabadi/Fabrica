@@ -479,6 +479,105 @@ public class UnsafeSlabArenaTests
         Assert.Equal(777, arena[idx].Value);
     }
 
+    // ═══════════════════════════ Batch allocation ══════════════════════════
+
+    [Fact]
+    public void AllocateBatch_ReturnsStartIndex_BumpsHighWater()
+    {
+        var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
+        var ta = arena.GetTestAccessor();
+
+        var start = arena.AllocateBatch(5);
+        Assert.Equal(0, start);
+        Assert.Equal(5, ta.HighWater);
+        Assert.Equal(5, ta.Count);
+    }
+
+    [Fact]
+    public void AllocateBatch_AfterSingleAllocations_ContinuesFromHighWater()
+    {
+        var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
+        var ta = arena.GetTestAccessor();
+
+        arena.Allocate();
+        arena.Allocate();
+        var start = arena.AllocateBatch(3);
+
+        Assert.Equal(2, start);
+        Assert.Equal(5, ta.HighWater);
+        Assert.Equal(5, ta.Count);
+    }
+
+    [Fact]
+    public void AllocateBatch_ZeroCount_ReturnsCurrentHighWater()
+    {
+        var arena = CreateTinyArena();
+        var ta = arena.GetTestAccessor();
+
+        arena.Allocate();
+        var start = arena.AllocateBatch(0);
+
+        Assert.Equal(1, start);
+        Assert.Equal(1, ta.HighWater);
+        Assert.Equal(1, ta.Count);
+    }
+
+    [Fact]
+    public void AllocateBatch_CrossesSlabBoundary_AllocatesSlabs()
+    {
+        var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
+        var ta = arena.GetTestAccessor();
+
+        arena.AllocateBatch(6);
+
+        Assert.NotNull(ta.Directory[0]);
+        Assert.NotNull(ta.Directory[1]);
+    }
+
+    [Fact]
+    public void AllocateBatch_EntriesAreAccessible()
+    {
+        var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
+
+        var start = arena.AllocateBatch(8);
+        for (var i = 0; i < 8; i++)
+            arena[new Handle<Int32Entry>(start + i)] = new Int32Entry { Value = i * 10 };
+
+        for (var i = 0; i < 8; i++)
+            Assert.Equal(i * 10, arena[new Handle<Int32Entry>(start + i)].Value);
+    }
+
+    [Fact]
+    public void AllocateBatch_BypassesFreeList()
+    {
+        var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
+        var ta = arena.GetTestAccessor();
+
+        var idx = arena.Allocate();
+        arena.Free(idx);
+        Assert.Equal(1, ta.FreeCount);
+
+        var start = arena.AllocateBatch(2);
+        Assert.Equal(1, start);
+        Assert.Equal(3, ta.HighWater);
+        Assert.Equal(1, ta.FreeCount);
+    }
+
+    [Fact]
+    public void AllocateBatch_MultipleCalls_IndicesAreContiguous()
+    {
+        var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
+        var ta = arena.GetTestAccessor();
+
+        var start1 = arena.AllocateBatch(3);
+        var start2 = arena.AllocateBatch(4);
+
+        Assert.Equal(0, start1);
+        Assert.Equal(3, start2);
+        Assert.Equal(7, ta.HighWater);
+        Assert.Equal(7, ta.Count);
+    }
+
     // ═══════════════════════════ Debug assertions ═════════════════════════
 
 #if DEBUG
