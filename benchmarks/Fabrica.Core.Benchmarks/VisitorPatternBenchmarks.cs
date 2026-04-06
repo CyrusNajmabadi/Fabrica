@@ -88,15 +88,6 @@ public class VisitorPatternBenchmarks
             if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void RewriteChildren<TRewriter>(ref ParentNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
-        {
-            if (node.LeftParent.Index != -1) { var h = node.LeftParent; rewriter.Rewrite(ref h); node.LeftParent = h; }
-            if (node.RightParent.Index != -1) { var h = node.RightParent; rewriter.Rewrite(ref h); node.RightParent = h; }
-            if (node.ChildRef.Index != -1) { var h = node.ChildRef; rewriter.Rewrite(ref h); node.ChildRef = h; }
-        }
     }
 
     private struct ChildNodeEnumerator : INodeChildEnumerator<ChildNode>
@@ -115,14 +106,6 @@ public class VisitorPatternBenchmarks
         {
             if (node.Left.IsValid) visitor.Visit(node.Left, in context);
             if (node.Right.IsValid) visitor.Visit(node.Right, in context);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void RewriteChildren<TRewriter>(ref ChildNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
-        {
-            if (node.Left.Index != -1) { var h = node.Left; rewriter.Rewrite(ref h); node.Left = h; }
-            if (node.Right.Index != -1) { var h = node.Right; rewriter.Rewrite(ref h); node.Right = h; }
         }
     }
 

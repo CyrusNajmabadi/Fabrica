@@ -28,13 +28,6 @@ public class DagValidatorTests
             if (node.Left.IsValid) visitor.Visit(node.Left, in context);
             if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
-
-        public readonly void RewriteChildren<TRewriter>(ref TreeNode node, ref TRewriter rewriter)
-            where TRewriter : struct, INodeHandleRewriter
-        {
-            if (node.Left.Index != -1) { var h = node.Left; rewriter.Rewrite(ref h); node.Left = h; }
-            if (node.Right.Index != -1) { var h = node.Right; rewriter.Rewrite(ref h); node.Right = h; }
-        }
     }
 
     private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler

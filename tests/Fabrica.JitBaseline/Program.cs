@@ -246,14 +246,6 @@ internal struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
         if (node.Left.IsValid) visitor.Visit(node.Left, in context);
         if (node.Right.IsValid) visitor.Visit(node.Right, in context);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void RewriteChildren<TRewriter>(ref TreeNode node, ref TRewriter rewriter)
-        where TRewriter : struct, INodeHandleRewriter
-    {
-        if (node.Left.Index != -1) { var h = node.Left; rewriter.Rewrite(ref h); node.Left = h; }
-        if (node.Right.Index != -1) { var h = node.Right; rewriter.Rewrite(ref h); node.Right = h; }
-    }
 }
 
 internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
@@ -273,14 +265,6 @@ internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
         if (node.SameChild.IsValid) visitor.Visit(node.SameChild, in context);
         if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild, in context);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void RewriteChildren<TRewriter>(ref MixedNode node, ref TRewriter rewriter)
-        where TRewriter : struct, INodeHandleRewriter
-    {
-        if (node.SameChild.Index != -1) { var h = node.SameChild; rewriter.Rewrite(ref h); node.SameChild = h; }
-        if (node.CrossChild.Index != -1) { var h = node.CrossChild; rewriter.Rewrite(ref h); node.CrossChild = h; }
-    }
 }
 
 internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
@@ -299,14 +283,6 @@ internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
     {
         if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef, in context);
         if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void RewriteChildren<TRewriter>(ref ParentNode node, ref TRewriter rewriter)
-        where TRewriter : struct, INodeHandleRewriter
-    {
-        if (node.ParentRef.Index != -1) { var h = node.ParentRef; rewriter.Rewrite(ref h); node.ParentRef = h; }
-        if (node.ChildRef.Index != -1) { var h = node.ChildRef; rewriter.Rewrite(ref h); node.ChildRef = h; }
     }
 }
 
