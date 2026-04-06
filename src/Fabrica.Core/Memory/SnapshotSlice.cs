@@ -16,6 +16,14 @@ namespace Fabrica.Core.Memory;
 ///      for any that hit zero.
 ///   4. Reuse: call <see cref="Clear"/> to reset for the next snapshot without releasing backing storage.
 ///
+/// ROOT SEMANTICS
+///   Roots are per-snapshot. Each snapshot must explicitly declare its own root set — roots from prior
+///   snapshots are NOT inherited. If a node should remain a root across ticks, jobs must re-mark it every
+///   tick. This ensures that when a snapshot is released, only its declared roots are decremented, and nodes
+///   that are no longer roots in newer snapshots become eligible for cascade-free once all pinning snapshots
+///   are released. A root handle may refer to any existing node, including one that was an internal (non-root)
+///   node in a prior snapshot — the refcount system composes overlapping pins correctly.
+///
 /// REUSE
 ///   The internal <see cref="List{T}"/> grows to steady state and is reused via <see cref="Clear"/>.
 ///   Once a snapshot is fully released, its slices can be reused by future snapshots with zero allocation.
