@@ -16,62 +16,6 @@ public class RefCountTableBenchmarks
 
     private struct DummyNode;
 
-    // ── Struct helpers (zero interface dispatch overhead) ─────────────────
-
-    private struct NullHandler : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table) { }
-    }
-
-    private struct CountingHandler : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public int FreeCount;
-        public void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table) => this.FreeCount++;
-    }
-
-    private struct BinaryTreeHandler(int maxIndex) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public int FreeCount;
-
-        public void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
-        {
-            this.FreeCount++;
-            var index = handle.Index;
-            var left = (index * 2) + 1;
-            var right = (index * 2) + 2;
-            if (left <= maxIndex)
-                table.Decrement(new Handle<DummyNode>(left), this);
-            if (right <= maxIndex)
-                table.Decrement(new Handle<DummyNode>(right), this);
-        }
-    }
-
-    private struct LinearChainHandler(int maxIndex) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public int FreeCount;
-
-        public void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
-        {
-            this.FreeCount++;
-            var next = handle.Index + 1;
-            if (next <= maxIndex)
-                table.Decrement(new Handle<DummyNode>(next), this);
-        }
-    }
-
-    private struct WideTreeHandler(int fanout) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public int FreeCount;
-
-        public void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
-        {
-            this.FreeCount++;
-            if (handle.Index != 0) return;
-            for (var i = 1; i <= fanout; i++)
-                table.Decrement(new Handle<DummyNode>(i), this);
-        }
-    }
-
     // ═══════════════════════════ Increment ════════════════════════════════
 
     [Benchmark(Baseline = true)]
@@ -119,7 +63,7 @@ public class RefCountTableBenchmarks
         }
 
         for (var i = 0; i < N; i++)
-            table.Decrement(new Handle<DummyNode>(i), default(NullHandler));
+            _ = table.Decrement(new Handle<DummyNode>(i));
     }
 
     [Benchmark]
@@ -127,14 +71,15 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable<DummyNode>();
         table.EnsureCapacity(N);
-        var handler = new CountingHandler();
         for (var i = 0; i < N; i++)
             table.Increment(new Handle<DummyNode>(i));
 
+        var count = 0;
         for (var i = 0; i < N; i++)
-            table.Decrement(new Handle<DummyNode>(i), handler);
+            if (table.Decrement(new Handle<DummyNode>(i)))
+                count++;
 
-        return handler.FreeCount;
+        return count;
     }
 
     // ═══════════════════════════ Cascade ══════════════════════════════════
@@ -144,12 +89,26 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable<DummyNode>();
         table.EnsureCapacity(N);
-        var handler = new BinaryTreeHandler(N - 1);
         for (var i = 0; i < N; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), handler);
-        return handler.FreeCount;
+        var pending = new Stack<Handle<DummyNode>>();
+        var maxIndex = N - 1;
+        var freeCount = 0;
+        if (table.Decrement(new Handle<DummyNode>(0)))
+            pending.Push(new Handle<DummyNode>(0));
+        while (pending.TryPop(out var current))
+        {
+            freeCount++;
+            var left = (current.Index * 2) + 1;
+            var right = (current.Index * 2) + 2;
+            if (left <= maxIndex && table.Decrement(new Handle<DummyNode>(left)))
+                pending.Push(new Handle<DummyNode>(left));
+            if (right <= maxIndex && table.Decrement(new Handle<DummyNode>(right)))
+                pending.Push(new Handle<DummyNode>(right));
+        }
+
+        return freeCount;
     }
 
     [Benchmark]
@@ -157,12 +116,23 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable<DummyNode>();
         table.EnsureCapacity(N);
-        var handler = new LinearChainHandler(N - 1);
         for (var i = 0; i < N; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), handler);
-        return handler.FreeCount;
+        var pending = new Stack<Handle<DummyNode>>();
+        var maxIndex = N - 1;
+        var freeCount = 0;
+        if (table.Decrement(new Handle<DummyNode>(0)))
+            pending.Push(new Handle<DummyNode>(0));
+        while (pending.TryPop(out var current))
+        {
+            freeCount++;
+            var next = current.Index + 1;
+            if (next <= maxIndex && table.Decrement(new Handle<DummyNode>(next)))
+                pending.Push(new Handle<DummyNode>(next));
+        }
+
+        return freeCount;
     }
 
     [Benchmark]
@@ -170,12 +140,26 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable<DummyNode>();
         table.EnsureCapacity(N);
-        var handler = new WideTreeHandler(N - 1);
         for (var i = 0; i < N; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), handler);
-        return handler.FreeCount;
+        var pending = new Stack<Handle<DummyNode>>();
+        var fanout = N - 1;
+        var freeCount = 0;
+        if (table.Decrement(new Handle<DummyNode>(0)))
+            pending.Push(new Handle<DummyNode>(0));
+        while (pending.TryPop(out var current))
+        {
+            freeCount++;
+            if (current.Index == 0)
+            {
+                for (var i = 1; i <= fanout; i++)
+                    if (table.Decrement(new Handle<DummyNode>(i)))
+                        pending.Push(new Handle<DummyNode>(i));
+            }
+        }
+
+        return freeCount;
     }
 
     // ═══════════════════════════ Batch ════════════════════════════════════
@@ -197,7 +181,6 @@ public class RefCountTableBenchmarks
     {
         var table = new RefCountTable<DummyNode>();
         table.EnsureCapacity(N);
-        var handler = new CountingHandler();
         var half = N / 2;
 
         for (var i = 0; i < N; i++)
@@ -211,8 +194,9 @@ public class RefCountTableBenchmarks
         for (var i = 0; i < N; i++)
             handles[i] = new Handle<DummyNode>(i);
 
-        table.DecrementBatch(handles, handler);
-        return handler.FreeCount;
+        var hitZero = new UnsafeStack<Handle<DummyNode>>();
+        table.DecrementBatch(handles, hitZero);
+        return hitZero.Count;
     }
 
     // ═══════════════════════════ Steady state ═════════════════════════════
@@ -231,7 +215,7 @@ public class RefCountTableBenchmarks
 
         for (var i = 0; i < N; i++)
         {
-            table.Decrement(new Handle<DummyNode>(i), default(NullHandler));
+            _ = table.Decrement(new Handle<DummyNode>(i));
             table.Increment(new Handle<DummyNode>(i));
         }
     }

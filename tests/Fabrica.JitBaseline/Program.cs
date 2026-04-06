@@ -19,14 +19,13 @@ using Fabrica.Core.Memory;
     table.Increment(h0);
     AssertRefCount(table, h0, 1, "Visit: after Increment");
 
-    var handler = new TreeHandler(arena, default);
-    var visitor = new TreeDecrementVisitor(table, handler);
+    var visitor = new TreeDecrementVisitor(table);
 
     VisitDifferentType(ref visitor, new Handle<OtherNode>(0));
     AssertRefCount(table, h0, 1, "Visit: after VisitDifferentType (should be unchanged)");
 
     VisitSameType(ref visitor, h0);
-    AssertRefCount(table, h0, 0, "Visit: after VisitSameType (should be freed)");
+    AssertRefCount(table, h0, 0, "Visit: after VisitSameType (refcount should be zero)");
 }
 
 // ── Scenario 2: Full pipeline — enumerator + visitor (same-type children) ───
@@ -49,14 +48,13 @@ using Fabrica.Core.Memory;
     table.Increment(root); // the external hold
 
     var enumerator = new TreeChildEnumerator();
-    var handler = new TreeHandler(arena, enumerator);
-    var visitor = new TreeDecrementVisitor(table, handler);
+    var visitor = new TreeDecrementVisitor(table);
 
     // EnumerateDecrement walks root's children and decrements each.
     // This exercises: enumerator.EnumerateChildren → visitor.Visit → table.Decrement.
     EnumerateDecrement(ref enumerator, in arena[root], ref visitor);
-    AssertRefCount(table, left, 0, "EnumerateDecrement: left child after enumerate (should be freed)");
-    AssertRefCount(table, right, 0, "EnumerateDecrement: right child after enumerate (should be freed)");
+    AssertRefCount(table, left, 0, "EnumerateDecrement: left child refcount after enumerate");
+    AssertRefCount(table, right, 0, "EnumerateDecrement: right child refcount after enumerate");
     AssertRefCount(table, root, 1, "EnumerateDecrement: root refcount unchanged");
 }
 
@@ -85,12 +83,11 @@ using Fabrica.Core.Memory;
 
     // MixedDecrementVisitor is only for MixedNode — it should decrement mixedChild
     // but completely ignore otherChild (the typeof(OtherNode) branch is eliminated).
-    var handler = new MixedHandler(mixedArena, default);
-    var visitor = new MixedDecrementVisitor(mixedTable, handler);
+    var visitor = new MixedDecrementVisitor(mixedTable);
     var enumerator = new MixedChildEnumerator();
 
     EnumerateMixedDecrement(ref enumerator, in mixedArena[parent], ref visitor);
-    AssertRefCount(mixedTable, mixedChild, 0, "MixedEnumerate: same-type child (should be freed)");
+    AssertRefCount(mixedTable, mixedChild, 0, "MixedEnumerate: same-type child refcount");
     AssertRefCount(otherTable, otherChild, 1, "MixedEnumerate: cross-type child (should be unchanged)");
 }
 
@@ -120,13 +117,11 @@ using Fabrica.Core.Memory;
     // ParentDecrementVisitor has two typeof branches: one for ParentNode, one for ChildNode.
     // Both should resolve and inline — no dead branches, no interface dispatch.
     var enumerator = new ParentChildEnumerator();
-    var childHandler = new ChildHandler(childArena);
-    var parentHandler = new ParentHandler(parentArena, enumerator, childTable, childHandler);
-    var visitor = new ParentDecrementVisitor(parentTable, parentHandler, childTable, childHandler);
+    var visitor = new ParentDecrementVisitor(parentTable, childTable);
 
     EnumerateParentDecrement(ref enumerator, in parentArena[root], ref visitor);
-    AssertRefCount(parentTable, parentChild, 0, "ParentDecrement: parent-type child (should be freed)");
-    AssertRefCount(childTable, childRef, 0, "ParentDecrement: child-type child (should be freed)");
+    AssertRefCount(parentTable, parentChild, 0, "ParentDecrement: parent-type child refcount");
+    AssertRefCount(childTable, childRef, 0, "ParentDecrement: child-type child refcount");
     AssertRefCount(parentTable, root, 1, "ParentDecrement: root refcount unchanged");
 }
 
@@ -288,7 +283,7 @@ internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
 
 // ── Visitors ─────────────────────────────────────────────────────────────
 
-internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table, TreeHandler handler) : INodeVisitor
+internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
@@ -296,12 +291,12 @@ internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table, TreeHandler 
         if (typeof(TChild) == typeof(TreeNode))
         {
             var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
-            table.Decrement(c, handler);
+            table.Decrement(c);
         }
     }
 }
 
-internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table, MixedHandler handler) : INodeVisitor
+internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
@@ -309,7 +304,7 @@ internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table, MixedHandl
         if (typeof(TChild) == typeof(MixedNode))
         {
             var c = Unsafe.As<Handle<TChild>, Handle<MixedNode>>(ref child);
-            table.Decrement(c, handler);
+            table.Decrement(c);
         }
     }
 }
@@ -322,9 +317,7 @@ internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table, MixedHandl
 /// </summary>
 internal struct ParentDecrementVisitor(
     RefCountTable<ParentNode> parentTable,
-    ParentHandler parentHandler,
-    RefCountTable<ChildNode> childTable,
-    ChildHandler childHandler) : INodeVisitor
+    RefCountTable<ChildNode> childTable) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
@@ -336,57 +329,8 @@ internal struct ParentDecrementVisitor(
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly void DecrementParent(Handle<ParentNode> child) => parentTable.Decrement(child, parentHandler);
+    private readonly void DecrementParent(Handle<ParentNode> child) => parentTable.Decrement(child);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly void DecrementChild(Handle<ChildNode> child) => childTable.Decrement(child, childHandler);
-}
-
-// ── Handlers ─────────────────────────────────────────────────────────────
-
-internal struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator)
-    : RefCountTable<TreeNode>.IRefCountHandler
-{
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
-    {
-        ref readonly var node = ref arena[handle];
-        var visitor = new TreeDecrementVisitor(table, this);
-        enumerator.EnumerateChildren(in node, ref visitor);
-        arena.Free(handle);
-    }
-}
-
-internal struct MixedHandler(UnsafeSlabArena<MixedNode> arena, MixedChildEnumerator enumerator)
-    : RefCountTable<MixedNode>.IRefCountHandler
-{
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void OnFreed(Handle<MixedNode> handle, RefCountTable<MixedNode> table)
-    {
-        ref readonly var node = ref arena[handle];
-        var visitor = new MixedDecrementVisitor(table, this);
-        enumerator.EnumerateChildren(in node, ref visitor);
-        arena.Free(handle);
-    }
-}
-
-internal struct ParentHandler(UnsafeSlabArena<ParentNode> arena, ParentChildEnumerator enumerator,
-    RefCountTable<ChildNode> childTable, ChildHandler childHandler)
-    : RefCountTable<ParentNode>.IRefCountHandler
-{
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void OnFreed(Handle<ParentNode> handle, RefCountTable<ParentNode> table)
-    {
-        ref readonly var node = ref arena[handle];
-        var visitor = new ParentDecrementVisitor(table, this, childTable, childHandler);
-        enumerator.EnumerateChildren(in node, ref visitor);
-        arena.Free(handle);
-    }
-}
-
-internal struct ChildHandler(UnsafeSlabArena<ChildNode> arena)
-    : RefCountTable<ChildNode>.IRefCountHandler
-{
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void OnFreed(Handle<ChildNode> handle, RefCountTable<ChildNode> table) => arena.Free(handle);
+    private readonly void DecrementChild(Handle<ChildNode> child) => childTable.Decrement(child);
 }
