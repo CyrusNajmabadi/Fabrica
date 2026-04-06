@@ -15,7 +15,7 @@ public class SnapshotSliceTests
         public int Value;
     }
 
-    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
+    private struct TreeNodeOps : INodeOps<TreeNode>
     {
         internal NodeStore<TreeNode, TreeNodeOps> Store;
 

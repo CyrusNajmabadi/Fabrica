@@ -229,7 +229,7 @@ internal struct ChildNode
 
 // ── Enumerators ──────────────────────────────────────────────────────────
 
-internal struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+internal struct TreeChildEnumerator : INodeOps<TreeNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
@@ -238,17 +238,9 @@ internal struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
         if (node.Left.IsValid) visitor.Visit(node.Left);
         if (node.Right.IsValid) visitor.Visit(node.Right);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>
-    {
-        if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-        if (node.Right.IsValid) visitor.Visit(node.Right, in context);
-    }
 }
 
-internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
+internal struct MixedChildEnumerator : INodeOps<MixedNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void EnumerateChildren<TVisitor>(in MixedNode node, ref TVisitor visitor)
@@ -257,17 +249,9 @@ internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
         if (node.SameChild.IsValid) visitor.Visit(node.SameChild);
         if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in MixedNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>
-    {
-        if (node.SameChild.IsValid) visitor.Visit(node.SameChild, in context);
-        if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild, in context);
-    }
 }
 
-internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
+internal struct ParentChildEnumerator : INodeOps<ParentNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
@@ -275,14 +259,6 @@ internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
     {
         if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef);
         if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in ParentNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>
-    {
-        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef, in context);
-        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
     }
 }
 

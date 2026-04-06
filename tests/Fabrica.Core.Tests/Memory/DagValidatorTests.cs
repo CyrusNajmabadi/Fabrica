@@ -14,7 +14,7 @@ public class DagValidatorTests
         public Handle<TreeNode> Right;
     }
 
-    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
+    private struct TreeNodeOps : INodeOps<TreeNode>
     {
         internal NodeStore<TreeNode, TreeNodeOps> Store;
 

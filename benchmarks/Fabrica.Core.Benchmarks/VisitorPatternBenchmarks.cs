@@ -12,7 +12,7 @@ namespace Fabrica.Core.Benchmarks;
 /// hand-rolled direct code.
 ///
 /// Both the increment path (hot path for adding children) and the cascade-decrement path
-/// (OnFreed handler) are benchmarked. The "Visitor" variants use <see cref="INodeChildEnumerator{TNode}"/>
+/// (OnFreed handler) are benchmarked. The "Visitor" variants use <see cref="INodeOps{TNode}"/>
 /// and <see cref="INodeVisitor"/> to traverse children and call <see cref="RefCountTable{TNode}.Decrement{THandler}"/>.
 /// The "Direct" variants hand-roll all child traversal.
 /// </summary>
@@ -69,7 +69,7 @@ public class VisitorPatternBenchmarks
         }
     }
 
-    private struct ParentNodeEnumerator : INodeChildEnumerator<ParentNode>
+    private struct ParentNodeEnumerator : INodeOps<ParentNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
@@ -79,18 +79,9 @@ public class VisitorPatternBenchmarks
             if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent, in context);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-        }
     }
 
-    private struct ChildNodeEnumerator : INodeChildEnumerator<ChildNode>
+    private struct ChildNodeEnumerator : INodeOps<ChildNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
@@ -98,14 +89,6 @@ public class VisitorPatternBenchmarks
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 

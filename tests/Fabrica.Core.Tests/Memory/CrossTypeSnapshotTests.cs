@@ -31,7 +31,7 @@ public class CrossTypeSnapshotTests
 
     // ── Node ops (enumerator + cascade visitor per store) ───────────────
 
-    private struct ChildNodeOps : INodeChildEnumerator<ChildNode>, INodeVisitor
+    private struct ChildNodeOps : INodeOps<ChildNode>
     {
         internal NodeStore<ChildNode, ChildNodeOps> ChildStore;
 
@@ -54,7 +54,7 @@ public class CrossTypeSnapshotTests
         }
     }
 
-    private struct ParentNodeOps : INodeChildEnumerator<ParentNode>, INodeVisitor
+    private struct ParentNodeOps : INodeOps<ParentNode>
     {
         internal NodeStore<ParentNode, ParentNodeOps> ParentStore;
         internal NodeStore<ChildNode, ChildNodeOps> ChildStore;

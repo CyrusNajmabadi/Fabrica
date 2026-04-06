@@ -11,10 +11,11 @@ namespace Fabrica.Core.Memory;
 /// across all snapshots.
 ///
 /// NODE OPERATIONS
-///   <typeparamref name="TNodeOps"/> implements both <see cref="INodeChildEnumerator{TNode}"/>
-///   (structural knowledge of which fields are children) and <see cref="INodeVisitor"/>
-///   (decrement dispatch to the correct store per child type). This eliminates the need for a
-///   separate cascade-free handler interface — the visitor pattern handles everything.
+///   <typeparamref name="TNodeOps"/> implements <see cref="INodeOps{TNode}"/> which unifies
+///   structural knowledge of which fields are children (<see cref="INodeOps{TNode}.EnumerateChildren{TVisitor}"/>)
+///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{TChild}"/>).
+///   This eliminates the need for a separate cascade-free handler interface — the visitor pattern
+///   handles everything.
 ///
 /// ROOT OPERATIONS
 ///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
@@ -48,7 +49,7 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 internal sealed class NodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
     where TNode : struct
-    where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
+    where TNodeOps : struct, INodeOps<TNode>
 {
     private TNodeOps _nodeOps = nodeOps;
 

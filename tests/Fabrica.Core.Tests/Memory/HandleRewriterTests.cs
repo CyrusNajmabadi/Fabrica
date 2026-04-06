@@ -14,7 +14,7 @@ public class HandleRewriterTests
         public int Value;
     }
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+    private struct TreeChildEnumerator : INodeOps<TreeNode>
     {
         public readonly void EnumerateRefChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
