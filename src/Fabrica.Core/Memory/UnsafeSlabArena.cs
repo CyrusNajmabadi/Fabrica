@@ -64,6 +64,17 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     // ── Public API ────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Exclusive upper bound on indices reserved by bump allocation (<see cref="Allocate"/>, <see cref="AllocateBatch"/>):
+    /// valid handles satisfy <c>0 &lt;= index &lt; HighWater</c> (free-list reuse may still reference indices below this
+    /// mark). Single-threaded readers may observe this after coordinator-side merges for sizing and iteration ranges.
+    /// </summary>
+    public int HighWater
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _highWater;
+    }
+
+    /// <summary>
     /// Returns a reference to the entry at the given handle. The caller must ensure the handle was returned by
     /// <see cref="Allocate"/> and has not been freed. No bounds checking is performed in release builds.
     /// </summary>
@@ -149,7 +160,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
         public T[][] Directory => arena._directory.RawArray;
         public int DirectoryLength => arena._directory.DirectoryLength;
         public int Count => arena._count;
-        public int HighWater => arena._highWater;
+        public int HighWater => arena.HighWater;
         public int FreeCount => arena._freeList.Count;
         public int SlabLength => arena._directory.SlabLength;
         public int SlabShift => arena._directory.SlabShift;

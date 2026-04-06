@@ -29,7 +29,7 @@ internal static class MergePipeline
         RemapTable remap)
         where TNode : struct
     {
-        var startIndex = arena.GetTestAccessor().HighWater;
+        var startIndex = arena.HighWater;
 
         for (var t = 0; t < tlbs.Length; t++)
         {
@@ -46,8 +46,8 @@ internal static class MergePipeline
             }
         }
 
-        var count = arena.GetTestAccessor().HighWater - startIndex;
-        refCounts.EnsureCapacity(arena.GetTestAccessor().HighWater);
+        var count = arena.HighWater - startIndex;
+        refCounts.EnsureCapacity(arena.HighWater);
 
         return (startIndex, count);
     }
