@@ -427,7 +427,7 @@ public partial class JitBaselineTests
     [GeneratedRegex(@"; Emitting BLENDED_CODE for generic (?<arch>\w+)[\w\s+]*on (?<os>\w+)")]
     private static partial Regex IsaExtensionPattern();
 
-    [GeneratedRegex(@"(?<prefix>g__\w+)(\|0_\d+)(?<suffix>\()")]
+    [GeneratedRegex(@"(?<prefix>g__\w+)(\|0_\d+)(?<suffix>[\[\(])")]
     private static partial Regex LocalFunctionOrdinalPattern();
 
     [GeneratedRegex(@"#0x(?<hex>[0-9A-Fa-f]+)")]
