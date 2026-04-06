@@ -12,72 +12,92 @@ public class RefCountTableTests
     private static RefCountTable<DummyNode> CreateTinyTable(int directoryLength = 4, int slabShift = 2)
         => new(directoryLength, slabShift);
 
-    /// <summary>Tracks freed indices, no children to decrement.</summary>
-    private readonly struct TrackingHandler(List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
+    /// <summary>
+    /// Test-only helper that wraps a <see cref="RefCountTable{T}"/> with cascade behavior.
+    /// When a decrement reaches zero, the cascade loop calls the provided callback which may
+    /// trigger further decrements (re-entrant pushes onto the pending stack).
+    /// </summary>
+    private sealed class CascadeRunner(RefCountTable<DummyNode> table)
     {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
-            => freed.Add(handle.Index);
-    }
+        private readonly Stack<Handle<DummyNode>> _pending = new();
+        private bool _active;
+        private Action<Handle<DummyNode>>? _onFreed;
 
-    /// <summary>No-op: ignores frees, no children.</summary>
-    private readonly struct NullHandler : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table) { }
-    }
-
-    /// <summary>Binary tree: children of index i are 2i+1 and 2i+2. Tracks frees.</summary>
-    private readonly struct BinaryTreeHandler(int maxIndex, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
+        public void Decrement(Handle<DummyNode> handle, Action<Handle<DummyNode>> onFreed)
         {
-            var index = handle.Index;
-            freed.Add(index);
-            var left = (index * 2) + 1;
-            var right = (index * 2) + 2;
-            if (left <= maxIndex)
-                table.Decrement(new Handle<DummyNode>(left), this);
-            if (right <= maxIndex)
-                table.Decrement(new Handle<DummyNode>(right), this);
-        }
-    }
-
-    /// <summary>Linear chain: each node points to index+1. Tracks frees.</summary>
-    private readonly struct LinearChainHandler(int maxIndex, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
-        {
-            var index = handle.Index;
-            freed.Add(index);
-            var next = index + 1;
-            if (next <= maxIndex)
-                table.Decrement(new Handle<DummyNode>(next), this);
-        }
-    }
-
-    /// <summary>Wide tree: node 0 points to 1..fanout. Tracks frees.</summary>
-    private readonly struct WideTreeHandler(int fanout, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
-        {
-            var index = handle.Index;
-            freed.Add(index);
-            if (index != 0)
+            if (!table.Decrement(handle))
                 return;
-            for (var i = 1; i <= fanout; i++)
-                table.Decrement(new Handle<DummyNode>(i), this);
+            _pending.Push(handle);
+            if (_active) return;
+            _active = true;
+            _onFreed = onFreed;
+            while (_pending.Count > 0)
+                _onFreed(_pending.Pop());
+            _active = false;
+        }
+
+        public void DecrementBatch(ReadOnlySpan<Handle<DummyNode>> handles, Action<Handle<DummyNode>> onFreed)
+        {
+            for (var i = 0; i < handles.Length; i++)
+            {
+                if (table.Decrement(handles[i]))
+                    _pending.Push(handles[i]);
+            }
+
+            if (_pending.Count == 0) return;
+            _active = true;
+            _onFreed = onFreed;
+            while (_pending.Count > 0)
+                _onFreed(_pending.Pop());
+            _active = false;
         }
     }
 
-    /// <summary>Single parent→child relationship. Tracks frees.</summary>
-    private readonly struct SingleChildHandler(int parentIndex, int childIndex, List<int> freed) : RefCountTable<DummyNode>.IRefCountHandler
+    private static Action<Handle<DummyNode>> BinaryTreeCallback(CascadeRunner runner, int maxIndex, List<int> freed)
     {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
+        void OnFreed(Handle<DummyNode> handle)
         {
-            var index = handle.Index;
-            freed.Add(index);
-            if (index == parentIndex)
-                table.Decrement(new Handle<DummyNode>(childIndex), this);
+            freed.Add(handle.Index);
+            var left = (handle.Index * 2) + 1;
+            var right = (handle.Index * 2) + 2;
+            if (left <= maxIndex) runner.Decrement(new Handle<DummyNode>(left), OnFreed);
+            if (right <= maxIndex) runner.Decrement(new Handle<DummyNode>(right), OnFreed);
         }
+        return OnFreed;
+    }
+
+    private static Action<Handle<DummyNode>> LinearChainCallback(CascadeRunner runner, int maxIndex, List<int> freed)
+    {
+        void OnFreed(Handle<DummyNode> handle)
+        {
+            freed.Add(handle.Index);
+            var next = handle.Index + 1;
+            if (next <= maxIndex) runner.Decrement(new Handle<DummyNode>(next), OnFreed);
+        }
+        return OnFreed;
+    }
+
+    private static Action<Handle<DummyNode>> WideTreeCallback(CascadeRunner runner, int fanout, List<int> freed)
+    {
+        void OnFreed(Handle<DummyNode> handle)
+        {
+            freed.Add(handle.Index);
+            if (handle.Index != 0) return;
+            for (var i = 1; i <= fanout; i++)
+                runner.Decrement(new Handle<DummyNode>(i), OnFreed);
+        }
+        return OnFreed;
+    }
+
+    private static Action<Handle<DummyNode>> SingleChildCallback(CascadeRunner runner, int parentIndex, int childIndex, List<int> freed)
+    {
+        void OnFreed(Handle<DummyNode> handle)
+        {
+            freed.Add(handle.Index);
+            if (handle.Index == parentIndex)
+                runner.Decrement(new Handle<DummyNode>(childIndex), OnFreed);
+        }
+        return OnFreed;
     }
 
     // ═══════════════════════════ EnsureCapacity ═══════════════════════════
@@ -163,7 +183,9 @@ public class RefCountTableTests
         var freed = new List<int>();
         table.Increment(new Handle<DummyNode>(0));
         table.Increment(new Handle<DummyNode>(0));
-        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        var h0 = new Handle<DummyNode>(0);
+        if (table.Decrement(h0))
+            freed.Add(h0.Index);
         Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Empty(freed);
     }
@@ -175,7 +197,9 @@ public class RefCountTableTests
         table.EnsureCapacity(1);
         var freed = new List<int>();
         table.Increment(new Handle<DummyNode>(0));
-        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        var h0 = new Handle<DummyNode>(0);
+        if (table.Decrement(h0))
+            freed.Add(h0.Index);
         Assert.Equal(0, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Single(freed);
         Assert.Equal(0, freed[0]);
@@ -217,7 +241,8 @@ public class RefCountTableTests
         var freed = new List<int>();
         table.Increment(new Handle<DummyNode>(0));
 
-        table.Decrement(new Handle<DummyNode>(0), new BinaryTreeHandler(0, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), BinaryTreeCallback(runner, 0, freed));
 
         Assert.Equal(0, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Single(freed);
@@ -234,7 +259,8 @@ public class RefCountTableTests
         for (var i = 0; i <= 6; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), new BinaryTreeHandler(6, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), BinaryTreeCallback(runner, 6, freed));
 
         for (var i = 0; i <= 6; i++)
             Assert.Equal(0, table.GetCount(new Handle<DummyNode>(i)));
@@ -256,14 +282,15 @@ public class RefCountTableTests
         table.Increment(new Handle<DummyNode>(1)); // shared: two parents
         table.Increment(new Handle<DummyNode>(2));
 
-        table.Decrement(new Handle<DummyNode>(0), new SingleChildHandler(0, 1, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), SingleChildCallback(runner, 0, 1, freed));
 
         Assert.Equal(1, table.GetCount(new Handle<DummyNode>(1)));
         Assert.Single(freed);
         Assert.Equal(0, freed[0]);
 
         freed.Clear();
-        table.Decrement(new Handle<DummyNode>(2), new SingleChildHandler(2, 1, freed));
+        runner.Decrement(new Handle<DummyNode>(2), SingleChildCallback(runner, 2, 1, freed));
 
         Assert.Equal(0, table.GetCount(new Handle<DummyNode>(1)));
         Assert.Equal(2, freed.Count);
@@ -281,7 +308,8 @@ public class RefCountTableTests
         table.Increment(new Handle<DummyNode>(0));
         table.Increment(new Handle<DummyNode>(0));
 
-        table.Decrement(new Handle<DummyNode>(0), new BinaryTreeHandler(0, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), BinaryTreeCallback(runner, 0, freed));
 
         Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Empty(freed);
@@ -300,7 +328,8 @@ public class RefCountTableTests
         for (var i = 0; i < ChainLength; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), new LinearChainHandler(ChainLength - 1, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), LinearChainCallback(runner, ChainLength - 1, freed));
 
         Assert.Equal(ChainLength, freed.Count);
         for (var i = 0; i < ChainLength; i++)
@@ -318,7 +347,8 @@ public class RefCountTableTests
         for (var i = 0; i < Depth; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), new LinearChainHandler(Depth - 1, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), LinearChainCallback(runner, Depth - 1, freed));
 
         Assert.Equal(Depth, freed.Count);
     }
@@ -337,7 +367,8 @@ public class RefCountTableTests
         for (var i = 1; i <= Fanout; i++)
             table.Increment(new Handle<DummyNode>(i));
 
-        table.Decrement(new Handle<DummyNode>(0), new WideTreeHandler(Fanout, freed));
+        var runner = new CascadeRunner(table);
+        runner.Decrement(new Handle<DummyNode>(0), WideTreeCallback(runner, Fanout, freed));
 
         Assert.Equal(Fanout + 1, freed.Count);
         Assert.Contains(0, freed);
@@ -382,7 +413,10 @@ public class RefCountTableTests
         var batchHandles = new Handle<DummyNode>[batch.Length];
         for (var i = 0; i < batch.Length; i++)
             batchHandles[i] = new Handle<DummyNode>(batch[i]);
-        table.DecrementBatch(batchHandles, new TrackingHandler(freed));
+        var hitZero = new UnsafeStack<Handle<DummyNode>>();
+        table.DecrementBatch(batchHandles, hitZero);
+        while (hitZero.TryPop(out var h))
+            freed.Add(h.Index);
 
         Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Equal(0, table.GetCount(new Handle<DummyNode>(1)));
@@ -407,7 +441,8 @@ public class RefCountTableTests
         var batchHandles = new Handle<DummyNode>[batch.Length];
         for (var i = 0; i < batch.Length; i++)
             batchHandles[i] = new Handle<DummyNode>(batch[i]);
-        table.DecrementBatch(batchHandles, new BinaryTreeHandler(6, freed));
+        var runner = new CascadeRunner(table);
+        runner.DecrementBatch(batchHandles, BinaryTreeCallback(runner, 6, freed));
 
         Assert.Equal(7, freed.Count);
         for (var i = 0; i <= 6; i++)
@@ -418,9 +453,9 @@ public class RefCountTableTests
     public void DecrementBatch_Empty_DoesNothing()
     {
         var table = CreateTinyTable();
-        var freed = new List<int>();
-        table.DecrementBatch([], new TrackingHandler(freed));
-        Assert.Empty(freed);
+        var hitZero = new UnsafeStack<Handle<DummyNode>>();
+        table.DecrementBatch([], hitZero);
+        Assert.Equal(0, hitZero.Count);
     }
 
     // ═══════════════════════════ Slab boundaries ═════════════════════════
@@ -467,14 +502,17 @@ public class RefCountTableTests
         table.Increment(new Handle<DummyNode>(0));
         table.Increment(new Handle<DummyNode>(1));
 
-        table.Decrement(new Handle<DummyNode>(0), new NullHandler());
+        table.Decrement(new Handle<DummyNode>(0));
         Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
 
         table.Increment(new Handle<DummyNode>(0));
         Assert.Equal(2, table.GetCount(new Handle<DummyNode>(0)));
 
-        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
-        table.Decrement(new Handle<DummyNode>(0), new TrackingHandler(freed));
+        var h0 = new Handle<DummyNode>(0);
+        if (table.Decrement(h0))
+            freed.Add(h0.Index);
+        if (table.Decrement(h0))
+            freed.Add(h0.Index);
         Assert.Equal(0, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Single(freed);
     }
@@ -494,7 +532,10 @@ public class RefCountTableTests
             table.Increment(handles[i]);
         }
 
-        table.DecrementBatch(handles, new TrackingHandler(freed));
+        var hitZero = new UnsafeStack<Handle<DummyNode>>();
+        table.DecrementBatch(handles, hitZero);
+        while (hitZero.TryPop(out var h))
+            freed.Add(h.Index);
 
         Assert.Equal(Count, freed.Count);
         for (var i = 0; i < Count; i++)
@@ -507,28 +548,32 @@ public class RefCountTableTests
     {
         public RefCountTable<DummyNode> TableA { get; set; } = null!;
         public RefCountTable<DummyNode> TableB { get; set; } = null!;
+        public CascadeRunner RunnerA { get; set; } = null!;
+        public CascadeRunner RunnerB { get; set; } = null!;
         public List<int> FreedA { get; } = [];
         public List<int> FreedB { get; } = [];
     }
 
-    private readonly struct TwoTableAHandler(TwoTableContext ctx) : RefCountTable<DummyNode>.IRefCountHandler
+    private static Action<Handle<DummyNode>> TwoTableACallback(TwoTableContext ctx)
     {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
+        void OnFreed(Handle<DummyNode> handle)
         {
             ctx.FreedA.Add(handle.Index);
             if (handle.Index == 0)
-                ctx.TableB.Decrement(new Handle<DummyNode>(0), new TwoTableBHandler(ctx));
+                ctx.RunnerB.Decrement(new Handle<DummyNode>(0), TwoTableBCallback(ctx));
         }
+        return OnFreed;
     }
 
-    private readonly struct TwoTableBHandler(TwoTableContext ctx) : RefCountTable<DummyNode>.IRefCountHandler
+    private static Action<Handle<DummyNode>> TwoTableBCallback(TwoTableContext ctx)
     {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
+        void OnFreed(Handle<DummyNode> handle)
         {
             ctx.FreedB.Add(handle.Index);
             if (handle.Index == 0)
-                ctx.TableA.Decrement(new Handle<DummyNode>(1), new TwoTableAHandler(ctx));
+                ctx.RunnerA.Decrement(new Handle<DummyNode>(1), TwoTableACallback(ctx));
         }
+        return OnFreed;
     }
 
     [Fact]
@@ -539,6 +584,8 @@ public class RefCountTableTests
             TableA = CreateTinyTable(directoryLength: 4, slabShift: 2),
             TableB = CreateTinyTable(directoryLength: 4, slabShift: 2),
         };
+        ctx.RunnerA = new CascadeRunner(ctx.TableA);
+        ctx.RunnerB = new CascadeRunner(ctx.TableB);
         ctx.TableA.EnsureCapacity(2);
         ctx.TableB.EnsureCapacity(1);
 
@@ -546,7 +593,7 @@ public class RefCountTableTests
         ctx.TableA.Increment(new Handle<DummyNode>(1));
         ctx.TableB.Increment(new Handle<DummyNode>(0));
 
-        ctx.TableA.Decrement(new Handle<DummyNode>(0), new TwoTableAHandler(ctx));
+        ctx.RunnerA.Decrement(new Handle<DummyNode>(0), TwoTableACallback(ctx));
 
         Assert.Equal(0, ctx.TableA.GetCount(new Handle<DummyNode>(0)));
         Assert.Equal(0, ctx.TableA.GetCount(new Handle<DummyNode>(1)));
@@ -567,6 +614,8 @@ public class RefCountTableTests
             TableA = CreateTinyTable(directoryLength: 4, slabShift: 2),
             TableB = CreateTinyTable(directoryLength: 4, slabShift: 2),
         };
+        ctx.RunnerA = new CascadeRunner(ctx.TableA);
+        ctx.RunnerB = new CascadeRunner(ctx.TableB);
         ctx.TableA.EnsureCapacity(2);
         ctx.TableB.EnsureCapacity(1);
 
@@ -575,7 +624,7 @@ public class RefCountTableTests
         ctx.TableA.Increment(new Handle<DummyNode>(1)); // A[1] = 2 (shared)
         ctx.TableB.Increment(new Handle<DummyNode>(0));
 
-        ctx.TableA.Decrement(new Handle<DummyNode>(0), new TwoTableAHandler(ctx));
+        ctx.RunnerA.Decrement(new Handle<DummyNode>(0), TwoTableACallback(ctx));
 
         Assert.Equal(0, ctx.TableA.GetCount(new Handle<DummyNode>(0)));
         Assert.Equal(1, ctx.TableA.GetCount(new Handle<DummyNode>(1))); // survived
@@ -591,13 +640,13 @@ public class RefCountTableTests
 
     // Data-driven infrastructure for cross-table cascade tests with three tables (A=0, B=1, C=2).
     // Nodes are identified by (tableId, index). Edges define parent→child relationships across tables.
-    // The MultiTableHandler routes OnFreed callbacks and child decrements through the topology map.
 
     private sealed class MultiTableContext
     {
         public const int A = 0, B = 1, C = 2;
 
         public RefCountTable<DummyNode>[] Tables { get; } = new RefCountTable<DummyNode>[3];
+        public CascadeRunner[] Runners { get; }
         public List<int>[] Freed { get; } = [[], [], []];
         private readonly Dictionary<int, List<(int tableId, int index)>>[] _edges = [[], [], []];
 
@@ -607,10 +656,12 @@ public class RefCountTableTests
             var slabLength = 1 << SlabShift;
             var directoryLength = Math.Max(4, (nodesPerTable + slabLength - 1) / slabLength);
 
+            this.Runners = new CascadeRunner[3];
             for (var t = 0; t < 3; t++)
             {
                 this.Tables[t] = CreateTinyTable(directoryLength: directoryLength, slabShift: SlabShift);
                 this.Tables[t].EnsureCapacity(nodesPerTable);
+                this.Runners[t] = new CascadeRunner(this.Tables[t]);
             }
         }
 
@@ -629,18 +680,19 @@ public class RefCountTableTests
             => _edges[tableId].GetValueOrDefault(index);
 
         public void Decrement(int tableId, int index)
-            => this.Tables[tableId].Decrement(new Handle<DummyNode>(index), new MultiTableHandler(this, tableId));
-    }
+            => this.Runners[tableId].Decrement(new Handle<DummyNode>(index), this.MakeCallback(tableId));
 
-    private readonly struct MultiTableHandler(MultiTableContext ctx, int tableId) : RefCountTable<DummyNode>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<DummyNode> handle, RefCountTable<DummyNode> table)
+        private Action<Handle<DummyNode>> MakeCallback(int tableId)
         {
-            ctx.Freed[tableId].Add(handle.Index);
-            var children = ctx.GetChildren(tableId, handle.Index);
-            if (children == null) return;
-            foreach (var (childTableId, childIndex) in children)
-                ctx.Tables[childTableId].Decrement(new Handle<DummyNode>(childIndex), new MultiTableHandler(ctx, childTableId));
+            void OnFreed(Handle<DummyNode> handle)
+            {
+                this.Freed[tableId].Add(handle.Index);
+                var children = this.GetChildren(tableId, handle.Index);
+                if (children == null) return;
+                foreach (var (childTableId, childIndex) in children)
+                    this.Runners[childTableId].Decrement(new Handle<DummyNode>(childIndex), this.MakeCallback(childTableId));
+            }
+            return OnFreed;
         }
     }
 
@@ -989,29 +1041,6 @@ public class RefCountTableTests
         Assert.Equal(10, ctx.Freed[0].Count);
         Assert.Equal(10, ctx.Freed[1].Count);
         Assert.Equal(10, ctx.Freed[2].Count);
-    }
-
-    [Fact]
-    public void ThreeTable_CascadeActive_FalseOnAllTables_AfterComplexCascade()
-    {
-        const int A = MultiTableContext.A, B = MultiTableContext.B, C = MultiTableContext.C;
-        var ctx = new MultiTableContext();
-
-        // A[0] → B[0] → C[0] → A[1]: loop through all three tables
-        ctx.Tables[A].Increment(new Handle<DummyNode>(0));
-        ctx.Tables[A].Increment(new Handle<DummyNode>(1));
-        ctx.Tables[B].Increment(new Handle<DummyNode>(0));
-        ctx.Tables[C].Increment(new Handle<DummyNode>(0));
-
-        ctx.AddEdge(A, 0, B, 0);
-        ctx.AddEdge(B, 0, C, 0);
-        ctx.AddEdge(C, 0, A, 1);
-
-        ctx.Decrement(A, 0);
-
-        Assert.False(ctx.Tables[A].GetTestAccessor().CascadeActive);
-        Assert.False(ctx.Tables[B].GetTestAccessor().CascadeActive);
-        Assert.False(ctx.Tables[C].GetTestAccessor().CascadeActive);
     }
 
     // ═══════════════════════════ Persistent data structures ═══════════════
@@ -1802,24 +1831,6 @@ public class RefCountTableTests
         Assert.Equal(nodeCount + pathLength, totalFreed);
     }
 
-    // ═══════════════════════════ Cascade state ════════════════════════════
-
-    [Fact]
-    public void CascadeActive_FalseBeforeAndAfterDecrement()
-    {
-        var table = CreateTinyTable();
-        table.EnsureCapacity(3);
-        var ta = table.GetTestAccessor();
-
-        table.Increment(new Handle<DummyNode>(0));
-        table.Increment(new Handle<DummyNode>(1));
-        table.Increment(new Handle<DummyNode>(2));
-
-        Assert.False(ta.CascadeActive);
-        table.Decrement(new Handle<DummyNode>(0), new LinearChainHandler(2, []));
-        Assert.False(ta.CascadeActive);
-    }
-
     // ═══════════════════════════ Debug assertions ═════════════════════════
 
 #if DEBUG
@@ -1861,8 +1872,8 @@ public class RefCountTableTests
         try
         {
             using var listener = new AssertThrowsListener();
-            table.Decrement(new Handle<DummyNode>(0), default(NullHandler));
-            table.Decrement(new Handle<DummyNode>(0), default(NullHandler));
+            table.Decrement(new Handle<DummyNode>(0));
+            table.Decrement(new Handle<DummyNode>(0));
         }
         catch (Exception ex)
         {

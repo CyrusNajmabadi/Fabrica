@@ -36,28 +36,34 @@ public class PersistentTreeBenchmarks
         }
     }
 
-    private struct TreeDecrementVisitor(RefCountTable<TreeNode> table, TreeHandler handler) : INodeVisitor
+    private void ReleaseRoot(Handle<TreeNode> root)
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
-        {
-            if (typeof(TChild) == typeof(TreeNode))
-            {
-                var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
-                table.Decrement(c, handler);
-            }
-        }
+        var pending = new Stack<Handle<TreeNode>>();
+        if (_refCounts.Decrement(root))
+            pending.Push(root);
+        this.ReleaseCascade(pending);
     }
 
-    private struct TreeHandler(UnsafeSlabArena<TreeNode> arena, TreeChildEnumerator enumerator) : RefCountTable<TreeNode>.IRefCountHandler
+    private void ReleaseRootsBatch(ReadOnlySpan<Handle<TreeNode>> roots)
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnFreed(Handle<TreeNode> handle, RefCountTable<TreeNode> table)
+        var hitZero = new UnsafeStack<Handle<TreeNode>>(roots.Length + 1);
+        _refCounts.DecrementBatch(roots, hitZero);
+        var pending = new Stack<Handle<TreeNode>>();
+        while (hitZero.TryPop(out var h))
+            pending.Push(h);
+        this.ReleaseCascade(pending);
+    }
+
+    private void ReleaseCascade(Stack<Handle<TreeNode>> pending)
+    {
+        while (pending.TryPop(out var current))
         {
-            ref readonly var node = ref arena[handle];
-            var visitor = new TreeDecrementVisitor(table, this);
-            enumerator.EnumerateChildren(in node, ref visitor);
-            arena.Free(handle);
+            ref readonly var node = ref _arena[current];
+            if (node.Left.IsValid && _refCounts.Decrement(node.Left))
+                pending.Push(node.Left);
+            if (node.Right.IsValid && _refCounts.Decrement(node.Right))
+                pending.Push(node.Right);
+            _arena.Free(current);
         }
     }
 
@@ -176,13 +182,12 @@ public class PersistentTreeBenchmarks
         var rng = new Random(42);
         var leafCount = 1 << this.TreeDepth;
         var root = _root;
-        var handler = new TreeHandler(_arena, default);
 
         for (var i = 0; i < this.ChangeCount; i++)
         {
             var leaf = rng.Next(leafCount);
             var newRoot = this.PathCopy(root, leaf);
-            _refCounts.Decrement(root, handler);
+            this.ReleaseRoot(root);
             root = newRoot;
         }
 
@@ -207,8 +212,7 @@ public class PersistentTreeBenchmarks
             roots[i + 1] = this.PathCopy(roots[i], leaf);
         }
 
-        var handler = new TreeHandler(_arena, default);
-        _refCounts.DecrementBatch(roots.AsSpan(0, this.ChangeCount), handler);
+        this.ReleaseRootsBatch(roots.AsSpan(0, this.ChangeCount));
 
         return roots[this.ChangeCount].Index;
     }
@@ -228,8 +232,6 @@ public class PersistentTreeBenchmarks
         roots[0] = _root;
         var produced = 0;
         var consumed = 0;
-        var handler = new TreeHandler(_arena, default);
-
         while (produced < this.ChangeCount)
         {
             var batchEnd = Math.Min(produced + Window, this.ChangeCount);
@@ -244,12 +246,12 @@ public class PersistentTreeBenchmarks
             var releaseEnd = produced - Window;
             if (releaseEnd < 0) releaseEnd = 0;
             if (releaseEnd > consumed)
-                _refCounts.DecrementBatch(roots.AsSpan(consumed, releaseEnd - consumed), handler);
+                this.ReleaseRootsBatch(roots.AsSpan(consumed, releaseEnd - consumed));
             consumed = Math.Max(consumed, releaseEnd);
         }
 
         if (this.ChangeCount > consumed)
-            _refCounts.DecrementBatch(roots.AsSpan(consumed, this.ChangeCount - consumed), handler);
+            this.ReleaseRootsBatch(roots.AsSpan(consumed, this.ChangeCount - consumed));
 
         return roots[this.ChangeCount].Index;
     }
@@ -500,11 +502,6 @@ public class RawAllocReleaseBenchmarks
         public long Value { get; set; }
     }
 
-    private struct NoChildHandler(UnsafeSlabArena<Node> arena) : RefCountTable<Node>.IRefCountHandler
-    {
-        public readonly void OnFreed(Handle<Node> handle, RefCountTable<Node> table) => arena.Free(handle);
-    }
-
     [Params(100_000, 1_000_000)]
     public int N { get; set; }
 
@@ -532,9 +529,11 @@ public class RawAllocReleaseBenchmarks
             rc.Increment(new Handle<Node>(i));
         }
 
-        var handler = new NoChildHandler(arena);
         for (var i = this.N - 1; i >= 0; i--)
-            rc.Decrement(new Handle<Node>(i), handler);
+        {
+            if (rc.Decrement(new Handle<Node>(i)))
+                arena.Free(new Handle<Node>(i));
+        }
 
         return arena.Allocate().Index;
     }
@@ -545,7 +544,6 @@ public class RawAllocReleaseBenchmarks
         var arena = new UnsafeSlabArena<Node>();
         var rc = new RefCountTable<Node>();
         rc.EnsureCapacity(this.N);
-        var handler = new NoChildHandler(arena);
 
         for (var i = 0; i < this.N; i++)
         {
@@ -554,7 +552,10 @@ public class RawAllocReleaseBenchmarks
         }
 
         for (var i = this.N - 1; i >= 0; i--)
-            rc.Decrement(new Handle<Node>(i), handler);
+        {
+            if (rc.Decrement(new Handle<Node>(i)))
+                arena.Free(new Handle<Node>(i));
+        }
 
         Handle<Node> last = default;
         for (var i = 0; i < this.N; i++)
@@ -564,7 +565,10 @@ public class RawAllocReleaseBenchmarks
         }
 
         for (var i = 0; i < this.N; i++)
-            rc.Decrement(new Handle<Node>(i), handler);
+        {
+            if (rc.Decrement(new Handle<Node>(i)))
+                arena.Free(new Handle<Node>(i));
+        }
 
         return last.Index;
     }
