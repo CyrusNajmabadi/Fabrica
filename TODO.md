@@ -44,6 +44,36 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] **Benchmark struct-constrained interfaces** on ARM64 and x64 — validate JIT specialization and inlining
   assumptions with BenchmarkDotNet
 
+## Engine / Architecture — Coordinator Merge
+
+- [ ] **Root tracking for SnapshotSlice integration** — the merge pipeline currently establishes refcounts for internal
+  children but does not identify which newly-merged nodes are snapshot roots. The likely approach: jobs explicitly mark
+  root handles at creation time via a per-thread `RootCollector` buffer (alongside the TLB). After merge, the
+  coordinator remaps collected root handles from local to global and feeds them into `SnapshotSlice.AddRoot`.
+  - **Why not refcount-zero:** a zero refcount could indicate a bug (leaked node), not a root. The correct invariant
+    is: debug-assert that all declared roots have refcount zero after Phase 2b, and no non-roots have refcount zero.
+  - **Why not root-job-output:** pushes root-marking responsibility far from the creation point, making it hard to
+    reason about. Jobs know at creation time what they're building; marking roots there keeps the decision local.
+
+## Engine / Architecture — Coordinator Merge Optimizations
+
+- [ ] **Fine-grained merge overlap with production jobs** — the baseline coordinator merge waits for the entire production
+  DAG to finish before starting any merge work. A more aggressive approach uses two layers of tracking to start merge
+  work for each type as early as possible:
+  - **Static layer (source generator):** the type reachability graph prunes impossible combinations at compile time. A
+    job's "type footprint" (the set of node types it or its sub-jobs might create) can never include types that are
+    statically unreachable from its declared inputs. This is zero runtime cost.
+  - **Dynamic layer (per-type outstanding counters):** each job declares its type footprint. When enqueued, per-type
+    counters are incremented for every type in the footprint. When a job completes (or explicitly releases a type it
+    chose not to use — e.g., it decided not to spawn a sub-job that would have created that type), those counters are
+    decremented. When a type's counter hits zero, merge Phase 1 for that type becomes eligible.
+  - This is the same atomic-counter dependency pattern used for job DAG scheduling, applied to type-production tracking.
+    The dependency chain becomes: Phase1(T) depends on T's production counter hitting zero; Phase2a(P) depends on
+    Phase1(P) + Phase1(C) for every child type C of P; Phase2b(T) depends on Phase2a(P) for every parent type P with
+    `Handle<T>` children.
+  - Net effect: merge work overlaps with late-running production jobs, reducing total tick latency. Early-finishing types
+    begin merging while unrelated types are still being produced.
+
 ## Engine / Architecture — Determinism & Safety
 
 - [ ] **Unified thread pool with dynamic sim/render allocation** — both sim and render worker groups currently create

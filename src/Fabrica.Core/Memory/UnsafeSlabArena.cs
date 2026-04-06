@@ -102,6 +102,32 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     }
 
     /// <summary>
+    /// Allocates <paramref name="count"/> contiguous entries by bumping the high-water mark, bypassing the free list.
+    /// Returns the starting global index. The caller must initialise all entries in the range
+    /// <c>[startIndex, startIndex + count)</c>. Used by the coordinator merge to batch-allocate global slots for an
+    /// entire <see cref="ThreadLocalBuffer{T}"/>.
+    /// </summary>
+    public int AllocateBatch(int count)
+    {
+        _owner.AssertOwnerThread();
+        Debug.Assert(count >= 0, $"AllocateBatch called with negative count {count}.");
+
+        if (count == 0)
+            return _highWater;
+
+        var startIndex = _highWater;
+        _highWater += count;
+        _count += count;
+
+        for (var i = startIndex; i < _highWater; i += _directory.SlabLength)
+            _directory.EnsureSlab(i);
+
+        _directory.EnsureSlab(_highWater - 1);
+
+        return startIndex;
+    }
+
+    /// <summary>
     /// Returns an entry to the free list for future reuse. The caller is responsible for ensuring the entry is no longer
     /// referenced. Does not clear the entry data — callers (or the coordinator) must handle cleanup.
     /// </summary>
