@@ -16,11 +16,17 @@ namespace Fabrica.Core.Memory;
 ///   (decrement dispatch to the correct store per child type). This eliminates the need for a
 ///   separate cascade-free handler interface — the visitor pattern handles everything.
 ///
+/// CASCADE-FREE
+///   Owned entirely by this class. When a refcount reaches zero, the cascade loop reads the freed
+///   node from the arena, enumerates its children through <typeparamref name="TNodeOps"/> (as both
+///   enumerator and visitor), and frees the arena slot. Re-entrant decrements (same-type children)
+///   push onto the pending stack and the outer loop processes them — no nested loops, bounded stack
+///   depth. Cross-type cascades trigger the other store's cascade via
+///   <see cref="INodeVisitor.Visit{TChild}"/> dispatch.
+///
 /// ROOT OPERATIONS
 ///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
-///   refcount updates for snapshot root sets. Cascade-free is driven by the stored
-///   <typeparamref name="TNodeOps"/> via a private <see cref="CascadeAdapter"/> that bridges
-///   the visitor pattern to <see cref="RefCountTable{T}"/>'s cascade loop.
+///   refcount updates for snapshot root sets.
 ///
 /// VALIDATION (DEBUG ONLY)
 ///   Call <see cref="EnableValidation"/> in tests to activate automatic DAG invariant checking
@@ -51,6 +57,20 @@ internal sealed class NodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, R
     where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
 {
     private TNodeOps _nodeOps = nodeOps;
+
+    /// <summary>
+    /// Handles whose refcount reached zero during a decrement cascade, pending processing.
+    /// Reused across cascade operations to avoid allocation.
+    /// </summary>
+    private readonly UnsafeStack<Handle<TNode>> _cascadePending = new();
+
+    /// <summary>
+    /// True while a decrement cascade is being processed. When a <see cref="DecrementRefCount"/>
+    /// call hits zero during an active cascade (e.g., a same-type child decrement, or a cross-store
+    /// A→B→A bounce), the handle is pushed onto <see cref="_cascadePending"/> and the caller returns
+    /// immediately — the outer cascade loop will process it.
+    /// </summary>
+    private bool _cascadeActive;
 
 #if DEBUG
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
@@ -83,12 +103,26 @@ internal sealed class NodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, R
     internal void IncrementRefCount(Handle<TNode> handle)
         => this.RefCounts.Increment(handle);
 
-    /// <summary>Decrements the refcount for a single handle, triggering cascade-free if it hits zero.
-    /// Uses the stored <typeparamref name="TNodeOps"/> via <see cref="CascadeAdapter"/> — no caller
-    /// involvement needed. Used by <see cref="INodeVisitor"/> implementations during child enumeration.</summary>
+    /// <summary>
+    /// Decrements the refcount for a single handle. If it reaches zero, the handle is pushed onto
+    /// the cascade pending stack. If no cascade is already active, starts the cascade loop which
+    /// reads each freed node, enumerates its children via <typeparamref name="TNodeOps"/>, and frees
+    /// the arena slot.
+    ///
+    /// Re-entrant calls (from within the cascade loop for same-type children, or from cross-store
+    /// A→B→A bounces) push onto the existing pending stack instead of starting a nested loop.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void DecrementRefCount(Handle<TNode> handle)
-        => this.RefCounts.Decrement(handle, new CascadeAdapter(this));
+    {
+        if (!this.RefCounts.Decrement(handle))
+            return;
+
+        _cascadePending.Push(handle);
+
+        if (!_cascadeActive)
+            this.RunCascade();
+    }
 
     // ── Root operations ──────────────────────────────────────────────────
 
@@ -104,36 +138,41 @@ internal sealed class NodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, R
     }
 
     /// <summary>
-    /// Decrements the refcount for each root handle and triggers cascade-free for any that hit zero.
-    /// Called when a snapshot holding these roots is released (e.g., retired by the consumer after
-    /// processing). Uses the stored <typeparamref name="TNodeOps"/> for cascade — no caller involvement
-    /// needed.
+    /// Decrements the refcount for each root handle and cascades any that hit zero. Called when a
+    /// snapshot holding these roots is released (e.g., retired by the consumer after processing).
     /// </summary>
     public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         this.TrackBeforeDecrement(roots);
-        this.RefCounts.DecrementBatch(roots, new CascadeAdapter(this));
+        Debug.Assert(!_cascadeActive, "DecrementRoots must not be called during an active cascade.");
+        this.RefCounts.DecrementBatch(roots, _cascadePending);
+        this.RunCascade();
         this.RunValidation();
     }
 
-    // ── Cascade adapter ─────────────────────────────────────────────────
+    // ── Cascade loop ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Bridges the <typeparamref name="TNodeOps"/> visitor pattern to <see cref="RefCountTable{T}"/>'s
-    /// cascade loop. When a node's refcount reaches zero, the cascade loop calls <see cref="OnFreed"/>
-    /// which reads the node, enumerates its children using the ops struct as both enumerator and
-    /// decrement visitor, then frees the arena slot.
+    /// Iteratively processes all handles whose refcount reached zero. For each freed handle: reads
+    /// the node from the arena, enumerates children using <typeparamref name="TNodeOps"/> as both
+    /// enumerator and decrement visitor, then frees the arena slot.
     /// </summary>
-    private readonly struct CascadeAdapter(NodeStore<TNode, TNodeOps> store) : RefCountTable<TNode>.IRefCountHandler
+    private void RunCascade()
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnFreed(Handle<TNode> handle, RefCountTable<TNode> table)
+        if (_cascadePending.Count == 0)
+            return;
+
+        _cascadeActive = true;
+
+        while (_cascadePending.TryPop(out var current))
         {
-            ref readonly var node = ref store.Arena[handle];
-            var ops = store._nodeOps;
+            ref readonly var node = ref this.Arena[current];
+            var ops = _nodeOps;
             ops.EnumerateChildren(in node, ref ops);
-            store.Arena.Free(handle);
+            this.Arena.Free(current);
         }
+
+        _cascadeActive = false;
     }
 
     // ── Validation (debug only) ──────────────────────────────────────────
@@ -228,5 +267,6 @@ internal sealed class NodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, R
     internal readonly struct TestAccessor(NodeStore<TNode, TNodeOps> store)
     {
         public TNodeOps NodeOps => store._nodeOps;
+        public bool CascadeActive => store._cascadeActive;
     }
 }
