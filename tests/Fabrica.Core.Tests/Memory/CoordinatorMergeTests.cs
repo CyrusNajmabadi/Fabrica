@@ -236,6 +236,37 @@ public class CoordinatorMergeTests
         }
     }
 
+    /// <summary>
+    /// Collects root handles from all TLBs for one type, remapping local handles to global via
+    /// the remap table. Returns a flat array suitable for <see cref="NodeStore{TNode,TNodeOps}.IncrementRoots"/>.
+    /// </summary>
+    private static Handle<TNode>[] CollectAndRemapRoots<TNode>(
+        ThreadLocalBuffer<TNode>[] tlbs,
+        RemapTable remap)
+        where TNode : struct
+    {
+        var roots = new List<Handle<TNode>>();
+        foreach (var tlb in tlbs)
+        {
+            foreach (var handle in tlb.RootHandles)
+            {
+                var index = handle.Index;
+                if (TaggedHandle.IsLocal(index))
+                {
+                    var threadId = TaggedHandle.DecodeThreadId(index);
+                    var localIndex = TaggedHandle.DecodeLocalIndex(index);
+                    roots.Add(new Handle<TNode>(remap.Resolve(threadId, localIndex)));
+                }
+                else
+                {
+                    roots.Add(handle);
+                }
+            }
+        }
+
+        return [.. roots];
+    }
+
     // ═══════════════════════════ Phase 1 tests ═══════════════════════════
 
     [Fact]
@@ -417,18 +448,18 @@ public class CoordinatorMergeTests
 
         // ── Simulate production phase ────────────────────────────────────
 
-        // Thread 0: one child, one parent referencing it
+        // Thread 0: one child, one parent referencing it (parent is a root)
         var c0T0 = childTlbs[0].Allocate();
         childTlbs[0][TaggedHandle.DecodeLocalIndex(c0T0.Index)] = new ChildNode { Value = 10 };
 
-        var p0T0 = parentTlbs[0].Allocate();
+        var p0T0 = parentTlbs[0].Allocate(isRoot: true);
         parentTlbs[0][TaggedHandle.DecodeLocalIndex(p0T0.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = c0T0,
         };
 
-        // Thread 1: two children, two parents (parent[1] also references parent[0])
+        // Thread 1: two children, two parents (parent[1] also references parent[0]; parent[1] is a root)
         var c0T1 = childTlbs[1].Allocate();
         childTlbs[1][TaggedHandle.DecodeLocalIndex(c0T1.Index)] = new ChildNode { Value = 20 };
 
@@ -442,7 +473,7 @@ public class CoordinatorMergeTests
             ChildRef = c0T1,
         };
 
-        var p1T1 = parentTlbs[1].Allocate();
+        var p1T1 = parentTlbs[1].Allocate(isRoot: true);
         parentTlbs[1][TaggedHandle.DecodeLocalIndex(p1T1.Index)] = new ParentNode
         {
             LeftParent = p0T1,
@@ -519,15 +550,20 @@ public class CoordinatorMergeTests
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
         Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
 
-        // ── Root increment + DagValidator ─────────────────────────────────
+        // ── Root collection + remap + increment ──────────────────────────
 
-        Handle<ParentNode>[] roots = [new(0), new(2)];
+        var roots = CollectAndRemapRoots(parentTlbs, parentRemap);
+
+        Assert.Equal(2, roots.Length);
+        Assert.Equal(0, roots[0].Index); // p0T0 → global 0
+        Assert.Equal(2, roots[1].Index); // p1T1 → global 2
+
         parentStore.IncrementRoots(roots);
 
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
 
-        DagValidator.NodeRef[] dagRoots = [new(ParentTypeId, 0), new(ParentTypeId, 2)];
+        DagValidator.NodeRef[] dagRoots = [new(ParentTypeId, roots[0].Index), new(ParentTypeId, roots[1].Index)];
         DagValidator.AssertValid(dagRoots, new MergeWorldAccessor(parentStore, childStore), strict: true);
     }
 
@@ -544,11 +580,11 @@ public class CoordinatorMergeTests
         var childTlbs = new[] { new ThreadLocalBuffer<ChildNode>(0) };
         var parentTlbs = new[] { new ThreadLocalBuffer<ParentNode>(0) };
 
-        // Single child, single parent referencing it
+        // Single child, single parent referencing it (parent is a root)
         var childHandle = childTlbs[0].Allocate();
         childTlbs[0][TaggedHandle.DecodeLocalIndex(childHandle.Index)] = new ChildNode { Value = 42 };
 
-        var parentHandle = parentTlbs[0].Allocate();
+        var parentHandle = parentTlbs[0].Allocate(isRoot: true);
         parentTlbs[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
@@ -570,8 +606,11 @@ public class CoordinatorMergeTests
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
         RunPhase2b(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
 
-        // Root increment
-        Handle<ParentNode>[] roots = [new(0)];
+        // Root collection + remap + increment
+        var roots = CollectAndRemapRoots(parentTlbs, parentRemap);
+        Assert.Single(roots);
+        Assert.Equal(0, roots[0].Index);
+
         parentStore.IncrementRoots(roots);
 
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
@@ -584,5 +623,69 @@ public class CoordinatorMergeTests
         Assert.Equal(0, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
         Assert.Equal(0, parentStore.Arena.GetTestAccessor().Count);
         Assert.Equal(0, childStore.Arena.GetTestAccessor().Count);
+    }
+
+    /// <summary>
+    /// Verifies the post-Phase2b invariant: root nodes have RC=0 (only structural refcounts from
+    /// children have been applied), while non-root nodes referenced by other nodes have RC>0.
+    /// After <see cref="NodeStore{TNode,TNodeOps}.IncrementRoots"/>, every root gains RC=1.
+    ///
+    /// Graph: root(parent[1]) → inner(parent[0]) → leaf(child[0])
+    /// </summary>
+    [Fact]
+    public void RootInvariant_RootsHaveZeroRC_BeforeIncrement()
+    {
+        var (parentStore, childStore) = CreateStores();
+        const int ThreadCount = 1;
+
+        var childTlbs = new[] { new ThreadLocalBuffer<ChildNode>(0) };
+        var parentTlbs = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+
+        var leaf = childTlbs[0].Allocate();
+        childTlbs[0][TaggedHandle.DecodeLocalIndex(leaf.Index)] = new ChildNode { Value = 1 };
+
+        var inner = parentTlbs[0].Allocate();
+        parentTlbs[0][TaggedHandle.DecodeLocalIndex(inner.Index)] = new ParentNode
+        {
+            LeftParent = Handle<ParentNode>.None,
+            ChildRef = leaf,
+        };
+
+        var root = parentTlbs[0].Allocate(isRoot: true);
+        parentTlbs[0][TaggedHandle.DecodeLocalIndex(root.Index)] = new ParentNode
+        {
+            LeftParent = inner,
+            ChildRef = Handle<ChildNode>.None,
+        };
+
+        // Merge phases 1 → 2a → 2b
+        var childRemap = new RemapTable(ThreadCount);
+        var parentRemap = new RemapTable(ThreadCount);
+        RunPhase1(childStore.Arena, childStore.RefCounts, childTlbs, childRemap);
+        var (parentStart, parentCount) = RunPhase1(parentStore.Arena, parentStore.RefCounts, parentTlbs, parentRemap);
+
+        var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
+        var nodeOps = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
+        RunPhase2a(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref remapVisitor);
+
+        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
+        RunPhase2b(parentStore.Arena, parentStart, parentCount, ref nodeOps, ref refcountVisitor);
+
+        // Post-Phase2b: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
+        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
+
+        // Collect + remap roots, then increment
+        var roots = CollectAndRemapRoots(parentTlbs, parentRemap);
+        Assert.Single(roots);
+        Assert.Equal(1, roots[0].Index);
+
+        parentStore.IncrementRoots(roots);
+
+        // After increment: root(1) now has RC=1, inner and leaf unchanged
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
     }
 }

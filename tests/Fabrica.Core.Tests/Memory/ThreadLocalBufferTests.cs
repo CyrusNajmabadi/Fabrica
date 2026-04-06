@@ -176,4 +176,106 @@ public class ThreadLocalBufferTests
         Assert.Equal(1, TaggedHandle.DecodeThreadId(tlbA[0].Child.Index));
         Assert.Equal(0, TaggedHandle.DecodeLocalIndex(tlbA[0].Child.Index));
     }
+
+    // ═══════════════════════════ Root tracking ═════════════════════════════
+
+    [Fact]
+    public void RootHandles_EmptyByDefault()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        tlb.Allocate();
+        Assert.True(tlb.RootHandles.IsEmpty);
+    }
+
+    [Fact]
+    public void MarkRoot_AppearsInRootHandles()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        var h0 = tlb.Allocate();
+        var h1 = tlb.Allocate();
+
+        tlb.MarkRoot(h0);
+
+        Assert.Equal(1, tlb.RootHandles.Length);
+        Assert.Equal(h0, tlb.RootHandles[0]);
+    }
+
+    [Fact]
+    public void MarkRoot_MultipleRoots()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        var h0 = tlb.Allocate();
+        var h1 = tlb.Allocate();
+        var h2 = tlb.Allocate();
+
+        tlb.MarkRoot(h0);
+        tlb.MarkRoot(h2);
+
+        Assert.Equal(2, tlb.RootHandles.Length);
+        Assert.Equal(h0, tlb.RootHandles[0]);
+        Assert.Equal(h2, tlb.RootHandles[1]);
+    }
+
+    [Fact]
+    public void Allocate_IsRoot_RecordsRoot()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        var h0 = tlb.Allocate(isRoot: true);
+        var h1 = tlb.Allocate(isRoot: false);
+        var h2 = tlb.Allocate(isRoot: true);
+
+        Assert.Equal(3, tlb.Count);
+        Assert.Equal(2, tlb.RootHandles.Length);
+        Assert.Equal(h0, tlb.RootHandles[0]);
+        Assert.Equal(h2, tlb.RootHandles[1]);
+    }
+
+    [Fact]
+    public void Allocate_DefaultOverload_IsNotRoot()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        tlb.Allocate();
+        tlb.Allocate();
+        Assert.True(tlb.RootHandles.IsEmpty);
+    }
+
+    [Fact]
+    public void Reset_ClearsRoots()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        tlb.Allocate(isRoot: true);
+        tlb.Allocate(isRoot: true);
+        Assert.Equal(2, tlb.RootHandles.Length);
+
+        tlb.Reset();
+
+        Assert.True(tlb.RootHandles.IsEmpty);
+    }
+
+    [Fact]
+    public void Reset_RootsReuseAfterReset()
+    {
+        var tlb = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        tlb.Allocate(isRoot: true);
+        tlb.Reset();
+
+        var h = tlb.Allocate(isRoot: true);
+        Assert.Equal(1, tlb.RootHandles.Length);
+        Assert.Equal(h, tlb.RootHandles[0]);
+    }
+
+    [Fact]
+    public void MarkRoot_CrossTlbHandle()
+    {
+        var tlbA = new ThreadLocalBuffer<TestNode>(threadId: 0);
+        var tlbB = new ThreadLocalBuffer<TestNode>(threadId: 1);
+
+        var handleB = tlbB.Allocate();
+
+        tlbA.MarkRoot(handleB);
+
+        Assert.Equal(1, tlbA.RootHandles.Length);
+        Assert.Equal(handleB, tlbA.RootHandles[0]);
+        Assert.Equal(1, TaggedHandle.DecodeThreadId(tlbA.RootHandles[0].Index));
+    }
 }

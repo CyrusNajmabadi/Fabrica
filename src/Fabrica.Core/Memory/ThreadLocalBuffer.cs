@@ -27,6 +27,7 @@ namespace Fabrica.Core.Memory;
 internal sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
 {
     private readonly UnsafeList<T> _list = new(initialCapacity);
+    private readonly UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
     private readonly int _threadId = threadId;
 
     /// <summary>Number of nodes allocated in this buffer during the current work phase.</summary>
@@ -42,11 +43,35 @@ internal sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1
     /// using the decoded local index.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Handle<T> Allocate()
+    public Handle<T> Allocate() => this.Allocate(isRoot: false);
+
+    /// <summary>
+    /// Allocates a slot for a new node and returns a local <see cref="Handle{T}"/>. If
+    /// <paramref name="isRoot"/> is true, the returned handle is also recorded as a root.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Handle<T> Allocate(bool isRoot)
     {
         var localIndex = _list.Count;
         _list.Add(default);
-        return new Handle<T>(TaggedHandle.EncodeLocal(_threadId, localIndex));
+        var handle = new Handle<T>(TaggedHandle.EncodeLocal(_threadId, localIndex));
+        if (isRoot)
+            _roots.Add(handle);
+        return handle;
+    }
+
+    /// <summary>
+    /// Records an existing handle as a root. The handle may reference a node in any TLB, not just
+    /// this one — the coordinator will remap it during the merge.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void MarkRoot(Handle<T> handle) => _roots.Add(handle);
+
+    /// <summary>All root handles recorded during the current work phase.</summary>
+    public ReadOnlySpan<Handle<T>> RootHandles
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _roots.WrittenSpan;
     }
 
     /// <summary>
@@ -68,9 +93,13 @@ internal sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1
     }
 
     /// <summary>
-    /// Resets the count to zero for the next work phase. The backing array is retained for
-    /// steady-state zero allocation.
+    /// Resets the count to zero for the next work phase. Both the node list and root list are
+    /// cleared; backing arrays are retained for steady-state zero allocation.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Reset() => _list.Reset();
+    public void Reset()
+    {
+        _list.Reset();
+        _roots.Reset();
+    }
 }
