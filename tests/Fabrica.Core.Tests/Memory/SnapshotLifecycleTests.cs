@@ -290,6 +290,148 @@ public class SnapshotLifecycleTests
         this.AssertNodeDead(root);
     }
 
+    // ── Re-rooting (internal node promoted to root across snapshots) ─────
+
+    /// <summary>
+    /// Snapshot 1 roots A, where A→B→{C,D}. Snapshot 2 roots only B (an internal node from
+    /// snapshot 1's graph, not a new allocation). Releasing snapshot 1 frees A but B/C/D survive
+    /// because snapshot 2 still pins B. Releasing snapshot 2 then frees B/C/D.
+    ///
+    /// This verifies that an existing internal node can become a root in a later snapshot, and
+    /// that overlapping root pins from different snapshots compose correctly via refcounting.
+    /// </summary>
+    [Fact]
+    public void Reroot_InternalNodeBecomesRoot_SurvivesOldSnapshotRelease()
+    {
+        var c = this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var d = this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var b = this.AllocNode(c, d);
+        var a = this.AllocNode(b, Handle<TreeNode>.None);
+
+        // Snapshot 1: root = A
+        var snap1 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap1.AddRoot(a);
+        snap1.IncrementRootRefCounts();
+
+        Assert.Equal(1, _store.RefCounts.GetCount(a)); // root pin
+        Assert.Equal(1, _store.RefCounts.GetCount(b)); // from A.Left
+        Assert.Equal(1, _store.RefCounts.GetCount(c)); // from B.Left
+        Assert.Equal(1, _store.RefCounts.GetCount(d)); // from B.Right
+
+        // Snapshot 2: root = B (existing internal node, not A)
+        var snap2 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap2.AddRoot(b);
+        snap2.IncrementRootRefCounts();
+
+        Assert.Equal(1, _store.RefCounts.GetCount(a)); // unchanged
+        Assert.Equal(2, _store.RefCounts.GetCount(b)); // A.Left + snap2 root pin
+
+        // Release snapshot 1 — A freed, B survives via snap2 pin
+        snap1.DecrementRootRefCounts();
+
+        this.AssertNodeDead(a);
+        Assert.Equal(1, _store.RefCounts.GetCount(b)); // snap2 root pin only
+        this.AssertNodeAlive(c);
+        this.AssertNodeAlive(d);
+
+        // Release snapshot 2 — B/C/D all freed
+        snap2.DecrementRootRefCounts();
+
+        this.AssertNodeDead(b);
+        this.AssertNodeDead(c);
+        this.AssertNodeDead(d);
+    }
+
+    /// <summary>
+    /// Verifies that roots are per-snapshot and NOT inherited. Snapshot 1 pins A, snapshot 2 pins
+    /// B (a different node). Each snapshot's root set is independent — releasing one does not affect
+    /// the other's ability to keep its subgraph alive.
+    /// </summary>
+    [Fact]
+    public void Roots_ArePerSnapshot_NotInherited()
+    {
+        var c = this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var b = this.AllocNode(c, Handle<TreeNode>.None);
+        var a = this.AllocNode(b, Handle<TreeNode>.None);
+
+        // Snapshot 1: root = A (graph: A→B→C)
+        var snap1 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap1.AddRoot(a);
+        snap1.IncrementRootRefCounts();
+
+        // Snapshot 2: root = B only — does NOT inherit A from snap1
+        var snap2 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap2.AddRoot(b);
+        snap2.IncrementRootRefCounts();
+
+        Assert.Equal(1, snap1.Count);
+        Assert.Equal(1, snap2.Count);
+        Assert.Equal(a, snap1.Roots[0]);
+        Assert.Equal(b, snap2.Roots[0]);
+
+        // Release snap2 first: B loses snap2 pin (B: 2→1, still held by A.Left)
+        snap2.DecrementRootRefCounts();
+
+        this.AssertNodeAlive(a); // snap1 still pins A
+        this.AssertNodeAlive(b); // still referenced by A.Left
+        this.AssertNodeAlive(c); // still referenced by B.Left
+
+        // Release snap1: A freed, cascades to B (1→0), cascades to C (1→0)
+        snap1.DecrementRootRefCounts();
+
+        this.AssertNodeDead(a);
+        this.AssertNodeDead(b);
+        this.AssertNodeDead(c);
+    }
+
+    /// <summary>
+    /// Three-snapshot chain with progressive re-rooting deeper into the graph:
+    /// Snap 1: root=A (A→B→C), Snap 2: root=B, Snap 3: root=C.
+    /// Release in order: snap1, snap2, snap3. Each release frees exactly the nodes no longer
+    /// pinned by any remaining snapshot.
+    /// </summary>
+    [Fact]
+    public void Reroot_ProgressivelyDeeper_ThreeSnapshots()
+    {
+        var c = this.AllocNode(Handle<TreeNode>.None, Handle<TreeNode>.None);
+        var b = this.AllocNode(c, Handle<TreeNode>.None);
+        var a = this.AllocNode(b, Handle<TreeNode>.None);
+
+        var snap1 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap1.AddRoot(a);
+        snap1.IncrementRootRefCounts();
+
+        var snap2 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap2.AddRoot(b);
+        snap2.IncrementRootRefCounts();
+
+        var snap3 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store);
+        snap3.AddRoot(c);
+        snap3.IncrementRootRefCounts();
+
+        // A: RC=1(snap1), B: RC=3(A.Left + snap2 + ... wait)
+        // Actually: B: RC=1(from A.Left) + 1(snap2 root) = 2
+        // C: RC=1(from B.Left) + 1(snap3 root) = 2
+        Assert.Equal(1, _store.RefCounts.GetCount(a));
+        Assert.Equal(2, _store.RefCounts.GetCount(b));
+        Assert.Equal(2, _store.RefCounts.GetCount(c));
+
+        // Release snap1: A freed, B: 2→1
+        snap1.DecrementRootRefCounts();
+        this.AssertNodeDead(a);
+        Assert.Equal(1, _store.RefCounts.GetCount(b));
+        Assert.Equal(2, _store.RefCounts.GetCount(c));
+
+        // Release snap2: B freed, C: 2→1
+        snap2.DecrementRootRefCounts();
+        this.AssertNodeDead(b);
+        Assert.Equal(1, _store.RefCounts.GetCount(c));
+
+        // Release snap3: C freed
+        snap3.DecrementRootRefCounts();
+        this.AssertNodeDead(c);
+    }
+
     // ── Permutation testing for small snapshot sets ───────────────────────
 
     [Fact]
