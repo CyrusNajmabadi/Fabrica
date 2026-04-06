@@ -1,4 +1,5 @@
 using Fabrica.Core.Collections;
+using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Engine.Rendering;
@@ -42,7 +43,9 @@ internal static class SimulationEngine
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>(queue);
 
-        var producer = new SimulationProducer(imagePool, simulationWorkerCount);
+        var workerPool = new WorkerPool(simulationWorkerCount);
+        var scheduler = new JobScheduler(workerPool);
+        var producer = new SimulationProducer(imagePool, workerPool, scheduler);
         var consumer = new RenderConsumer<TRenderer>(renderWorkerCount, renderer);
 
         return new Host<WorldImage, SimulationProducer, RenderConsumer<TRenderer>, TClock, TWaiter>(
