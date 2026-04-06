@@ -1,20 +1,19 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// A typed root set within a snapshot, associated with a single <see cref="NodeStore{TNode, TNodeOps}"/>.
 /// Holds the <see cref="Handle{T}"/> values that are roots for this node type in this snapshot, and provides
-/// self-contained lifecycle operations.
+/// self-contained lifecycle operations for the build and publish phases.
 ///
 /// LIFECYCLE
-///   1. Build phase: call <see cref="AddRoot"/> for each root handle.
-///   2. Publish: call <see cref="IncrementRootRefCounts"/> — bumps refcounts so the snapshot "holds" its roots.
-///   3. Release: call <see cref="DecrementRootRefCounts"/> — decrements refcounts, triggering cascade-free
-///      for any that hit zero.
-///   4. Reuse: call <see cref="Clear"/> to reset for the next snapshot without releasing backing storage.
+///   1. The coordinator rents an <see cref="UnsafeList{T}"/> from its pool and constructs the slice.
+///   2. Build phase: call <see cref="AddRoot"/> for each root handle.
+///   3. Publish: call <see cref="IncrementRootRefCounts"/> — bumps refcounts so the snapshot "holds" its roots.
+///   4. Release (coordinator-driven): the coordinator decrements root refcounts via the store, then takes
+///      <see cref="RootHandles"/>, resets it, and returns it to the pool.
 ///
 /// ROOT SEMANTICS
 ///   Roots are per-snapshot. Each snapshot must explicitly declare its own root set — roots from prior
@@ -25,8 +24,8 @@ namespace Fabrica.Core.Memory;
 ///   node in a prior snapshot — the refcount system composes overlapping pins correctly.
 ///
 /// REUSE
-///   The internal <see cref="List{T}"/> grows to steady state and is reused via <see cref="Clear"/>.
-///   Once a snapshot is fully released, its slices can be reused by future snapshots with zero allocation.
+///   The coordinator owns a pool of <see cref="UnsafeList{T}"/> instances per type. After a snapshot is
+///   released, the list is reset and returned to the pool. Steady-state usage incurs zero allocation.
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from the coordinator thread. Debug builds assert via
@@ -36,16 +35,19 @@ namespace Fabrica.Core.Memory;
 ///   In Rust: a struct holding a reference to the <c>NodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
 ///   In C++: same, with <c>std::vector&lt;Handle&gt;</c>.
 /// </summary>
-internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOps> store, List<Handle<TNode>> rootHandles)
+internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
     private readonly NodeStore<TNode, TNodeOps> _store = store;
-    private readonly List<Handle<TNode>> _rootHandles = rootHandles;
+    private readonly UnsafeList<Handle<TNode>> _rootHandles = rootHandles;
 
-    public SnapshotSlice(NodeStore<TNode, TNodeOps> store)
-        : this(store, [])
+    /// <summary>The underlying root handle list. The coordinator uses this to reset and return the list to
+    /// its pool after the snapshot is released.</summary>
+    public UnsafeList<Handle<TNode>> RootHandles
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _rootHandles;
     }
 
     /// <summary>Number of roots in this slice.</summary>
@@ -55,12 +57,11 @@ internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOp
         get => _rootHandles.Count;
     }
 
-    /// <summary>Returns a read-only span over the root handles. Valid until the next <see cref="AddRoot"/> or
-    /// <see cref="Clear"/>.</summary>
+    /// <summary>Returns a read-only span over the root handles. Valid until the next <see cref="AddRoot"/>.</summary>
     public ReadOnlySpan<Handle<TNode>> Roots
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => CollectionsMarshal.AsSpan(_rootHandles);
+        get => _rootHandles.WrittenSpan;
     }
 
     /// <summary>Adds a handle as a root in this snapshot slice.</summary>
@@ -69,14 +70,6 @@ internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOp
     {
         this.AssertOwnerThread();
         _rootHandles.Add(handle);
-    }
-
-    /// <summary>Resets the root list for reuse in the next snapshot. The backing array is retained so
-    /// future snapshots allocate nothing in steady state.</summary>
-    public readonly void Clear()
-    {
-        this.AssertOwnerThread();
-        _rootHandles.Clear();
     }
 
     /// <summary>Debug-only assertion that the caller is on the store's owner thread. Delegates to the
@@ -91,12 +84,4 @@ internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOp
     /// </summary>
     public void IncrementRootRefCounts()
         => _store.IncrementRoots(this.Roots);
-
-    /// <summary>
-    /// Decrements the refcount of every root in this slice and triggers cascade-free for any that hit zero.
-    /// Called when the snapshot is released (e.g., retired by the consumer). Uses the node operations stored
-    /// in the <see cref="NodeStore{TNode, TNodeOps}"/> — no external handler needed.
-    /// </summary>
-    public void DecrementRootRefCounts()
-        => _store.DecrementRoots(this.Roots);
 }
