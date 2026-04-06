@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Fabrica.Core.Collections;
+using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Engine.Simulation;
@@ -17,10 +18,13 @@ internal static class StressTestHelpers
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
+        using var workerPool = new WorkerPool(workerCount);
+        var scheduler = new JobScheduler(workerPool);
+
         var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>(queue);
-        var producer = new SimulationProducer(imagePool, workerCount);
+        var producer = new SimulationProducer(imagePool, scheduler);
         var consumer = new InvariantCheckingConsumer(metrics, renderDelayMilliseconds);
         var clock = new StressClock();
 
@@ -38,10 +42,13 @@ internal static class StressTestHelpers
         int workerCount,
         CancellationToken cancellationToken)
     {
+        using var workerPool = new WorkerPool(workerCount);
+        var scheduler = new JobScheduler(workerPool);
+
         var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>(queue);
-        var producer = new SimulationProducer(imagePool, workerCount);
+        var producer = new SimulationProducer(imagePool, scheduler);
         var consumer = new InvariantCheckingConsumer(metrics, renderDelayMilliseconds: 0);
         var clock = new StressClock();
 

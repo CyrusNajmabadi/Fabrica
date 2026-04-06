@@ -285,7 +285,7 @@ internal static class DagValidator
     {
         public readonly int TypeCount => 1;
 
-        public readonly int HighWater(int typeId) => store.Arena.GetTestAccessor().HighWater;
+        public readonly int HighWater(int typeId) => store.Arena.HighWater;
 
         public readonly int GetRefCount(int typeId, int index) => store.RefCounts.GetCount(new Handle<TNode>(index));
 

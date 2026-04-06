@@ -8,14 +8,17 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
 - [ ] Machine state — producers, consumers, inserters
 - [ ] Persistent tree structure for `WorldImage` — share unchanged subtrees across ticks so memory scales with
   changes-per-tick, not total world size (mentioned in `WorldImage` doc comment)
-- [ ] Actual world advance logic in `SimulationExecutor.Execute()` (currently a no-op)
+- [ ] Actual world advance logic via `Job` subclasses submitted through `JobScheduler` (currently a no-op)
 
 ## Engine / Architecture — Features
 
 - [ ] Populate `EngineStatistics` with live data — tick rate, pool pressure, frame times, producer/consumer throughput
   (struct exists as placeholder)
-- [ ] Multi-threaded simulation — wire real per-worker tick computation into `SimulationExecutor.Execute()` (generic
-  `ThreadWorker`/`WorkerGroup` infrastructure and dispatch cycle are in place)
+- [x] Multi-threaded simulation — `SimulationProducer` now uses `WorkerPool` + `JobScheduler` for parallel tick
+  work. Merge pipeline (`MergePipeline.DrainBuffers/RewriteHandles/IncrementChildRefCounts/CollectAndRemapRoots`)
+  is production code. End-to-end proven by `JobMergePipelineTests`. `SimulationCoordinator`, `SimulationExecutor`,
+  `SimulationTickState`, and `WorkerResources` deleted — the `WorkerGroup` barrier model is replaced by the DAG
+  job system for simulation
 - [ ] Multi-threaded rendering — wire real per-worker render computation into `RenderExecutor.Execute()`
   (`RenderCoordinator`/`WorkerGroup` infrastructure is in place; consumption loop dispatches through it when provided)
 - [ ] Thread pinning on macOS — current `ThreadPinning` supports Windows/Linux; macOS needs `thread_policy_set` with
