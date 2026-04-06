@@ -22,8 +22,10 @@ internal static class TaggedHandle
     /// <summary>Maximum number of worker threads that can be encoded in a local handle.</summary>
     internal const int MaxThreads = 128;
 
-    /// <summary>Maximum local index that fits in the 24-bit field (16,777,215).</summary>
-    internal const int MaxLocalIndex = 0x00FF_FFFF;
+    /// <summary>Maximum local index that fits in the 24-bit field (16,777,214).
+    /// One less than the full 24-bit range to avoid colliding with the None sentinel (-1)
+    /// when threadId = 127.</summary>
+    internal const int MaxLocalIndex = 0x00FF_FFFE;
 
     private const uint LocalBit = 0x8000_0000u;
     private const int ThreadIdShift = 24;
