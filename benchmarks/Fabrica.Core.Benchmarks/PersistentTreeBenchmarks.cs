@@ -25,7 +25,7 @@ public class PersistentTreeBenchmarks
 
     // ── Enumerator + raw RefCountTable cascade (not NodeStore) ───────────
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+    private struct TreeChildEnumerator : INodeOps<TreeNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
@@ -33,14 +33,6 @@ public class PersistentTreeBenchmarks
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
-            where TVisitor : struct, INodeVisitor<TContext>
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 
@@ -284,7 +276,7 @@ public class SingleForkReleaseBenchmarks
         public Handle<TreeNode> Right;
     }
 
-    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
+    private struct TreeNodeOps : INodeOps<TreeNode>
     {
         internal NodeStore<TreeNode, TreeNodeOps> Store;
 
@@ -294,14 +286,6 @@ public class SingleForkReleaseBenchmarks
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
-            where TVisitor : struct, INodeVisitor<TContext>
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -315,32 +299,22 @@ public class SingleForkReleaseBenchmarks
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateRefChildren<TVisitor, TContext>(ref TreeNode node, in TContext context, ref TVisitor visitor)
-            where TVisitor : struct, INodeVisitor<TContext>
+        public readonly void Visit<T>(Handle<T> handle)
+            where T : struct
         {
-            ref var left = ref node.Left;
-            if (left.IsValid) visitor.VisitRef(ref left, in context);
-            ref var right = ref node.Right;
-            if (right.IsValid) visitor.VisitRef(ref right, in context);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child)
-            where TChild : struct
-        {
-            if (typeof(TChild) == typeof(TreeNode))
+            if (typeof(T) == typeof(TreeNode))
             {
-                var c = child;
-                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref c));
+                var c = handle;
+                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref c));
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void VisitRef<TChild>(ref Handle<TChild> child)
-            where TChild : struct
+        public readonly void VisitRef<T>(ref Handle<T> handle)
+            where T : struct
         {
-            if (typeof(TChild) == typeof(TreeNode))
-                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child));
+            if (typeof(T) == typeof(TreeNode))
+                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref handle));
         }
     }
 

@@ -15,7 +15,7 @@ public class NodeStoreTests
         public int Value;
     }
 
-    private struct TreeNodeOps : INodeChildEnumerator<TreeNode>, INodeVisitor
+    private struct TreeNodeOps : INodeOps<TreeNode>
     {
         internal NodeStore<TreeNode, TreeNodeOps> Store;
 
@@ -26,13 +26,13 @@ public class NodeStoreTests
             if (node.Right.IsValid) visitor.Visit(node.Right);
         }
 
-        public readonly void Visit<TChild>(Handle<TChild> child)
-            where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle)
+            where T : struct
         {
-            if (typeof(TChild) == typeof(TreeNode))
+            if (typeof(T) == typeof(TreeNode))
             {
-                var c = child;
-                Store.DecrementRefCount(Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref c));
+                var c = handle;
+                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref c));
             }
         }
     }

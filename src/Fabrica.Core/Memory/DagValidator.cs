@@ -14,7 +14,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// SINGLE-STORE CONVENIENCE
 ///   Overloads that take a single <see cref="NodeStore{TNode,TNodeOps}"/> and an
-///   <see cref="INodeChildEnumerator{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,TNodeOps}"/>
+///   <see cref="INodeOps{TNode}"/> wrap into a <see cref="SingleStoreAccessor{TNode,TNodeOps}"/>
 ///   internally. Cross-type children from the enumerator are ignored (they contribute external
 ///   refcounts that this store can't verify).
 ///
@@ -236,7 +236,7 @@ internal static class DagValidator
     // ── Single-store convenience ────────────────────────────────────────
 
     /// <summary>
-    /// Validates a single store's DAG using an <see cref="INodeChildEnumerator{TNode}"/>.
+    /// Validates a single store's DAG using an <see cref="INodeOps{TNode}"/>.
     /// Cross-type children produced by the enumerator are ignored — use the cross-store overload
     /// for full heterogeneous validation.
     /// </summary>
@@ -246,7 +246,7 @@ internal static class DagValidator
         TNodeOps enumerator,
         bool strict = true)
         where TNode : struct
-        where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
+        where TNodeOps : struct, INodeOps<TNode>
     {
         var issues = Validate(store, roots, enumerator, strict);
         if (issues.Count > 0)
@@ -260,7 +260,7 @@ internal static class DagValidator
         TNodeOps enumerator,
         bool strict = true)
         where TNode : struct
-        where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
+        where TNodeOps : struct, INodeOps<TNode>
     {
         var accessor = new SingleStoreAccessor<TNode, TNodeOps>(store, enumerator);
         var nodeRefs = roots.Length <= 128 ? stackalloc NodeRef[roots.Length] : new NodeRef[roots.Length];
@@ -273,7 +273,7 @@ internal static class DagValidator
     // ── SingleStoreAccessor ─────────────────────────────────────────────
 
     /// <summary>
-    /// Adapts a single <see cref="NodeStore{TNode,THandler}"/> + <see cref="INodeChildEnumerator{TNode}"/>
+    /// Adapts a single <see cref="NodeStore{TNode,TNodeOps}"/> + <see cref="INodeOps{TNode}"/>
     /// into an <see cref="IWorldAccessor"/> with one type (typeId = 0). Cross-type children from the
     /// enumerator are silently filtered out.
     /// </summary>
@@ -281,7 +281,7 @@ internal static class DagValidator
         NodeStore<TNode, TNodeOps> store,
         TNodeOps enumerator) : IWorldAccessor
         where TNode : struct
-        where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
+        where TNodeOps : struct, INodeOps<TNode>
     {
         public readonly int TypeCount => 1;
 
@@ -299,16 +299,16 @@ internal static class DagValidator
 
     /// <summary>
     /// <see cref="INodeVisitor"/> that collects only same-type children as <see cref="NodeRef"/> values
-    /// with typeId 0. Cross-type children are silently ignored. The <c>typeof(TChild) == typeof(TNode)</c>
+    /// with typeId 0. Cross-type children are silently ignored. The <c>typeof(T) == typeof(TNode)</c>
     /// check is a JIT constant — the dead branch is eliminated entirely.
     /// </summary>
     private struct CollectSameTypeNodeVisitor<TNode>(List<NodeRef> children) : INodeVisitor where TNode : struct
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(TNode))
-                this.CollectTyped(Unsafe.As<Handle<TChild>, Handle<TNode>>(ref child));
+            if (typeof(T) == typeof(TNode))
+                this.CollectTyped(Unsafe.As<Handle<T>, Handle<TNode>>(ref handle));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

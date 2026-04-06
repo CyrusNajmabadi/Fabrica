@@ -30,7 +30,7 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 internal readonly struct SnapshotSlice<TNode, TNodeOps>(NodeStore<TNode, TNodeOps> store, List<Handle<TNode>> rootHandles)
     where TNode : struct
-    where TNodeOps : struct, INodeChildEnumerator<TNode>, INodeVisitor
+    where TNodeOps : struct, INodeOps<TNode>
 {
     private readonly NodeStore<TNode, TNodeOps> _store = store;
     private readonly List<Handle<TNode>> _rootHandles = rootHandles;

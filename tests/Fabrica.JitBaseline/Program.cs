@@ -224,7 +224,7 @@ internal struct ChildNode
 
 // ── Enumerators ──────────────────────────────────────────────────────────
 
-internal struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+internal struct TreeChildEnumerator : INodeOps<TreeNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
@@ -233,17 +233,9 @@ internal struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
         if (node.Left.IsValid) visitor.Visit(node.Left);
         if (node.Right.IsValid) visitor.Visit(node.Right);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in TreeNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>
-    {
-        if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-        if (node.Right.IsValid) visitor.Visit(node.Right, in context);
-    }
 }
 
-internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
+internal struct MixedChildEnumerator : INodeOps<MixedNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void EnumerateChildren<TVisitor>(in MixedNode node, ref TVisitor visitor)
@@ -252,17 +244,9 @@ internal struct MixedChildEnumerator : INodeChildEnumerator<MixedNode>
         if (node.SameChild.IsValid) visitor.Visit(node.SameChild);
         if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in MixedNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>
-    {
-        if (node.SameChild.IsValid) visitor.Visit(node.SameChild, in context);
-        if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild, in context);
-    }
 }
 
-internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
+internal struct ParentChildEnumerator : INodeOps<ParentNode>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
@@ -271,14 +255,6 @@ internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
         if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef);
         if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void EnumerateChildren<TVisitor, TContext>(in ParentNode node, in TContext context, ref TVisitor visitor)
-        where TVisitor : struct, INodeVisitor<TContext>
-    {
-        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef, in context);
-        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-    }
 }
 
 // ── Visitors ─────────────────────────────────────────────────────────────
@@ -286,11 +262,11 @@ internal struct ParentChildEnumerator : INodeChildEnumerator<ParentNode>
 internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
     {
-        if (typeof(TChild) == typeof(TreeNode))
+        if (typeof(T) == typeof(TreeNode))
         {
-            var c = Unsafe.As<Handle<TChild>, Handle<TreeNode>>(ref child);
+            var c = Unsafe.As<Handle<T>, Handle<TreeNode>>(ref handle);
             table.Decrement(c);
         }
     }
@@ -299,11 +275,11 @@ internal struct TreeDecrementVisitor(RefCountTable<TreeNode> table) : INodeVisit
 internal struct MixedDecrementVisitor(RefCountTable<MixedNode> table) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
     {
-        if (typeof(TChild) == typeof(MixedNode))
+        if (typeof(T) == typeof(MixedNode))
         {
-            var c = Unsafe.As<Handle<TChild>, Handle<MixedNode>>(ref child);
+            var c = Unsafe.As<Handle<T>, Handle<MixedNode>>(ref handle);
             table.Decrement(c);
         }
     }
@@ -320,12 +296,12 @@ internal struct ParentDecrementVisitor(
     RefCountTable<ChildNode> childTable) : INodeVisitor
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+    public readonly void Visit<T>(Handle<T> handle) where T : struct
     {
-        if (typeof(TChild) == typeof(ParentNode))
-            this.DecrementParent(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
-        else if (typeof(TChild) == typeof(ChildNode))
-            this.DecrementChild(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
+        if (typeof(T) == typeof(ParentNode))
+            this.DecrementParent(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
+        else if (typeof(T) == typeof(ChildNode))
+            this.DecrementChild(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

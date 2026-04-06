@@ -14,7 +14,7 @@ public class HandleRewriterTests
         public int Value;
     }
 
-    private struct TreeChildEnumerator : INodeChildEnumerator<TreeNode>
+    private struct TreeChildEnumerator : INodeOps<TreeNode>
     {
         public readonly void EnumerateRefChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
@@ -29,13 +29,13 @@ public class HandleRewriterTests
     /// </summary>
     private struct TestVisitor(int[] remap) : INodeVisitor
     {
-        public readonly void VisitRef<TChild>(ref Handle<TChild> child) where TChild : struct
+        public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
         {
-            var index = child.Index;
+            var index = handle.Index;
             if (TaggedHandle.IsLocal(index))
             {
                 var localIndex = TaggedHandle.DecodeLocalIndex(index);
-                child = new Handle<TChild>(remap[localIndex]);
+                handle = new Handle<T>(remap[localIndex]);
             }
         }
     }

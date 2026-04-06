@@ -7,12 +7,12 @@ namespace Fabrica.Core.Benchmarks;
 
 /// <summary>
 /// Measures the overhead (if any) of the visitor pattern — where
-/// <see cref="INodeVisitor.Visit{TChild}"/> receives only <c>Handle&lt;TChild&gt;</c> — vs.
+/// <see cref="INodeVisitor.Visit{T}"/> receives only <c>Handle&lt;T&gt;</c> — vs.
 /// hand-rolled direct code.
 ///
 /// Both the increment path (hot path for adding children) and the cascade-decrement path
 /// (caller-driven cascade after <see cref="RefCountTable{T}.Decrement(Handle{T})"/> returns
-/// <c>true</c>) are benchmarked. The "Visitor" variants use <see cref="INodeChildEnumerator{TNode}"/>
+/// <c>true</c>) are benchmarked. The "Visitor" variants use <see cref="INodeOps{TNode}"/>
 /// and <see cref="INodeVisitor"/> to traverse children. The "Direct" variants hand-roll all child
 /// traversal.
 /// </summary>
@@ -53,23 +53,23 @@ public class VisitorPatternBenchmarks
 
     /// <summary>
     /// Captures the world's refcount tables and increments the appropriate one per child type.
-    /// typeof(TChild) comparisons are JIT constants — dead branches are eliminated entirely.
+    /// typeof(T) comparisons are JIT constants — dead branches are eliminated entirely.
     /// </summary>
     private struct IncrementNodeVisitor(
         RefCountTable<ParentNode> parentRC,
         RefCountTable<ChildNode> childRC) : INodeVisitor
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(ParentNode))
-                parentRC.Increment(Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child));
-            else if (typeof(TChild) == typeof(ChildNode))
-                childRC.Increment(Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child));
+            if (typeof(T) == typeof(ParentNode))
+                parentRC.Increment(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
+            else if (typeof(T) == typeof(ChildNode))
+                childRC.Increment(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
         }
     }
 
-    private struct ParentNodeEnumerator : INodeChildEnumerator<ParentNode>
+    private struct ParentNodeEnumerator : INodeOps<ParentNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
@@ -79,18 +79,9 @@ public class VisitorPatternBenchmarks
             if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
             if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction, TContext>(in ParentNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent, in context);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent, in context);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef, in context);
-        }
     }
 
-    private struct ChildNodeEnumerator : INodeChildEnumerator<ChildNode>
+    private struct ChildNodeEnumerator : INodeOps<ChildNode>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
@@ -98,14 +89,6 @@ public class VisitorPatternBenchmarks
         {
             if (node.Left.IsValid) visitor.Visit(node.Left);
             if (node.Right.IsValid) visitor.Visit(node.Right);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void EnumerateChildren<TAction, TContext>(in ChildNode node, in TContext context, ref TAction visitor)
-            where TAction : struct, INodeVisitor<TContext>
-        {
-            if (node.Left.IsValid) visitor.Visit(node.Left, in context);
-            if (node.Right.IsValid) visitor.Visit(node.Right, in context);
         }
     }
 
@@ -138,17 +121,17 @@ public class VisitorPatternBenchmarks
         public ChildNodeEnumerator ChildEnum;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(ParentNode))
+            if (typeof(T) == typeof(ParentNode))
             {
-                var h = Unsafe.As<Handle<TChild>, Handle<ParentNode>>(ref child);
+                var h = Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle);
                 if (World.ParentRefCounts.Decrement(h))
                     ProcessParentCascadeVisitor(ref World, ref ParentEnum, ref ChildEnum, h);
             }
-            else if (typeof(TChild) == typeof(ChildNode))
+            else if (typeof(T) == typeof(ChildNode))
             {
-                var h = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child);
+                var h = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle);
                 if (World.ChildRefCounts.Decrement(h))
                     ProcessChildCascadeVisitor(ref World, ref ChildEnum, h);
             }
@@ -161,11 +144,11 @@ public class VisitorPatternBenchmarks
         public ChildNodeEnumerator ChildEnum;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Visit<TChild>(Handle<TChild> child) where TChild : struct
+        public void Visit<T>(Handle<T> handle) where T : struct
         {
-            if (typeof(TChild) == typeof(ChildNode))
+            if (typeof(T) == typeof(ChildNode))
             {
-                var h = Unsafe.As<Handle<TChild>, Handle<ChildNode>>(ref child);
+                var h = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle);
                 if (World.ChildRefCounts.Decrement(h))
                     ProcessChildCascadeVisitor(ref World, ref ChildEnum, h);
             }
