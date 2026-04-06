@@ -58,15 +58,11 @@ public class CrossTypeSnapshotTests
         {
             if (typeof(T) == typeof(ParentNode))
             {
-                var tmp = handle;
-                var c = Unsafe.As<Handle<T>, Handle<ParentNode>>(ref tmp);
-                ParentStore.DecrementRefCount(c);
+                ParentStore.DecrementRefCount(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
             }
             else if (typeof(T) == typeof(ChildNode))
             {
-                var tmp = handle;
-                var c = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref tmp);
-                ChildStore.DecrementRefCount(c);
+                ChildStore.DecrementRefCount(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
             }
         }
     }

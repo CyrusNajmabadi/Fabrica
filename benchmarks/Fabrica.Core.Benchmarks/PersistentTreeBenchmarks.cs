@@ -304,8 +304,7 @@ public class SingleForkReleaseBenchmarks
         {
             if (typeof(T) == typeof(TreeNode))
             {
-                var c = handle;
-                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref c));
+                Store.DecrementRefCount(Unsafe.As<Handle<T>, Handle<TreeNode>>(ref handle));
             }
         }
 
