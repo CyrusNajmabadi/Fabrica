@@ -168,21 +168,21 @@ public class CoordinatorMergeTests
         var (_, childStore) = CreateStores();
         const int ThreadCount = 2;
 
-        var tlbs = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        tlbs[0] = new ThreadLocalBuffer<ChildNode>(0);
-        tlbs[1] = new ThreadLocalBuffer<ChildNode>(1);
+        var threadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
+        threadLocalBuffers[0] = new ThreadLocalBuffer<ChildNode>(0);
+        threadLocalBuffers[1] = new ThreadLocalBuffer<ChildNode>(1);
 
-        var c0 = tlbs[0].Allocate();
-        tlbs[0][TaggedHandle.DecodeLocalIndex(c0.Index)] = new ChildNode { Value = 10 };
+        var c0 = threadLocalBuffers[0].Allocate();
+        threadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(c0.Index)] = new ChildNode { Value = 10 };
 
-        var c1 = tlbs[1].Allocate();
-        tlbs[1][TaggedHandle.DecodeLocalIndex(c1.Index)] = new ChildNode { Value = 20 };
+        var c1 = threadLocalBuffers[1].Allocate();
+        threadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(c1.Index)] = new ChildNode { Value = 20 };
 
-        var c2 = tlbs[1].Allocate();
-        tlbs[1][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
+        var c2 = threadLocalBuffers[1].Allocate();
+        threadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
 
         var remap = new RemapTable(ThreadCount);
-        var (start, count) = childStore.DrainBuffers(tlbs, remap);
+        var (start, count) = childStore.DrainBuffers(threadLocalBuffers, remap);
 
         Assert.Equal(0, start);
         Assert.Equal(3, count);
@@ -202,12 +202,12 @@ public class CoordinatorMergeTests
         var (_, childStore) = CreateStores();
         const int ThreadCount = 2;
 
-        var tlbs = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        tlbs[0] = new ThreadLocalBuffer<ChildNode>(0);
-        tlbs[1] = new ThreadLocalBuffer<ChildNode>(1);
+        var threadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
+        threadLocalBuffers[0] = new ThreadLocalBuffer<ChildNode>(0);
+        threadLocalBuffers[1] = new ThreadLocalBuffer<ChildNode>(1);
 
         var remap = new RemapTable(ThreadCount);
-        var (start, count) = childStore.DrainBuffers(tlbs, remap);
+        var (start, count) = childStore.DrainBuffers(threadLocalBuffers, remap);
 
         Assert.Equal(0, start);
         Assert.Equal(0, count);
@@ -220,21 +220,21 @@ public class CoordinatorMergeTests
         var (_, childStore) = CreateStores();
         const int ThreadCount = 3;
 
-        var tlbs = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        tlbs[0] = new ThreadLocalBuffer<ChildNode>(0);
-        tlbs[1] = new ThreadLocalBuffer<ChildNode>(1);
-        tlbs[2] = new ThreadLocalBuffer<ChildNode>(2);
+        var threadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
+        threadLocalBuffers[0] = new ThreadLocalBuffer<ChildNode>(0);
+        threadLocalBuffers[1] = new ThreadLocalBuffer<ChildNode>(1);
+        threadLocalBuffers[2] = new ThreadLocalBuffer<ChildNode>(2);
 
-        var c0 = tlbs[0].Allocate();
-        tlbs[0][TaggedHandle.DecodeLocalIndex(c0.Index)] = new ChildNode { Value = 10 };
+        var c0 = threadLocalBuffers[0].Allocate();
+        threadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(c0.Index)] = new ChildNode { Value = 10 };
 
         // Thread 1 is empty
 
-        var c2 = tlbs[2].Allocate();
-        tlbs[2][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
+        var c2 = threadLocalBuffers[2].Allocate();
+        threadLocalBuffers[2][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
 
         var remap = new RemapTable(ThreadCount);
-        var (start, count) = childStore.DrainBuffers(tlbs, remap);
+        var (start, count) = childStore.DrainBuffers(threadLocalBuffers, remap);
 
         Assert.Equal(0, start);
         Assert.Equal(2, count);
@@ -254,14 +254,14 @@ public class CoordinatorMergeTests
     {
         var (parentStore, childStore) = CreateStores();
 
-        var childTlbs = new[] { new ThreadLocalBuffer<ChildNode>(0) };
-        var parentTlbs = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var childThreadLocalBuffers = new[] { new ThreadLocalBuffer<ChildNode>(0) };
+        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
 
-        var childHandle = childTlbs[0].Allocate();
-        childTlbs[0][TaggedHandle.DecodeLocalIndex(childHandle.Index)] = new ChildNode { Value = 42 };
+        var childHandle = childThreadLocalBuffers[0].Allocate();
+        childThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(childHandle.Index)] = new ChildNode { Value = 42 };
 
-        var parentHandle = parentTlbs[0].Allocate();
-        parentTlbs[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
+        var parentHandle = parentThreadLocalBuffers[0].Allocate();
+        parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = childHandle,
@@ -270,8 +270,8 @@ public class CoordinatorMergeTests
         var childRemap = new RemapTable(1);
         var parentRemap = new RemapTable(1);
 
-        childStore.DrainBuffers(childTlbs, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
+        childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
@@ -294,9 +294,9 @@ public class CoordinatorMergeTests
         childStore.Arena[globalChild] = new ChildNode { Value = 99 };
         childStore.RefCounts.EnsureCapacity(1);
 
-        var parentTlbs = new[] { new ThreadLocalBuffer<ParentNode>(0) };
-        var parentHandle = parentTlbs[0].Allocate();
-        parentTlbs[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
+        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var parentHandle = parentThreadLocalBuffers[0].Allocate();
+        parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = globalChild,
@@ -304,7 +304,7 @@ public class CoordinatorMergeTests
 
         var childRemap = new RemapTable(1);
         var parentRemap = new RemapTable(1);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
@@ -331,43 +331,43 @@ public class CoordinatorMergeTests
         var (parentStore, childStore) = CreateStores();
         const int ThreadCount = 2;
 
-        var childTlbs = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        var parentTlbs = new ThreadLocalBuffer<ParentNode>[ThreadCount];
-        for (var t = 0; t < ThreadCount; t++)
+        var childThreadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
+        var parentThreadLocalBuffers = new ThreadLocalBuffer<ParentNode>[ThreadCount];
+        for (var threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
         {
-            childTlbs[t] = new ThreadLocalBuffer<ChildNode>(t);
-            parentTlbs[t] = new ThreadLocalBuffer<ParentNode>(t);
+            childThreadLocalBuffers[threadIndex] = new ThreadLocalBuffer<ChildNode>(threadIndex);
+            parentThreadLocalBuffers[threadIndex] = new ThreadLocalBuffer<ParentNode>(threadIndex);
         }
 
         // ── Simulate production phase ────────────────────────────────────
 
         // Thread 0: one child, one parent referencing it (parent is a root)
-        var c0T0 = childTlbs[0].Allocate();
-        childTlbs[0][TaggedHandle.DecodeLocalIndex(c0T0.Index)] = new ChildNode { Value = 10 };
+        var c0T0 = childThreadLocalBuffers[0].Allocate();
+        childThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(c0T0.Index)] = new ChildNode { Value = 10 };
 
-        var p0T0 = parentTlbs[0].Allocate(isRoot: true);
-        parentTlbs[0][TaggedHandle.DecodeLocalIndex(p0T0.Index)] = new ParentNode
+        var p0T0 = parentThreadLocalBuffers[0].Allocate(isRoot: true);
+        parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(p0T0.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = c0T0,
         };
 
         // Thread 1: two children, two parents (parent[1] also references parent[0]; parent[1] is a root)
-        var c0T1 = childTlbs[1].Allocate();
-        childTlbs[1][TaggedHandle.DecodeLocalIndex(c0T1.Index)] = new ChildNode { Value = 20 };
+        var c0T1 = childThreadLocalBuffers[1].Allocate();
+        childThreadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(c0T1.Index)] = new ChildNode { Value = 20 };
 
-        var c1T1 = childTlbs[1].Allocate();
-        childTlbs[1][TaggedHandle.DecodeLocalIndex(c1T1.Index)] = new ChildNode { Value = 30 };
+        var c1T1 = childThreadLocalBuffers[1].Allocate();
+        childThreadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(c1T1.Index)] = new ChildNode { Value = 30 };
 
-        var p0T1 = parentTlbs[1].Allocate();
-        parentTlbs[1][TaggedHandle.DecodeLocalIndex(p0T1.Index)] = new ParentNode
+        var p0T1 = parentThreadLocalBuffers[1].Allocate();
+        parentThreadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(p0T1.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = c0T1,
         };
 
-        var p1T1 = parentTlbs[1].Allocate(isRoot: true);
-        parentTlbs[1][TaggedHandle.DecodeLocalIndex(p1T1.Index)] = new ParentNode
+        var p1T1 = parentThreadLocalBuffers[1].Allocate(isRoot: true);
+        parentThreadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(p1T1.Index)] = new ParentNode
         {
             LeftParent = p0T1,
             ChildRef = c1T1,
@@ -378,8 +378,8 @@ public class CoordinatorMergeTests
         var childRemap = new RemapTable(ThreadCount);
         var parentRemap = new RemapTable(ThreadCount);
 
-        var (childStart, childCount) = childStore.DrainBuffers(childTlbs, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
 
         Assert.Equal(0, childStart);
         Assert.Equal(3, childCount);
@@ -439,7 +439,7 @@ public class CoordinatorMergeTests
         // ── Root collection + remap + increment ──────────────────────────
 
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
@@ -465,15 +465,15 @@ public class CoordinatorMergeTests
         var (parentStore, childStore) = CreateStores();
         const int ThreadCount = 1;
 
-        var childTlbs = new[] { new ThreadLocalBuffer<ChildNode>(0) };
-        var parentTlbs = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var childThreadLocalBuffers = new[] { new ThreadLocalBuffer<ChildNode>(0) };
+        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
 
         // Single child, single parent referencing it (parent is a root)
-        var childHandle = childTlbs[0].Allocate();
-        childTlbs[0][TaggedHandle.DecodeLocalIndex(childHandle.Index)] = new ChildNode { Value = 42 };
+        var childHandle = childThreadLocalBuffers[0].Allocate();
+        childThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(childHandle.Index)] = new ChildNode { Value = 42 };
 
-        var parentHandle = parentTlbs[0].Allocate(isRoot: true);
-        parentTlbs[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
+        var parentHandle = parentThreadLocalBuffers[0].Allocate(isRoot: true);
+        parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = childHandle,
@@ -482,8 +482,8 @@ public class CoordinatorMergeTests
         // DrainBuffers
         var childRemap = new RemapTable(ThreadCount);
         var parentRemap = new RemapTable(ThreadCount);
-        var (childStart, childCount) = childStore.DrainBuffers(childTlbs, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
@@ -491,7 +491,7 @@ public class CoordinatorMergeTests
 
         // Root collection + remap + increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
@@ -523,21 +523,21 @@ public class CoordinatorMergeTests
         var (parentStore, childStore) = CreateStores();
         const int ThreadCount = 1;
 
-        var childTlbs = new[] { new ThreadLocalBuffer<ChildNode>(0) };
-        var parentTlbs = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var childThreadLocalBuffers = new[] { new ThreadLocalBuffer<ChildNode>(0) };
+        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
 
-        var leaf = childTlbs[0].Allocate();
-        childTlbs[0][TaggedHandle.DecodeLocalIndex(leaf.Index)] = new ChildNode { Value = 1 };
+        var leaf = childThreadLocalBuffers[0].Allocate();
+        childThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(leaf.Index)] = new ChildNode { Value = 1 };
 
-        var inner = parentTlbs[0].Allocate();
-        parentTlbs[0][TaggedHandle.DecodeLocalIndex(inner.Index)] = new ParentNode
+        var inner = parentThreadLocalBuffers[0].Allocate();
+        parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(inner.Index)] = new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = leaf,
         };
 
-        var root = parentTlbs[0].Allocate(isRoot: true);
-        parentTlbs[0][TaggedHandle.DecodeLocalIndex(root.Index)] = new ParentNode
+        var root = parentThreadLocalBuffers[0].Allocate(isRoot: true);
+        parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(root.Index)] = new ParentNode
         {
             LeftParent = inner,
             ChildRef = Handle<ChildNode>.None,
@@ -546,8 +546,8 @@ public class CoordinatorMergeTests
         // Merge: DrainBuffers → RewriteAndIncrementRefCounts
         var childRemap = new RemapTable(ThreadCount);
         var parentRemap = new RemapTable(ThreadCount);
-        childStore.DrainBuffers(childTlbs, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
+        childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
 
         var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
@@ -560,7 +560,7 @@ public class CoordinatorMergeTests
 
         // Collect + remap roots, then increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);

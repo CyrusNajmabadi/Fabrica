@@ -269,9 +269,9 @@ public class JobPoolTests
         using var barrier = new Barrier(ThreadCount);
 
         var threads = new Thread[ThreadCount];
-        for (var t = 0; t < ThreadCount; t++)
+        for (var threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
         {
-            threads[t] = new Thread(() =>
+            threads[threadIndex] = new Thread(() =>
             {
                 barrier.SignalAndWait();
                 for (var i = 0; i < OpsPerThread; i++)
@@ -281,11 +281,11 @@ public class JobPoolTests
                     pool.Return(job);
                 }
             });
-            threads[t].Start();
+            threads[threadIndex].Start();
         }
 
-        for (var t = 0; t < ThreadCount; t++)
-            threads[t].Join();
+        for (var threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
+            threads[threadIndex].Join();
 
         var count = pool.Count;
         Assert.True(count > 0, "Pool should have items after concurrent rent/return.");
@@ -306,20 +306,20 @@ public class JobPoolTests
         using var barrier = new Barrier(ThreadCount);
 
         var threads = new Thread[ThreadCount];
-        for (var t = 0; t < ThreadCount; t++)
+        for (var threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
         {
-            var threadIndex = t;
-            threads[t] = new Thread(() =>
+            var capturedThreadIndex = threadIndex;
+            threads[threadIndex] = new Thread(() =>
             {
                 barrier.SignalAndWait();
                 for (var i = 0; i < JobsPerThread; i++)
-                    allJobs[(threadIndex * JobsPerThread) + i] = pool.Rent();
+                    allJobs[(capturedThreadIndex * JobsPerThread) + i] = pool.Rent();
             });
-            threads[t].Start();
+            threads[threadIndex].Start();
         }
 
-        for (var t = 0; t < ThreadCount; t++)
-            threads[t].Join();
+        for (var threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
+            threads[threadIndex].Join();
 
         var distinct = new HashSet<TestJob>(allJobs);
         Assert.Equal(allJobs.Length, distinct.Count);

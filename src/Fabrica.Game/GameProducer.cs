@@ -34,21 +34,26 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
     public GameWorldImage Produce(GameWorldImage current, CancellationToken cancellationToken)
     {
         var image = _imagePool.Rent();
-        var ts = _tickState;
+        var tickState = _tickState;
 
         // ── 1. Reset buffers from the prior tick ────────────────────────
-        foreach (var tlb in ts.MachineTlbs) tlb.Reset();
-        foreach (var tlb in ts.BeltTlbs) tlb.Reset();
-        foreach (var tlb in ts.ItemTlbs) tlb.Reset();
-        ts.MachineRemap.Reset();
-        ts.BeltRemap.Reset();
-        ts.ItemRemap.Reset();
+        foreach (var threadLocalBuffer in tickState.MachineThreadLocalBuffers) threadLocalBuffer.Reset();
+        foreach (var threadLocalBuffer in tickState.BeltThreadLocalBuffers) threadLocalBuffer.Reset();
+        foreach (var threadLocalBuffer in tickState.ItemThreadLocalBuffers) threadLocalBuffer.Reset();
+        tickState.MachineRemap.Reset();
+        tickState.BeltRemap.Reset();
+        tickState.ItemRemap.Reset();
 
         // ── 2. Build the job DAG ────────────────────────────────────────
         // Dependencies are wired automatically by property setters (DependsOn).
-        var spawnJob = new SpawnItemsJob { ItemTlbs = ts.ItemTlbs, Count = 4 };
-        var beltJob = new BuildBeltChainJob { BeltTlbs = ts.BeltTlbs, SpawnJob = spawnJob, ChainLength = 4 };
-        _ = new PlaceMachinesJob { MachineTlbs = ts.MachineTlbs, BeltJob = beltJob };
+        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = tickState.ItemThreadLocalBuffers, Count = 4 };
+        var beltJob = new BuildBeltChainJob
+        {
+            BeltThreadLocalBuffers = tickState.BeltThreadLocalBuffers,
+            SpawnJob = spawnJob,
+            ChainLength = 4,
+        };
+        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = tickState.MachineThreadLocalBuffers, BeltJob = beltJob };
 
         // ── 3. Execute ──────────────────────────────────────────────────
         _scheduler.Submit(spawnJob);
@@ -56,38 +61,40 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         // ── 4. Merge pipeline ───────────────────────────────────────────
 
         // Phase 1: drain all TLBs into global arenas and build remap tables.
-        var (itemStart, itemCount) = ts.ItemStore.DrainBuffers(ts.ItemTlbs, ts.ItemRemap);
-        var (beltStart, beltCount) = ts.BeltStore.DrainBuffers(ts.BeltTlbs, ts.BeltRemap);
-        var (machineStart, machineCount) = ts.MachineStore.DrainBuffers(ts.MachineTlbs, ts.MachineRemap);
+        var (itemStart, itemCount) = tickState.ItemStore.DrainBuffers(tickState.ItemThreadLocalBuffers, tickState.ItemRemap);
+        var (beltStart, beltCount) = tickState.BeltStore.DrainBuffers(tickState.BeltThreadLocalBuffers, tickState.BeltRemap);
+        var (machineStart, machineCount) =
+            tickState.MachineStore.DrainBuffers(tickState.MachineThreadLocalBuffers, tickState.MachineRemap);
 
         // Phase 2: rewrite local handles to global and increment child refcounts.
         var remapVisitor = new GameRemapVisitor
         {
-            MachineRemap = ts.MachineRemap,
-            BeltRemap = ts.BeltRemap,
-            ItemRemap = ts.ItemRemap,
+            MachineRemap = tickState.MachineRemap,
+            BeltRemap = tickState.BeltRemap,
+            ItemRemap = tickState.ItemRemap,
         };
         var refcountVisitor = new GameRefcountVisitor
         {
-            MachineStore = ts.MachineStore,
-            BeltStore = ts.BeltStore,
-            ItemStore = ts.ItemStore,
+            MachineStore = tickState.MachineStore,
+            BeltStore = tickState.BeltStore,
+            ItemStore = tickState.ItemStore,
         };
 
-        ts.ItemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref remapVisitor, ref refcountVisitor);
-        ts.BeltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref remapVisitor, ref refcountVisitor);
-        ts.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref remapVisitor, ref refcountVisitor);
+        tickState.ItemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref remapVisitor, ref refcountVisitor);
+        tickState.BeltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref remapVisitor, ref refcountVisitor);
+        tickState.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref remapVisitor, ref refcountVisitor);
 
         // Phase 3: collect and remap root handles (only machines are roots).
-        ts.MachineRoots.Reset();
-        ts.MachineStore.CollectAndRemapRoots(ts.MachineTlbs, ts.MachineRemap, ts.MachineRoots);
+        tickState.MachineRoots.Reset();
+        tickState.MachineStore.CollectAndRemapRoots(
+            tickState.MachineThreadLocalBuffers, tickState.MachineRemap, tickState.MachineRoots);
 
         // ── 5. Build snapshot slices ────────────────────────────────────
         var machineRootList = new UnsafeList<Handle<MachineNode>>();
-        foreach (var root in ts.MachineRoots.WrittenSpan)
+        foreach (var root in tickState.MachineRoots.WrittenSpan)
             machineRootList.Add(root);
 
-        image.MachineSlice = new SnapshotSlice<MachineNode, GameNodeOps>(ts.MachineStore, machineRootList);
+        image.MachineSlice = new SnapshotSlice<MachineNode, GameNodeOps>(tickState.MachineStore, machineRootList);
         image.MachineSlice.IncrementRootRefCounts();
 
         return image;

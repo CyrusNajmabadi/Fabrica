@@ -251,10 +251,10 @@ public class JobSchedulerTests
         var jobs = new TestJob[Depth];
         for (var i = 0; i < Depth; i++)
         {
-            var idx = i;
+            var capturedJobIndex = i;
             jobs[i] = new TestJob
             {
-                OnExecute = _ => order.Enqueue(idx),
+                OnExecute = _ => order.Enqueue(capturedJobIndex),
             };
         }
 

@@ -50,10 +50,10 @@ public class GamePipelineTests : IDisposable
 
     private static ThreadLocalBuffer<T>[] CreateTlbs<T>(int count) where T : struct
     {
-        var tlbs = new ThreadLocalBuffer<T>[count];
+        var threadLocalBuffers = new ThreadLocalBuffer<T>[count];
         for (var i = 0; i < count; i++)
-            tlbs[i] = new ThreadLocalBuffer<T>(i);
-        return tlbs;
+            threadLocalBuffers[i] = new ThreadLocalBuffer<T>(i);
+        return threadLocalBuffers;
     }
 
     // ── DagValidator accessor ────────────────────────────────────────────
@@ -112,9 +112,9 @@ public class GamePipelineTests : IDisposable
         var scheduler = new JobScheduler(_pool);
         var schedulerAccessor = scheduler.GetTestAccessor();
 
-        var machineTlbs = CreateTlbs<MachineNode>(WorkerCount);
-        var beltTlbs = CreateTlbs<BeltSegmentNode>(WorkerCount);
-        var itemTlbs = CreateTlbs<ItemNode>(WorkerCount);
+        var machineThreadLocalBuffers = CreateTlbs<MachineNode>(WorkerCount);
+        var beltThreadLocalBuffers = CreateTlbs<BeltSegmentNode>(WorkerCount);
+        var itemThreadLocalBuffers = CreateTlbs<ItemNode>(WorkerCount);
 
         var machineRemap = new RemapTable(WorkerCount);
         var beltRemap = new RemapTable(WorkerCount);
@@ -122,18 +122,23 @@ public class GamePipelineTests : IDisposable
 
         // ── Build and execute the job DAG ────────────────────────────────
         // Dependencies wired automatically via DependsOn in property setters.
-        var spawnJob = new SpawnItemsJob { ItemTlbs = itemTlbs, Count = ItemCount };
-        var beltJob = new BuildBeltChainJob { BeltTlbs = beltTlbs, SpawnJob = spawnJob, ChainLength = ChainLength };
-        _ = new PlaceMachinesJob { MachineTlbs = machineTlbs, BeltJob = beltJob };
+        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = itemThreadLocalBuffers, Count = ItemCount };
+        var beltJob = new BuildBeltChainJob
+        {
+            BeltThreadLocalBuffers = beltThreadLocalBuffers,
+            SpawnJob = spawnJob,
+            ChainLength = ChainLength,
+        };
+        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = machineThreadLocalBuffers, BeltJob = beltJob };
 
         Assert.True(schedulerAccessor.Submit(spawnJob));
 
         // ── Merge pipeline ───────────────────────────────────────────────
 
         // Phase 1: drain TLBs.
-        var (itemStart, itemCount) = itemStore.DrainBuffers(itemTlbs, itemRemap);
-        var (beltStart, beltCount) = beltStore.DrainBuffers(beltTlbs, beltRemap);
-        var (machineStart, machineCount) = machineStore.DrainBuffers(machineTlbs, machineRemap);
+        var (itemStart, itemCount) = itemStore.DrainBuffers(itemThreadLocalBuffers, itemRemap);
+        var (beltStart, beltCount) = beltStore.DrainBuffers(beltThreadLocalBuffers, beltRemap);
+        var (machineStart, machineCount) = machineStore.DrainBuffers(machineThreadLocalBuffers, machineRemap);
 
         Assert.Equal(ItemCount, itemCount);
         Assert.Equal(ChainLength, beltCount);
@@ -159,7 +164,7 @@ public class GamePipelineTests : IDisposable
 
         // Phase 3: collect and remap roots.
         var machineRoots = new UnsafeList<Handle<MachineNode>>();
-        machineStore.CollectAndRemapRoots(machineTlbs, machineRemap, machineRoots);
+        machineStore.CollectAndRemapRoots(machineThreadLocalBuffers, machineRemap, machineRoots);
         Assert.Equal(1, machineRoots.Count);
 
         // Increment root refcounts.

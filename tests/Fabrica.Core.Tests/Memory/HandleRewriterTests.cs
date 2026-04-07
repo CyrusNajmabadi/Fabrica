@@ -134,21 +134,21 @@ public class HandleRewriterTests
     [Fact]
     public void EndToEnd_TLB_Allocate_Rewrite()
     {
-        var tlb = new ThreadLocalBuffer<TreeNode>(threadId: 2);
+        var threadLocalBuffer = new ThreadLocalBuffer<TreeNode>(threadId: 2);
 
-        var leafHandle = tlb.Allocate();
+        var leafHandle = threadLocalBuffer.Allocate();
         var leafIndex = TaggedHandle.DecodeLocalIndex(leafHandle.Index);
-        tlb[leafIndex] = new TreeNode { Value = 10, Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
+        threadLocalBuffer[leafIndex] = new TreeNode { Value = 10, Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
 
-        var parentHandle = tlb.Allocate();
+        var parentHandle = threadLocalBuffer.Allocate();
         var parentIndex = TaggedHandle.DecodeLocalIndex(parentHandle.Index);
-        tlb[parentIndex] = new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None };
+        threadLocalBuffer[parentIndex] = new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None };
 
         int[] remap = [500, 501];
         var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
-        var parent = tlb[parentIndex];
+        var parent = threadLocalBuffer[parentIndex];
         enumerator.EnumerateRefChildren(ref parent, ref visitor);
 
         Assert.Equal(500, parent.Left.Index);

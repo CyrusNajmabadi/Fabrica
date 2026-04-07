@@ -335,9 +335,9 @@ public class SnapshotSliceTests
         var order = new[] { first, second, third };
         for (var step = 0; step < 3; step++)
         {
-            var idx = order[step];
-            store.DecrementRoots(slices[idx].Roots);
-            Assert.Equal(0, store.RefCounts.GetCount(roots[idx]));
+            var snapshotIndex = order[step];
+            store.DecrementRoots(slices[snapshotIndex].Roots);
+            Assert.Equal(0, store.RefCounts.GetCount(roots[snapshotIndex]));
 
             var remainingCount = 2 - step;
             Assert.Equal(remainingCount, store.RefCounts.GetCount(shared));

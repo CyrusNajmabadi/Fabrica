@@ -146,7 +146,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// records the local-to-global mapping in <paramref name="remap"/>. Returns the
     /// <c>(startIndex, count)</c> range of newly merged nodes.
     /// </summary>
-    public (int StartIndex, int Count) DrainBuffers(ThreadLocalBuffer<TNode>[] tlbs, RemapTable remap)
+    public (int StartIndex, int Count) DrainBuffers(ThreadLocalBuffer<TNode>[] threadLocalBuffers, RemapTable remap)
     {
         // Snapshot where the arena was before we started so we can report the range of newly merged
         // nodes to the caller (they need this to know which nodes to fixup and refcount).
@@ -163,23 +163,23 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
         //   3. Record the local→global mapping (thread t, local index i → global batchStart+i) in the
         //      remap table so that RewriteAndIncrementRefCounts can later translate tagged local handles
         //      into their final global indices.
-        for (var t = 0; t < tlbs.Length; t++)
+        for (var threadIndex = 0; threadIndex < threadLocalBuffers.Length; threadIndex++)
         {
-            var tlb = tlbs[t];
-            if (tlb.Count == 0)
+            var threadLocalBuffer = threadLocalBuffers[threadIndex];
+            if (threadLocalBuffer.Count == 0)
                 continue;
 
-            // Reserve tlb.Count contiguous slots starting at batchStart. This is O(1) — just a
+            // Reserve threadLocalBuffer.Count contiguous slots starting at batchStart. This is O(1) — just a
             // high-water bump — and guarantees the slots are contiguous for cache-friendly iteration
             // in later phases.
-            var batchStart = this.Arena.AllocateBatch(tlb.Count);
-            var span = tlb.WrittenSpan;
+            var batchStart = this.Arena.AllocateBatch(threadLocalBuffer.Count);
+            var span = threadLocalBuffer.WrittenSpan;
             for (var i = 0; i < span.Length; i++)
             {
                 // Copy node data into its global slot and record where it landed so the remap table
-                // can translate any local handle pointing to (thread=t, index=i) into batchStart+i.
+                // can translate any local handle pointing to (thread=threadIndex, index=i) into batchStart+i.
                 this.Arena[new Handle<TNode>(batchStart + i)] = span[i];
-                remap.SetMapping(t, i, batchStart + i);
+                remap.SetMapping(threadIndex, i, batchStart + i);
             }
         }
 
@@ -247,7 +247,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// high-water root count and is reused across ticks.
     /// </summary>
     public void CollectAndRemapRoots(
-        ThreadLocalBuffer<TNode>[] tlbs,
+        ThreadLocalBuffer<TNode>[] threadLocalBuffers,
         RemapTable remap,
         UnsafeList<Handle<TNode>> destination)
     {
@@ -256,9 +256,9 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
         // global (referencing a pre-existing node from a prior snapshot that the job decided to re-root).
         // We remap local handles through the same remap table that DrainBuffers built, translating
         // (threadId, localIndex) → globalIndex. Global handles pass through unchanged.
-        foreach (var tlb in tlbs)
+        foreach (var threadLocalBuffer in threadLocalBuffers)
         {
-            foreach (var handle in tlb.RootHandles)
+            foreach (var handle in threadLocalBuffer.RootHandles)
             {
                 var index = handle.Index;
                 if (TaggedHandle.IsLocal(index))

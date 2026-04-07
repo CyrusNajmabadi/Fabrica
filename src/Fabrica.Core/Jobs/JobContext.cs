@@ -12,7 +12,7 @@ public readonly struct JobContext
 {
     /// <summary>
     /// Zero-based index of the worker thread executing this job. Use this to index into
-    /// per-worker arrays (e.g. <c>tlbs[context.WorkerIndex]</c>).
+    /// per-worker arrays (e.g. <c>threadLocalBuffers[context.WorkerIndex]</c>).
     /// </summary>
     public readonly int WorkerIndex;
 

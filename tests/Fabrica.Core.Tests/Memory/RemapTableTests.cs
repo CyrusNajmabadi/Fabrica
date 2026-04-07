@@ -104,15 +104,15 @@ public class RemapTableTests
     {
         var table = new RemapTable(4);
 
-        for (var t = 0; t < 4; t++)
+        for (var threadId = 0; threadId < 4; threadId++)
             for (var i = 0; i < 5; i++)
-                table.SetMapping(t, i, (t * 100) + i);
+                table.SetMapping(threadId, i, (threadId * 100) + i);
 
-        for (var t = 0; t < 4; t++)
+        for (var threadId = 0; threadId < 4; threadId++)
         {
-            Assert.Equal(5, table.Count(t));
+            Assert.Equal(5, table.Count(threadId));
             for (var i = 0; i < 5; i++)
-                Assert.Equal((t * 100) + i, table.Resolve(t, i));
+                Assert.Equal((threadId * 100) + i, table.Resolve(threadId, i));
         }
     }
 }

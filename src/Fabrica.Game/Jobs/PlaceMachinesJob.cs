@@ -11,7 +11,7 @@ namespace Fabrica.Game.Jobs;
 /// </summary>
 internal sealed class PlaceMachinesJob : Job
 {
-    internal ThreadLocalBuffer<MachineNode>[]? MachineTlbs;
+    internal ThreadLocalBuffer<MachineNode>[]? MachineThreadLocalBuffers;
 
     private BuildBeltChainJob? _beltJob;
 
@@ -27,9 +27,9 @@ internal sealed class PlaceMachinesJob : Job
 
     protected override void Execute(JobContext context)
     {
-        var tlb = MachineTlbs![context.WorkerIndex];
-        var handle = tlb.Allocate(isRoot: true);
-        tlb[handle] = new MachineNode
+        var threadLocalBuffer = MachineThreadLocalBuffers![context.WorkerIndex];
+        var handle = threadLocalBuffer.Allocate(isRoot: true);
+        threadLocalBuffer[handle] = new MachineNode
         {
             InputBelt = _beltJob!.ChainHead,
             OutputBelt = _beltJob.ChainTail,
@@ -41,7 +41,7 @@ internal sealed class PlaceMachinesJob : Job
     protected override void Reset()
     {
         base.Reset();
-        MachineTlbs = null;
+        MachineThreadLocalBuffers = null;
         _beltJob = null;
     }
 }

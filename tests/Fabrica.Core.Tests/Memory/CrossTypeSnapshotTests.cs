@@ -550,11 +550,11 @@ public class CrossTypeSnapshotTests
         var order = new[] { first, second, third };
         for (var step = 0; step < 3; step++)
         {
-            var idx = order[step];
-            parentStore.DecrementRoots(parentSlices[idx].Roots);
-            childStore.DecrementRoots(childSlices[idx].Roots);
+            var snapshotIndex = order[step];
+            parentStore.DecrementRoots(parentSlices[snapshotIndex].Roots);
+            childStore.DecrementRoots(childSlices[snapshotIndex].Roots);
 
-            Assert.Equal(0, parentStore.RefCounts.GetCount(parentRoots[idx]));
+            Assert.Equal(0, parentStore.RefCounts.GetCount(parentRoots[snapshotIndex]));
 
             var remaining = 2 - step;
             // Each remaining snapshot contributes 2 refs to sharedChild (1 parent + 1 child root)

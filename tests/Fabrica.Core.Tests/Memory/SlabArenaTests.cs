@@ -80,13 +80,13 @@ public class UnsafeSlabArenaTests
     public void Indexer_ReturnsRef_AllowsInPlaceMutation()
     {
         var arena = CreateTinyArena();
-        var idx = arena.Allocate();
-        arena[idx] = new Int32Entry { Value = 1 };
+        var allocatedHandle = arena.Allocate();
+        arena[allocatedHandle] = new Int32Entry { Value = 1 };
 
-        ref var entry = ref arena[idx];
+        ref var entry = ref arena[allocatedHandle];
         entry.Value = 2;
 
-        Assert.Equal(2, arena[idx].Value);
+        Assert.Equal(2, arena[allocatedHandle].Value);
     }
 
     // ═══════════════════════════ Free list (LIFO) ════════════════════════
@@ -129,8 +129,8 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena();
         var ta = arena.GetTestAccessor();
 
-        var idx = arena.Allocate();
-        arena.Free(idx);
+        var allocatedHandle = arena.Allocate();
+        arena.Free(allocatedHandle);
         arena.Allocate();
 
         Assert.Equal(1, ta.HighWater);
@@ -211,8 +211,8 @@ public class UnsafeSlabArenaTests
         // Fill all 4 slabs (16 entries)
         for (var i = 0; i < 16; i++)
         {
-            var idx = arena.Allocate();
-            arena[idx] = new Int32Entry { Value = idx.Index * 10 };
+            var allocatedHandle = arena.Allocate();
+            arena[allocatedHandle] = new Int32Entry { Value = allocatedHandle.Index * 10 };
         }
 
         for (var i = 0; i < 16; i++)
@@ -313,13 +313,13 @@ public class UnsafeSlabArenaTests
     public void Free_DoesNotClearData()
     {
         var arena = CreateTinyArena();
-        var idx = arena.Allocate();
-        arena[idx] = new Int32Entry { Value = 42 };
-        arena.Free(idx);
+        var allocatedHandle = arena.Allocate();
+        arena[allocatedHandle] = new Int32Entry { Value = 42 };
+        arena.Free(allocatedHandle);
 
         // Re-allocate the same index — stale data is still present
         var reused = arena.Allocate();
-        Assert.Equal(idx, reused);
+        Assert.Equal(allocatedHandle, reused);
         Assert.Equal(42, arena[reused].Value);
     }
 
@@ -373,8 +373,8 @@ public class UnsafeSlabArenaTests
 
         for (var i = 0; i < 4; i++)
         {
-            var idx = arena.Allocate();
-            arena[idx] = new Int32Entry { Value = i };
+            var allocatedHandle = arena.Allocate();
+            arena[allocatedHandle] = new Int32Entry { Value = i };
         }
 
         // Each entry is in its own slab
@@ -401,9 +401,9 @@ public class UnsafeSlabArenaTests
         var seen = new HashSet<Handle<Int32Entry>>();
         for (var i = 0; i < count; i++)
         {
-            var idx = arena.Allocate();
-            Assert.True(seen.Add(idx), $"Duplicate index {idx} at allocation {i}.");
-            arena[idx] = new Int32Entry { Value = i };
+            var allocatedHandle = arena.Allocate();
+            Assert.True(seen.Add(allocatedHandle), $"Duplicate index {allocatedHandle} at allocation {i}.");
+            arena[allocatedHandle] = new Int32Entry { Value = i };
         }
 
         Assert.Equal(count, ta.Count);
@@ -443,8 +443,8 @@ public class UnsafeSlabArenaTests
         var reused = new HashSet<Handle<Int32Entry>>();
         for (var i = 0; i < freedCount; i++)
         {
-            var idx = arena.Allocate();
-            reused.Add(idx);
+            var allocatedHandle = arena.Allocate();
+            reused.Add(allocatedHandle);
         }
 
         // All reused indices should be from the freed set
@@ -474,9 +474,9 @@ public class UnsafeSlabArenaTests
     public void DefaultConstructor_AllocateAndAccess()
     {
         var arena = new UnsafeSlabArena<Int32Entry>();
-        var idx = arena.Allocate();
-        arena[idx] = new Int32Entry { Value = 777 };
-        Assert.Equal(777, arena[idx].Value);
+        var allocatedHandle = arena.Allocate();
+        arena[allocatedHandle] = new Int32Entry { Value = 777 };
+        Assert.Equal(777, arena[allocatedHandle].Value);
     }
 
     // ═══════════════════════════ Batch allocation ══════════════════════════
@@ -553,8 +553,8 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
 
-        var idx = arena.Allocate();
-        arena.Free(idx);
+        var allocatedHandle = arena.Allocate();
+        arena.Free(allocatedHandle);
         Assert.Equal(1, ta.FreeCount);
 
         var start = arena.AllocateBatch(2);
@@ -612,7 +612,7 @@ public class UnsafeSlabArenaTests
     public void Debug_FreeFromDifferentThread_TriggersAssert()
     {
         var arena = CreateTinyArena();
-        var idx = arena.Allocate(); // establish owner
+        var allocatedHandle = arena.Allocate(); // establish owner
 
         Exception? caught = null;
         var thread = new Thread(() =>
@@ -620,7 +620,7 @@ public class UnsafeSlabArenaTests
             try
             {
                 using var listener = new AssertThrowsListener();
-                arena.Free(idx);
+                arena.Free(allocatedHandle);
             }
             catch (Exception ex)
             {

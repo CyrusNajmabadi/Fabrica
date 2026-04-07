@@ -11,18 +11,18 @@ namespace Fabrica.Game.Jobs;
 /// </summary>
 internal sealed class SpawnItemsJob : Job
 {
-    internal ThreadLocalBuffer<ItemNode>[]? ItemTlbs;
+    internal ThreadLocalBuffer<ItemNode>[]? ItemThreadLocalBuffers;
     internal int Count;
     internal Handle<ItemNode>[]? AllocatedItems;
 
     protected override void Execute(JobContext context)
     {
-        var tlb = ItemTlbs![context.WorkerIndex];
+        var threadLocalBuffer = ItemThreadLocalBuffers![context.WorkerIndex];
         AllocatedItems = new Handle<ItemNode>[Count];
         for (var i = 0; i < Count; i++)
         {
-            var handle = tlb.Allocate();
-            tlb[handle] = new ItemNode { ItemTypeId = i % 4 };
+            var handle = threadLocalBuffer.Allocate();
+            threadLocalBuffer[handle] = new ItemNode { ItemTypeId = i % 4 };
             AllocatedItems[i] = handle;
         }
     }
@@ -30,7 +30,7 @@ internal sealed class SpawnItemsJob : Job
     protected override void Reset()
     {
         base.Reset();
-        ItemTlbs = null;
+        ItemThreadLocalBuffers = null;
         AllocatedItems = null;
     }
 }

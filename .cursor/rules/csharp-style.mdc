@@ -19,6 +19,10 @@ alwaysApply: false
 - Properties and methods: `PascalCase`
 - Local variables and parameters: `camelCase`
 - Do not use `this.` for fields. Do use `this.` for properties, methods, and events.
+- **No abbreviations in variable names.** Use descriptive names (`tickState` not `ts`,
+  `threadLocalBuffers` not `tlbs`, `remapTable` not `remap`). Abbreviations that are
+  well-known domain types (e.g. `TLB` in a type name like `ThreadLocalBuffer`) are fine,
+  but local variables and parameters must spell things out.
 
 ## Fields vs Properties
 

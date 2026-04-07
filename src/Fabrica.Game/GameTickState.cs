@@ -14,9 +14,9 @@ internal sealed class GameTickState
     internal readonly GlobalNodeStore<BeltSegmentNode, GameNodeOps> BeltStore;
     internal readonly GlobalNodeStore<ItemNode, GameNodeOps> ItemStore;
 
-    internal readonly ThreadLocalBuffer<MachineNode>[] MachineTlbs;
-    internal readonly ThreadLocalBuffer<BeltSegmentNode>[] BeltTlbs;
-    internal readonly ThreadLocalBuffer<ItemNode>[] ItemTlbs;
+    internal readonly ThreadLocalBuffer<MachineNode>[] MachineThreadLocalBuffers;
+    internal readonly ThreadLocalBuffer<BeltSegmentNode>[] BeltThreadLocalBuffers;
+    internal readonly ThreadLocalBuffer<ItemNode>[] ItemThreadLocalBuffers;
 
     internal readonly RemapTable MachineRemap;
     internal readonly RemapTable BeltRemap;
@@ -30,15 +30,15 @@ internal sealed class GameTickState
         BeltStore = new();
         ItemStore = new();
 
-        MachineTlbs = new ThreadLocalBuffer<MachineNode>[workerCount];
-        BeltTlbs = new ThreadLocalBuffer<BeltSegmentNode>[workerCount];
-        ItemTlbs = new ThreadLocalBuffer<ItemNode>[workerCount];
+        MachineThreadLocalBuffers = new ThreadLocalBuffer<MachineNode>[workerCount];
+        BeltThreadLocalBuffers = new ThreadLocalBuffer<BeltSegmentNode>[workerCount];
+        ItemThreadLocalBuffers = new ThreadLocalBuffer<ItemNode>[workerCount];
 
         for (var i = 0; i < workerCount; i++)
         {
-            MachineTlbs[i] = new ThreadLocalBuffer<MachineNode>(i);
-            BeltTlbs[i] = new ThreadLocalBuffer<BeltSegmentNode>(i);
-            ItemTlbs[i] = new ThreadLocalBuffer<ItemNode>(i);
+            MachineThreadLocalBuffers[i] = new ThreadLocalBuffer<MachineNode>(i);
+            BeltThreadLocalBuffers[i] = new ThreadLocalBuffer<BeltSegmentNode>(i);
+            ItemThreadLocalBuffers[i] = new ThreadLocalBuffer<ItemNode>(i);
         }
 
         MachineRemap = new RemapTable(workerCount);
