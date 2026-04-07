@@ -229,11 +229,6 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         // still carry local handles (tagged with threadId + localIndex) that are only meaningful within
         // the originating TLB. We need to move them into the single shared arena so that every handle
         // in the system can be resolved to a global arena slot.
-        //
-        // Allocate per-node (not batch) so the arena's free-list is consumed first. Freed slots from
-        // previous cascade decrements are recycled, keeping the arena at a stable high-water mark in
-        // steady state. Each node gets a potentially non-contiguous global index; the remap table
-        // records the mapping regardless.
         _drainedHandles.Reset();
         for (var threadIndex = 0; threadIndex < _threadLocalBuffers.Length; threadIndex++)
         {
@@ -241,13 +236,17 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
             if (threadLocalBuffer.Count == 0)
                 continue;
 
+            // Batch-allocate: drains the arena's free-list first (recycling freed slots from the
+            // previous tick's cascade decrements), then bump-allocates the remainder contiguously.
+            var handleStart = _drainedHandles.Count;
+            this.Arena.AllocateBatch(threadLocalBuffer.Count, _drainedHandles);
+
             var span = threadLocalBuffer.WrittenSpan;
             for (var i = 0; i < span.Length; i++)
             {
-                var handle = this.Arena.Allocate();
+                var handle = _drainedHandles[handleStart + i];
                 this.Arena[handle] = span[i];
                 _remap.SetMapping(threadIndex, i, handle.Index);
-                _drainedHandles.Add(handle);
             }
         }
 

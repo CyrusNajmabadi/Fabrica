@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
 using Xunit;
 
@@ -481,13 +482,16 @@ public class UnsafeSlabArenaTests
     // ═══════════════════════════ Batch allocation ══════════════════════════
 
     [Fact]
-    public void AllocateBatch_ReturnsStartIndex_BumpsHighWater()
+    public void AllocateBatch_AppendsHandles_BumpsHighWater()
     {
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
 
-        var start = arena.AllocateBatch(5);
-        Assert.Equal(0, start);
+        var dest = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(5, dest);
+        Assert.Equal(5, dest.Count);
+        for (var i = 0; i < 5; i++)
+            Assert.Equal(i, dest[i].Index);
         Assert.Equal(5, ta.HighWater);
         Assert.Equal(5, ta.Count);
     }
@@ -500,23 +504,28 @@ public class UnsafeSlabArenaTests
 
         arena.Allocate();
         arena.Allocate();
-        var start = arena.AllocateBatch(3);
+        var dest = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(3, dest);
 
-        Assert.Equal(2, start);
+        Assert.Equal(3, dest.Count);
+        Assert.Equal(2, dest[0].Index);
+        Assert.Equal(3, dest[1].Index);
+        Assert.Equal(4, dest[2].Index);
         Assert.Equal(5, ta.HighWater);
         Assert.Equal(5, ta.Count);
     }
 
     [Fact]
-    public void AllocateBatch_ZeroCount_ReturnsCurrentHighWater()
+    public void AllocateBatch_ZeroCount_DoesNotAppendHandles()
     {
         var arena = CreateTinyArena();
         var ta = arena.GetTestAccessor();
 
         arena.Allocate();
-        var start = arena.AllocateBatch(0);
+        var dest = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(0, dest);
 
-        Assert.Equal(1, start);
+        Assert.Equal(0, dest.Count);
         Assert.Equal(1, ta.HighWater);
         Assert.Equal(1, ta.Count);
     }
@@ -527,7 +536,8 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
 
-        arena.AllocateBatch(6);
+        var dest = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(6, dest);
 
         Assert.NotNull(ta.Directory[0]);
         Assert.NotNull(ta.Directory[1]);
@@ -538,16 +548,17 @@ public class UnsafeSlabArenaTests
     {
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
 
-        var start = arena.AllocateBatch(8);
+        var dest = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(8, dest);
         for (var i = 0; i < 8; i++)
-            arena[new Handle<Int32Entry>(start + i)] = new Int32Entry { Value = i * 10 };
+            arena[dest[i]] = new Int32Entry { Value = i * 10 };
 
         for (var i = 0; i < 8; i++)
-            Assert.Equal(i * 10, arena[new Handle<Int32Entry>(start + i)].Value);
+            Assert.Equal(i * 10, arena[dest[i]].Value);
     }
 
     [Fact]
-    public void AllocateBatch_BypassesFreeList()
+    public void AllocateBatch_DrainsFreeList()
     {
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
@@ -556,10 +567,14 @@ public class UnsafeSlabArenaTests
         arena.Free(allocatedHandle);
         Assert.Equal(1, ta.FreeCount);
 
-        var start = arena.AllocateBatch(2);
-        Assert.Equal(1, start);
-        Assert.Equal(3, ta.HighWater);
-        Assert.Equal(1, ta.FreeCount);
+        var dest = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(2, dest);
+        Assert.Equal(2, dest.Count);
+        Assert.Equal(allocatedHandle, dest[0]);
+        Assert.Equal(1, dest[1].Index);
+        Assert.Equal(2, ta.HighWater);
+        Assert.Equal(2, ta.Count);
+        Assert.Equal(0, ta.FreeCount);
     }
 
     [Fact]
@@ -568,11 +583,18 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
 
-        var start1 = arena.AllocateBatch(3);
-        var start2 = arena.AllocateBatch(4);
+        // Free-list is empty — each batch is a contiguous bump run, and the second run follows the first.
+        var dest1 = new UnsafeList<Handle<Int32Entry>>();
+        var dest2 = new UnsafeList<Handle<Int32Entry>>();
+        arena.AllocateBatch(3, dest1);
+        arena.AllocateBatch(4, dest2);
 
-        Assert.Equal(0, start1);
-        Assert.Equal(3, start2);
+        Assert.Equal(3, dest1.Count);
+        Assert.Equal(4, dest2.Count);
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(i, dest1[i].Index);
+        for (var j = 0; j < 4; j++)
+            Assert.Equal(3 + j, dest2[j].Index);
         Assert.Equal(7, ta.HighWater);
         Assert.Equal(7, ta.Count);
     }
