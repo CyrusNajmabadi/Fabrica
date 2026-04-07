@@ -29,6 +29,13 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
 
     public GameWorldImage Produce(GameWorldImage current, CancellationToken cancellationToken)
     {
+        // Each tick:
+        //   1. Build the 3-job DAG (SpawnItems → BuildBelts → PlaceMachines).
+        //   2. Submit via JobScheduler (blocks until the DAG completes).
+        //   3. Run the merge pipeline: drain → rewrite + refcount → collect roots.
+        //   4. Build SnapshotSlice instances and increment root refcounts.
+        //   5. Reset per-worker buffers and remap tables for the next tick.
+
         var image = _imagePool.Rent();
         var tickState = _tickState;
 
