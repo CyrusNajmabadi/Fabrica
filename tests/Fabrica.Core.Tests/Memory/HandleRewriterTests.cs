@@ -19,8 +19,8 @@ public class HandleRewriterTests
         public readonly void EnumerateRefChildren<TVisitor>(ref TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
         {
-            if (node.Left.Index != -1) visitor.VisitRef(ref node.Left);
-            if (node.Right.Index != -1) visitor.VisitRef(ref node.Right);
+            if (node.Left != Handle<TreeNode>.None) visitor.VisitRef(ref node.Left);
+            if (node.Right != Handle<TreeNode>.None) visitor.VisitRef(ref node.Right);
         }
     }
 

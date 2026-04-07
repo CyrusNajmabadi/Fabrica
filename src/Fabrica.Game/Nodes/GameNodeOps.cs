@@ -29,8 +29,8 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
 
     readonly void INodeOps<MachineNode>.EnumerateRefChildren<TVisitor>(ref MachineNode node, ref TVisitor visitor)
     {
-        if (node.InputBelt.Index != -1) visitor.VisitRef(ref node.InputBelt);
-        if (node.OutputBelt.Index != -1) visitor.VisitRef(ref node.OutputBelt);
+        if (node.InputBelt != Handle<BeltSegmentNode>.None) visitor.VisitRef(ref node.InputBelt);
+        if (node.OutputBelt != Handle<BeltSegmentNode>.None) visitor.VisitRef(ref node.OutputBelt);
     }
 
     // ── BeltSegmentNode ─────────────────────────────────────────────────
@@ -43,8 +43,8 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
 
     readonly void INodeOps<BeltSegmentNode>.EnumerateRefChildren<TVisitor>(ref BeltSegmentNode node, ref TVisitor visitor)
     {
-        if (node.Next.Index != -1) visitor.VisitRef(ref node.Next);
-        if (node.Payload.Index != -1) visitor.VisitRef(ref node.Payload);
+        if (node.Next != Handle<BeltSegmentNode>.None) visitor.VisitRef(ref node.Next);
+        if (node.Payload != Handle<ItemNode>.None) visitor.VisitRef(ref node.Payload);
     }
 
     // ── ItemNode (leaf — no children) ───────────────────────────────────

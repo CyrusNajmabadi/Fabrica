@@ -62,7 +62,24 @@ public sealed class RemapTable
     /// Returns the global index for the given <paramref name="threadId"/> and <paramref name="localIndex"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Resolve(int threadId, int localIndex) => _remap[threadId][localIndex];
+    internal int Resolve(int threadId, int localIndex) => _remap[threadId][localIndex];
+
+    /// <summary>
+    /// If <paramref name="handle"/> is a local (tagged) handle, rewrites it to the corresponding
+    /// global handle using the stored mappings. Global and <see cref="Handle{T}.None"/> handles
+    /// are returned unchanged.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Handle<T> Remap<T>(Handle<T> handle) where T : struct
+    {
+        var index = handle.Index;
+        if (!TaggedHandle.IsLocal(index))
+            return handle;
+
+        var threadId = TaggedHandle.DecodeThreadId(index);
+        var localIndex = TaggedHandle.DecodeLocalIndex(index);
+        return new Handle<T>(this.Resolve(threadId, localIndex));
+    }
 
     /// <summary>
     /// Resets all per-thread mapping lists to empty. The backing arrays are retained so the next

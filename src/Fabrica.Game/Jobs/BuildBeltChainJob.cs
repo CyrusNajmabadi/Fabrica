@@ -40,9 +40,8 @@ internal sealed class BuildBeltChainJob : Job
         for (var i = ChainLength - 1; i >= 0; i--)
         {
             var handle = tlb.Allocate();
-            var localIndex = TaggedHandle.DecodeLocalIndex(handle.Index);
             var payload = i < items.Length ? items[i] : Handle<ItemNode>.None;
-            tlb[localIndex] = new BeltSegmentNode { Next = next, Payload = payload };
+            tlb[handle] = new BeltSegmentNode { Next = next, Payload = payload };
 
             if (i == ChainLength - 1) ChainTail = handle;
             next = handle;

@@ -48,8 +48,8 @@ public class JobMergePipelineTests : IDisposable
 
         readonly void INodeOps<ParentNode>.EnumerateRefChildren<TVisitor>(ref ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent.Index != -1) visitor.VisitRef(ref node.LeftParent);
-            if (node.ChildRef.Index != -1) visitor.VisitRef(ref node.ChildRef);
+            if (node.LeftParent != Handle<ParentNode>.None) visitor.VisitRef(ref node.LeftParent);
+            if (node.ChildRef != Handle<ChildNode>.None) visitor.VisitRef(ref node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateRefChildren<TVisitor>(ref ChildNode node, ref TVisitor visitor)

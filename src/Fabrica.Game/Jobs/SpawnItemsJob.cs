@@ -22,8 +22,7 @@ internal sealed class SpawnItemsJob : Job
         for (var i = 0; i < Count; i++)
         {
             var handle = tlb.Allocate();
-            var localIndex = TaggedHandle.DecodeLocalIndex(handle.Index);
-            tlb[localIndex] = new ItemNode { ItemTypeId = i % 4 };
+            tlb[handle] = new ItemNode { ItemTypeId = i % 4 };
             AllocatedItems[i] = handle;
         }
     }

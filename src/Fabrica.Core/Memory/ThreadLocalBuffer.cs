@@ -75,11 +75,20 @@ public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 102
     }
 
     /// <summary>
-    /// Returns a reference to the node at the given local index (not the encoded handle — use
-    /// <see cref="TaggedHandle.DecodeLocalIndex"/> first). Used by the owning worker to fill in
-    /// node data after <see cref="Allocate"/>, and by the coordinator to read during merge.
+    /// Returns a reference to the node for the given handle (which must be a local handle
+    /// belonging to this buffer). Decodes the local index internally.
     /// </summary>
-    public ref T this[int localIndex]
+    public ref T this[Handle<T> handle]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
+    }
+
+    /// <summary>
+    /// Returns a reference to the node at the given raw local index. Used by the coordinator
+    /// to read during merge (iterating <see cref="WrittenSpan"/> by ordinal).
+    /// </summary>
+    internal ref T this[int localIndex]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => ref _list[localIndex];

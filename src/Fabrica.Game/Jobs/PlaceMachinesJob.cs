@@ -29,8 +29,7 @@ internal sealed class PlaceMachinesJob : Job
     {
         var tlb = MachineTlbs![context.WorkerIndex];
         var handle = tlb.Allocate(isRoot: true);
-        var localIndex = TaggedHandle.DecodeLocalIndex(handle.Index);
-        tlb[localIndex] = new MachineNode
+        tlb[handle] = new MachineNode
         {
             InputBelt = _beltJob!.ChainHead,
             OutputBelt = _beltJob.ChainTail,
