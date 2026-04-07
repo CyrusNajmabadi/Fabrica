@@ -25,6 +25,7 @@ public abstract class GlobalNodeStore
     internal void SetMergeActive(bool value)
     {
 #if DEBUG
+        Debug.Assert(_isMergeActive != value, $"Expected IsMergeActive to be {!value} but was {value}.");
         _isMergeActive = value;
 #endif
     }
