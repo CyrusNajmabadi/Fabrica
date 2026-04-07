@@ -16,16 +16,14 @@ namespace Fabrica.Game;
 /// </summary>
 public readonly struct GameProducer : IProducer<GameWorldImage>
 {
-    private readonly ObjectPool<GameWorldImage, GameWorldImage.Allocator> _imagePool;
+    private readonly ObjectPool<GameWorldImage, GameWorldImage.Allocator> _imagePool = new(initialCapacity: 8);
     private readonly JobScheduler _scheduler;
     private readonly GameTickState _tickState;
 
     internal GameProducer(
-        ObjectPool<GameWorldImage, GameWorldImage.Allocator> imagePool,
         JobScheduler scheduler,
         GameTickState tickState)
     {
-        _imagePool = imagePool;
         _scheduler = scheduler;
         _tickState = tickState;
     }

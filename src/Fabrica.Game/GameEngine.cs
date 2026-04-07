@@ -1,6 +1,5 @@
 using Fabrica.Core.Collections;
 using Fabrica.Core.Jobs;
-using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
 using Fabrica.Pipeline;
 using Fabrica.Pipeline.Hosting;
@@ -8,8 +7,17 @@ using Fabrica.Pipeline.Hosting;
 namespace Fabrica.Game;
 
 /// <summary>
-/// Factory for the game pipeline. Creates all stores, TLBs, worker threads, and returns a fully
+/// Factory for the game pipeline. Creates all shared infrastructure and returns a fully
 /// wired <see cref="Host{TPayload,TProducer,TConsumer,TClock,TWaiter}"/> ready to run.
+///
+/// SHARED STATE
+///   <see cref="WorkerPool"/>, <see cref="JobScheduler"/>, and <see cref="GameTickState"/> are
+///   created here rather than inside the producer because the future consumer/renderer will
+///   share them: the consumer reads node data from the <see cref="GameTickState"/>'s
+///   <see cref="Memory.GlobalNodeStore{TNode,TNodeOps}"/> instances to render snapshots, and
+///   <see cref="GameProducer.ReleaseResources"/> (called by the pipeline when the consumer
+///   retires a snapshot) decrements root refcounts on those same stores. The worker pool may
+///   also be shared for read-only render jobs in the future.
 /// </summary>
 public static class GameEngine
 {
@@ -26,14 +34,13 @@ public static class GameEngine
         where TWaiter : struct, IWaiter
     {
         var queue = new ProducerConsumerQueue<PipelineEntry<GameWorldImage>>();
-        var imagePool = new ObjectPool<GameWorldImage, GameWorldImage.Allocator>(initialCapacity: 8);
         var shared = new SharedPipelineState<GameWorldImage>(queue);
 
         var workerPool = new WorkerPool(simulationWorkerCount);
         var scheduler = new JobScheduler(workerPool);
         var tickState = new GameTickState(workerPool.WorkerCount);
 
-        var producer = new GameProducer(imagePool, scheduler, tickState);
+        var producer = new GameProducer(scheduler, tickState);
 
         return new Host<GameWorldImage, GameProducer, TConsumer, TClock, TWaiter>(
             new ProductionLoop<GameWorldImage, GameProducer, TClock, TWaiter>(
