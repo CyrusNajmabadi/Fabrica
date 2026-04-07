@@ -123,12 +123,12 @@ public class JobMergePipelineTests : IDisposable
 
     // ── Shared test infrastructure ───────────────────────────────────────
 
-    private readonly WorkerPool _pool = new(workerCount: 4);
+    private readonly WorkerPool _pool = new(workerCount: 4, coordinatorCount: 1);
 
     public void Dispose() => _pool.Dispose();
 
     private static (GlobalNodeStore<ParentNode, TestNodeOps> ParentStore, GlobalNodeStore<ChildNode, TestNodeOps> ChildStore)
-        CreateStores(int workerCount = 4)
+        CreateStores(int workerCount)
     {
         var childStore = new GlobalNodeStore<ChildNode, TestNodeOps>(workerCount);
         var parentStore = new GlobalNodeStore<ParentNode, TestNodeOps>(workerCount);
@@ -228,8 +228,7 @@ public class JobMergePipelineTests : IDisposable
     [Fact]
     public void EndToEnd_JobDAG_MergeAndValidate()
     {
-        const int WorkerCount = 4;
-        var (parentStore, childStore) = CreateStores(WorkerCount);
+        var (parentStore, childStore) = CreateStores(_pool.WorkerCount);
 
         // Build job DAG: childJob0 and childJob1 must both complete before parentJob runs.
         var childJob0 = new CreateChildNodesJob
@@ -322,8 +321,7 @@ public class JobMergePipelineTests : IDisposable
     [Fact]
     public void WorkStealing_ProducesValidRemapTables()
     {
-        const int WorkerCount = 4;
-        var (_, childStore) = CreateStores(WorkerCount);
+        var (_, childStore) = CreateStores(_pool.WorkerCount);
 
         // Submit many small jobs to encourage work-stealing
         var jobs = new CreateChildNodesJob[8];

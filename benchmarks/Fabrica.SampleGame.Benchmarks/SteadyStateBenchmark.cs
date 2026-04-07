@@ -21,7 +21,7 @@ public class SteadyStateBenchmark
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _pool = new WorkerPool(workerCount: 4);
+        _pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         _scheduler = new JobScheduler(_pool);
         _tickState = new GameTickState(_pool.WorkerCount);
 

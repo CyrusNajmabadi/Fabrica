@@ -14,7 +14,7 @@ namespace Fabrica.SampleGame.Tests;
 /// </summary>
 public class GamePipelineTests : IDisposable
 {
-    private const int WorkerCount = 4;
+    private const int BackgroundWorkerCount = 4;
     private const int ItemCount = 4;
     private const int ChainLength = 4;
 
@@ -22,19 +22,20 @@ public class GamePipelineTests : IDisposable
     private const int BeltTypeId = 1;
     private const int ItemTypeId = 2;
 
-    private readonly WorkerPool _pool = new(workerCount: WorkerCount);
+    private readonly WorkerPool _pool = new(workerCount: BackgroundWorkerCount, coordinatorCount: 1);
 
     public void Dispose() => _pool.Dispose();
 
-    private static (
+    private (
         GlobalNodeStore<MachineNode, GameNodeOps> MachineStore,
         GlobalNodeStore<BeltSegmentNode, GameNodeOps> BeltStore,
         GlobalNodeStore<ItemNode, GameNodeOps> ItemStore)
         CreateStores()
     {
-        var machineStore = new GlobalNodeStore<MachineNode, GameNodeOps>(WorkerCount);
-        var beltStore = new GlobalNodeStore<BeltSegmentNode, GameNodeOps>(WorkerCount);
-        var itemStore = new GlobalNodeStore<ItemNode, GameNodeOps>(WorkerCount);
+        var workerCount = _pool.WorkerCount;
+        var machineStore = new GlobalNodeStore<MachineNode, GameNodeOps>(workerCount);
+        var beltStore = new GlobalNodeStore<BeltSegmentNode, GameNodeOps>(workerCount);
+        var itemStore = new GlobalNodeStore<ItemNode, GameNodeOps>(workerCount);
 
         var ops = new GameNodeOps
         {
@@ -101,7 +102,7 @@ public class GamePipelineTests : IDisposable
     [Fact]
     public void FullPipeline_JobDag_Merge_Validate_Cleanup()
     {
-        var (machineStore, beltStore, itemStore) = CreateStores();
+        var (machineStore, beltStore, itemStore) = this.CreateStores();
         var scheduler = new JobScheduler(_pool);
         var schedulerAccessor = scheduler.GetTestAccessor();
 

@@ -18,7 +18,7 @@ internal static class StressTestHelpers
         CancellationToken cancellationToken,
         int renderDelayMilliseconds)
     {
-        using var workerPool = new WorkerPool(workerCount);
+        using var workerPool = new WorkerPool(workerCount, coordinatorCount: 1);
         var scheduler = new JobScheduler(workerPool);
 
         var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
@@ -42,7 +42,7 @@ internal static class StressTestHelpers
         int workerCount,
         CancellationToken cancellationToken)
     {
-        using var workerPool = new WorkerPool(workerCount);
+        using var workerPool = new WorkerPool(workerCount, coordinatorCount: 1);
         var scheduler = new JobScheduler(workerPool);
 
         var queue = new ProducerConsumerQueue<PipelineEntry<WorldImage>>();
