@@ -110,6 +110,7 @@ public class GamePipelineTests : IDisposable
     {
         var (machineStore, beltStore, itemStore) = CreateStores();
         var scheduler = new JobScheduler(_pool);
+        var schedulerAccessor = scheduler.GetTestAccessor();
 
         var machineTlbs = CreateTlbs<MachineNode>(WorkerCount);
         var beltTlbs = CreateTlbs<BeltSegmentNode>(WorkerCount);
@@ -125,7 +126,7 @@ public class GamePipelineTests : IDisposable
         var beltJob = new BuildBeltChainJob { BeltTlbs = beltTlbs, SpawnJob = spawnJob, ChainLength = ChainLength };
         _ = new PlaceMachinesJob { MachineTlbs = machineTlbs, BeltJob = beltJob };
 
-        scheduler.Submit(spawnJob);
+        Assert.True(schedulerAccessor.Submit(spawnJob));
 
         // ── Merge pipeline ───────────────────────────────────────────────
 

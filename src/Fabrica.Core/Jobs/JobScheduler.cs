@@ -35,13 +35,12 @@ public sealed class JobScheduler(WorkerPool pool)
 
     /// <summary>
     /// Submits a root job and blocks until the entire DAG (including sub-jobs and dependents)
-    /// completes. Returns <c>true</c> if completed, <c>false</c> if the timeout expired. Pass
-    /// <c>-1</c> for no timeout.
+    /// completes.
     /// </summary>
-    public bool Submit(Job job, int millisecondsTimeout = -1)
+    public void Submit(Job job)
     {
         this.InjectJob(job);
-        return this.WaitForCompletion(millisecondsTimeout);
+        this.WaitForCompletion(millisecondsTimeout: -1);
     }
 
     // ── Called by WorkerPool execution infrastructure ────────────────────────
@@ -100,6 +99,16 @@ public sealed class JobScheduler(WorkerPool pool)
     internal readonly struct TestAccessor(JobScheduler scheduler)
     {
         public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
+
+        /// <summary>
+        /// Submits a root job and blocks until the entire DAG completes or the timeout expires.
+        /// Returns <c>true</c> if completed, <c>false</c> on timeout.
+        /// </summary>
+        public bool Submit(Job job, int millisecondsTimeout = 5000)
+        {
+            scheduler.InjectJob(job);
+            return scheduler.WaitForCompletion(millisecondsTimeout);
+        }
 
         /// <summary>
         /// Injects a job without waiting for completion. Allows tests to submit multiple

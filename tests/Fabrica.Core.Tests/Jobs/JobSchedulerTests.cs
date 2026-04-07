@@ -37,9 +37,10 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 2);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var job = new TestJob();
-        Assert.True(scheduler.Submit(job, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(job));
 
         Assert.True(job.Executed);
     }
@@ -49,6 +50,7 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 2);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var capturedIndex = -1;
         var job = new TestJob
@@ -56,7 +58,7 @@ public class JobSchedulerTests
             OnExecute = ctx => capturedIndex = ctx.WorkerIndex,
         };
 
-        Assert.True(scheduler.Submit(job, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(job));
 
         Assert.True(capturedIndex >= 0);
     }
@@ -68,6 +70,7 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 2);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var order = new ConcurrentQueue<string>();
 
@@ -78,7 +81,7 @@ public class JobSchedulerTests
         jobA.AddDependent(jobB);
         jobB.AddDependent(jobC);
 
-        Assert.True(scheduler.Submit(jobA, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(jobA));
 
         Assert.Equal(["A", "B", "C"], [.. order]);
     }
@@ -90,6 +93,7 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 4);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var order = new ConcurrentQueue<string>();
 
@@ -103,7 +107,7 @@ public class JobSchedulerTests
         left.AddDependent(join);
         right.AddDependent(join);
 
-        Assert.True(scheduler.Submit(root, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(root));
 
         var result = order.ToArray();
         Assert.Equal(4, result.Length);
@@ -120,6 +124,7 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 4);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var joinExecutionCount = 0;
 
@@ -136,7 +141,7 @@ public class JobSchedulerTests
         left.AddDependent(join);
         right.AddDependent(join);
 
-        Assert.True(scheduler.Submit(root, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(root));
 
         Assert.Equal(1, joinExecutionCount);
     }
@@ -148,6 +153,7 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 2);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var subJobExecuted = false;
         var subJob = new TestJob
@@ -160,7 +166,7 @@ public class JobSchedulerTests
             OnExecute = ctx => ctx.Enqueue(subJob),
         };
 
-        Assert.True(scheduler.Submit(parentJob, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(parentJob));
 
         Assert.True(parentJob.Executed);
         Assert.True(subJobExecuted);
@@ -173,11 +179,12 @@ public class JobSchedulerTests
     {
         using var pool = new WorkerPool(workerCount: 2);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var job = new TestJob();
-        Assert.True(scheduler.Submit(job, millisecondsTimeout: 5000));
+        Assert.True(accessor.Submit(job));
 
-        Assert.Equal(0, scheduler.GetTestAccessor().OutstandingJobs);
+        Assert.Equal(0, accessor.OutstandingJobs);
     }
 
     // ── Pool integration ────────────────────────────────────────────────────
@@ -237,6 +244,7 @@ public class JobSchedulerTests
         const int Depth = 100;
         using var pool = new WorkerPool(workerCount: 4);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var order = new ConcurrentQueue<int>();
 
@@ -253,7 +261,7 @@ public class JobSchedulerTests
         for (var i = 0; i < Depth - 1; i++)
             jobs[i].AddDependent(jobs[i + 1]);
 
-        Assert.True(scheduler.Submit(jobs[0], millisecondsTimeout: 10000));
+        Assert.True(accessor.Submit(jobs[0], millisecondsTimeout: 10000));
 
         var result = order.ToArray();
         Assert.Equal(Depth, result.Length);
@@ -267,6 +275,7 @@ public class JobSchedulerTests
         const int FanWidth = 50;
         using var pool = new WorkerPool(workerCount: 4);
         var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
 
         var executionCount = 0;
 
@@ -282,7 +291,7 @@ public class JobSchedulerTests
             root.AddDependent(child);
             child.AddDependent(join);
         }
-        Assert.True(scheduler.Submit(root, millisecondsTimeout: 10000));
+        Assert.True(accessor.Submit(root, millisecondsTimeout: 10000));
 
         Assert.Equal(FanWidth, executionCount);
     }
