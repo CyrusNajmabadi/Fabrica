@@ -23,11 +23,11 @@ internal enum JobState : byte
 ///   2. <b>Configure</b> — The caller sets subclass-specific input fields and wires DAG
 ///      dependencies via <see cref="AddDependent"/> or <see cref="DependsOn"/>.
 ///   3. <b>Submit</b> — The job is pushed onto a <see cref="Collections.WorkStealingDeque{T}"/>
-///      via <see cref="JobScheduler.Submit"/> or <see cref="WorkerContext.Enqueue"/>.
-///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler passes the
-///      executing thread's <see cref="WorkerContext"/> to <see cref="Execute"/>, giving the job
-///      access to the thread's deque for enqueuing sub-jobs. After execution, the scheduler
-///      decrements all dependents' dependency counts, enqueuing any that hit zero.
+///      via <see cref="JobScheduler.Submit"/>.
+///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler passes a
+///      <see cref="JobContext"/> to <see cref="Execute"/>, giving the job its worker identity
+///      for indexing into per-worker buffers. After execution, the scheduler decrements all
+///      dependents' dependency counts, enqueuing any that hit zero.
 ///   5. <b>Sweep</b> — After the scheduler's outstanding job count reaches zero, the coordinator
 ///      walks the DAG and calls <see cref="Reset"/> on each job, then returns it to its pool.
 ///
@@ -46,13 +46,11 @@ internal enum JobState : byte
 ///   <see cref="Execute"/> and <see cref="Reset"/> are virtual calls. At typical job granularity
 ///   (microseconds to milliseconds of work per job), the ~2ns vtable lookup is negligible.
 ///
-/// FUTURE: SIMPLIFIED PUBLIC API
-///   Higher layers should see only <see cref="JobScheduler.Submit"/> for the root job. Child jobs
-///   created during <see cref="Execute"/> should be enqueued through a protected helper on this
-///   base class (e.g. <c>EnqueueChild(Job)</c>) rather than reaching through
-///   <see cref="WorkerContext"/>. This is possible because <see cref="Scheduler"/> is available on
-///   the base type for the duration of <see cref="Execute"/>. The goal is that derived job classes
-///   never interact with <see cref="WorkerContext"/> or scheduling internals directly.
+/// FUTURE: SUB-JOB ENQUEUING
+///   If jobs need to spawn sub-jobs during <see cref="Execute"/>, a protected helper on this
+///   base class (e.g. <c>EnqueueChild(Job)</c>) can route through the internal
+///   <see cref="JobContext.WorkerContext"/> without exposing scheduling internals to derived
+///   classes.
 /// </summary>
 public abstract class Job
 {
@@ -122,10 +120,9 @@ public abstract class Job
 
     /// <summary>
     /// Performs the job's work. Called by a worker thread. The <paramref name="context"/> provides
-    /// access to the executing thread's deque (for enqueuing sub-jobs via
-    /// <see cref="WorkerContext.Enqueue"/>) and worker index.
+    /// the executing worker's identity for indexing into per-worker buffers.
     /// </summary>
-    protected internal abstract void Execute(WorkerContext context);
+    protected internal abstract void Execute(JobContext context);
 
     /// <summary>
     /// Resets this job's state for pool reuse. Called by the coordinator during the DAG sweep

@@ -25,7 +25,7 @@ internal sealed class PlaceMachinesJob : Job
         }
     }
 
-    protected override void Execute(WorkerContext context)
+    protected override void Execute(JobContext context)
     {
         var tlb = MachineTlbs![context.WorkerIndex];
         var handle = tlb.Allocate(isRoot: true);

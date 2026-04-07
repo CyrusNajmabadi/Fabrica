@@ -203,7 +203,7 @@ public sealed class WorkerPool : IDisposable
         job.State = JobState.Executing;
 #endif
 
-        job.Execute(context);
+        job.Execute(new JobContext(context));
 
 #if DEBUG
         job.State = JobState.Completed;

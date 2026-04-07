@@ -12,9 +12,9 @@ public class JobSchedulerTests
     {
         public bool Executed { get; set; }
         public int ExecutedOnWorker { get; set; } = -1;
-        public Action<WorkerContext>? OnExecute { get; set; }
+        public Action<JobContext>? OnExecute { get; set; }
 
-        protected internal override void Execute(WorkerContext context)
+        protected internal override void Execute(JobContext context)
         {
             this.ExecutedOnWorker = context.WorkerIndex;
             this.Executed = true;
@@ -163,7 +163,7 @@ public class JobSchedulerTests
 
         var parentJob = new TestJob
         {
-            OnExecute = ctx => ctx.Enqueue(subJob),
+            OnExecute = ctx => ctx.WorkerContext.Enqueue(subJob),
         };
 
         Assert.True(accessor.Submit(parentJob));

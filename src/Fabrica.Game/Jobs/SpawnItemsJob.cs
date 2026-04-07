@@ -15,7 +15,7 @@ internal sealed class SpawnItemsJob : Job
     internal int Count;
     internal Handle<ItemNode>[]? AllocatedItems;
 
-    protected override void Execute(WorkerContext context)
+    protected override void Execute(JobContext context)
     {
         var tlb = ItemTlbs![context.WorkerIndex];
         AllocatedItems = new Handle<ItemNode>[Count];

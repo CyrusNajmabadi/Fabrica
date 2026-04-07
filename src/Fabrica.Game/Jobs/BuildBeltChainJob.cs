@@ -30,7 +30,7 @@ internal sealed class BuildBeltChainJob : Job
     internal Handle<BeltSegmentNode> ChainHead;
     internal Handle<BeltSegmentNode> ChainTail;
 
-    protected override void Execute(WorkerContext context)
+    protected override void Execute(JobContext context)
     {
         var tlb = BeltTlbs![context.WorkerIndex];
         var items = _spawnJob!.AllocatedItems!;
