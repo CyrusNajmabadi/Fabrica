@@ -55,6 +55,21 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   all TLBs after merge, then feeds them into `IncrementRoots`. Verified with post-Phase2b invariant test: roots have
   RC=0 before increment, non-roots referenced by others have RC>0.
 
+## Engine / Architecture — API Surface Cleanup
+
+- [ ] **Make `default(Handle<T>)` invalid** — reserve index 0 as an invalid sentinel so that `default(Handle<T>)`
+  (from uninitialized fields, default struct values, or freshly allocated arrays) is never mistaken for a valid
+  handle. All arena/TLB allocation would start at index 1. This prevents a class of bugs where a forgotten
+  initialization silently produces a handle that points at a real node
+- [ ] **Hide merge pipeline internals behind SnapshotSlice** — `DrainBuffers`, `RewriteAndIncrementRefCounts`,
+  `CollectAndRemapRoots`, `IncrementRefCount`, `DecrementRefCount`, `IncrementRoots`, `DecrementRoots`, and
+  `ResetMergeState` are currently public on `GlobalNodeStore`. The game layer should only need: (1) `ThreadLocalBuffers`
+  to hand to jobs, (2) a single "merge and produce slices" operation, and (3) `SnapshotSlice.Release()` when done.
+  The `MergeCoordinator` should own the full drain→rewrite→build→reset sequence. The main design challenge is the
+  cross-type refcount visitor (`GameRefcountVisitor` / `GameNodeOps`) that dispatches `IncrementRefCount` /
+  `DecrementRefCount` across stores by type — this needs a clean injection mechanism so the game layer doesn't
+  directly call into store refcount internals
+
 ## Engine / Architecture — Coordinator Merge Optimizations
 
 - [ ] **Fine-grained merge overlap with production jobs** — the baseline coordinator merge waits for the entire production
