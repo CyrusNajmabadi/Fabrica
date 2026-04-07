@@ -12,7 +12,7 @@ public class ProducerConsumerQueueSpscWithCleanupStressTest
     public void Stress_MultiThreaded_SPSC_WithCleanup()
     {
         const int EntryCount = 100_000;
-        var queue = new ProducerConsumerQueue<long>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<long>.TestAccessor.Create(SmallSlabLength);
         var consumed = new long[EntryCount];
         var allDone = new ManualResetEventSlim(false);
 

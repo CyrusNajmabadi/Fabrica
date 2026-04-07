@@ -22,7 +22,7 @@ public class ProducerConsumerQueueSingleThreadStressTests
     [Fact]
     public void Stress_HighVolume_SingleThreaded_VaryingBatchSizes()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var handler = new TrackingCleanupHandler();
         var batchSizes = new[] { 1, 2, 3, 4, 5, 7, 8, 9, 13, 16, 17, 25, 32, 33 };
         var totalProduced = 0;
@@ -59,7 +59,7 @@ public class ProducerConsumerQueueSingleThreadStressTests
     [Fact]
     public void Stress_HighVolume_SingleThreaded_ConsumerLags()
     {
-        var queue = new ProducerConsumerQueue<long>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<long>.TestAccessor.Create(SmallSlabLength);
         var handler = new LongCountingCleanupHandler();
         var totalConsumed = 0L;
         var totalProduced = 0L;

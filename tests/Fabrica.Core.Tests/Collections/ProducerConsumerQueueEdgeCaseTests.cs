@@ -28,7 +28,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void InternalConstructor_UsesProvidedSlabLength()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
         Assert.Equal(SmallSlabLength, accessor.SlabLength);
     }
@@ -38,7 +38,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerReadsPartialFirstSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         queue.ProducerAppend("a");
         queue.ProducerAppend("b");
@@ -52,7 +52,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerReadsExactlyOneFullSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength; i++)
             queue.ProducerAppend($"e{i}");
@@ -68,7 +68,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerReadsOverlappingIntoSecondSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength + 2; i++)
             queue.ProducerAppend($"e{i}");
@@ -82,7 +82,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerReadsExactlyTwoFullSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = SmallSlabLength * 2;
 
         for (var i = 0; i < total; i++)
@@ -99,7 +99,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerReadsSpanningThreeSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = (SmallSlabLength * 2) + 2;
 
         for (var i = 0; i < total; i++)
@@ -114,7 +114,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerReadsSpanningFiveSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = (SmallSlabLength * 4) + 3;
 
         for (var i = 0; i < total; i++)
@@ -138,7 +138,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Segment_Indexer_FirstEntryOfEachSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = SmallSlabLength * 3;
 
         for (var i = 0; i < total; i++)
@@ -153,7 +153,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Segment_Indexer_LastEntryOfEachSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = SmallSlabLength * 3;
 
         for (var i = 0; i < total; i++)
@@ -168,7 +168,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Segment_Enumerator_AcrossThreeSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = (SmallSlabLength * 3) + 1;
 
         for (var i = 0; i < total; i++)
@@ -189,7 +189,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerAdvancesPartialSlab_ThenAcquiresAcrossSlabBoundary()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < 2; i++)
             queue.ProducerAppend($"batch1-{i}");
@@ -210,7 +210,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerAdvancesAtSlabBoundary_NextAcquireStartsOnNewSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength; i++)
             queue.ProducerAppend($"first-{i}");
@@ -232,7 +232,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_DoesNotRecycleWhenNextSlabIsNull()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength; i++)
@@ -252,7 +252,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_RecyclesWhenNextSlabExists()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength + 1; i++)
@@ -272,7 +272,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_RecyclesMultipleSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
         var total = (SmallSlabLength * 3) + 1;
 
@@ -292,7 +292,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_DeferredRecycle_EventuallyRecyclesWhenSlabCompletes()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength - 1; i++)
@@ -323,7 +323,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void RecycledSlabs_AreReusedInOrder()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < (SmallSlabLength * 2) + 1; i++)
@@ -352,7 +352,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ManySmallBatches_AcrossMultipleSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var handler = new TrackingCleanupHandler();
         var totalProduced = 0;
 
@@ -382,7 +382,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void AlternatingProduceAndConsume_NeverLosesData()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var total = SmallSlabLength * 5;
 
         for (var i = 0; i < total; i++)
@@ -404,7 +404,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerAcquiresSegment_StartingMidSlab_SpanningMultipleSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < 2; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -433,7 +433,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Segment_Indexer_AcrossFourSlabs_StartingMidSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         queue.ProducerAppend("skip");
         var skip = queue.ConsumerAcquire();
@@ -458,7 +458,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentStartsAtLastSlotOfSlab_SpansIntoNextSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength - 1; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -483,7 +483,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentStartsAtLastSlotOfSlab_SpansFourSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength - 1; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -512,7 +512,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentStartsAtLastSlotOfSlab_EndsAtExactSlabBoundary()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength - 1; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -534,7 +534,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentStartsAtLastSlotOfSlab_SingleItem()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength - 1; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -554,7 +554,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentStartsMidSecondSlab_SpansMultipleSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength + 1; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -583,7 +583,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentStartsAtLastSlotOfSecondSlab_SpansMultipleSlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < (SmallSlabLength * 2) - 1; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -607,7 +607,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentEndsAtExactSlabBoundary_NoNextSlabExists()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength; i++)
@@ -623,7 +623,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentEndsAtExactSlabBoundary_NextSlabExists()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         queue.ProducerAppend("skip");
@@ -644,7 +644,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void SegmentEndsExactlyAtMultiSlabBoundary_NoNextSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         var total = SmallSlabLength * 2;
@@ -664,7 +664,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void AdvanceAtExactSlabBoundary_WithNextSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength + 1; i++)
@@ -682,7 +682,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void AdvanceAtExactSlabBoundary_WithoutNextSlab()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength; i++)
@@ -709,7 +709,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [InlineData(3)]
     public void SegmentStartAtEveryOffset_SpansFourPlusSlabs_Indexer(int consumeFirst)
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < consumeFirst; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -738,7 +738,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [InlineData(3)]
     public void SegmentStartAtEveryOffset_SpansFourPlusSlabs_Enumerator(int consumeFirst)
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < consumeFirst; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -775,7 +775,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [InlineData(3, 13)]
     public void StartOffset_EndCount_Combinations(int consumeFirst, int produceCount)
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < consumeFirst; i++)
             queue.ProducerAppend($"skip-{i}");
@@ -806,7 +806,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_AtSlabBoundary_WithNextSlab_RecyclesImmediately()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength + 1; i++)
@@ -826,7 +826,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_AtSlabBoundary_WithoutNextSlab_DoesNotRecycle()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength; i++)
@@ -846,7 +846,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_FourSlabs_RecyclesThree()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
         var total = (SmallSlabLength * 4) + 1;
 
@@ -867,7 +867,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_SequentialRounds_RecyclesAndReusesAcrossRounds()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
         var handler = new TrackingCleanupHandler();
 
@@ -911,9 +911,9 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_ExactBoundary_WithNextExisting_DoesNotRecycle()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
-        var queue2 = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue2 = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor2 = queue2.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength; i++)
@@ -943,7 +943,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_CalledWithNothingToClean_IsNoOp()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var handler = new TrackingCleanupHandler();
 
         queue.ProducerCleanup(ref handler);
@@ -953,7 +953,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_CalledTwice_SecondCallIsNoOp()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         queue.ProducerAppend("a");
         var segment = queue.ConsumerAcquire();
@@ -970,7 +970,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void RecycledSlab_HasZeroedEntries()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var i = 0; i < SmallSlabLength + 1; i++)
@@ -995,7 +995,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerSlab_AdvancesMultipleSlabs_WhenFarBehind()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         var total = SmallSlabLength * 5;
         for (var i = 0; i < total; i++)
@@ -1016,7 +1016,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ConsumerSlab_AdvancesMultipleSlabs_AcrossMultipleAcquireCycles()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         var total = SmallSlabLength * 4;
         for (var i = 0; i < total; i++)
@@ -1039,7 +1039,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void ProduceAcquireProduceMore_ThenAdvance_ThenAcquireAgain()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
 
         for (var i = 0; i < SmallSlabLength + 2; i++)
             queue.ProducerAppend($"batch1-{i}");
@@ -1061,7 +1061,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_DeferredAcrossManySlabs()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         var total = (SmallSlabLength * 6) + 2;
@@ -1081,7 +1081,7 @@ public class ProducerConsumerQueueEdgeCaseTests
     [Fact]
     public void Cleanup_Delayed_ProducerAppendsContinue()
     {
-        var queue = new ProducerConsumerQueue<string>(SmallSlabLength);
+        var queue = ProducerConsumerQueue<string>.TestAccessor.Create(SmallSlabLength);
         var accessor = queue.GetTestAccessor();
 
         for (var round = 0; round < 5; round++)

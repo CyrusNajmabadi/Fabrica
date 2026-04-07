@@ -90,9 +90,7 @@ public sealed partial class ProducerConsumerQueue<T>
     {
     }
 
-    /// <summary>Creates a <see cref="ProducerConsumerQueue{T}"/> with a caller-specified slab length. Intended for tests that need
-    /// small slabs to easily exercise multi-slab edge cases.</summary>
-    internal ProducerConsumerQueue(int slabLength)
+    private ProducerConsumerQueue(int slabLength)
     {
         _slabLength = slabLength;
         var slab = this.AllocateSlab();
