@@ -8,7 +8,7 @@ namespace Fabrica.Core.Memory;
 /// Type-specific phases (rewrite + refcount, root collection, slice building) remain on each
 /// <see cref="GlobalNodeStore{TNode,TNodeOps}"/> because they need the concrete node and ops types.
 /// </summary>
-public sealed class MergeCoordinator(IMergeParticipant[] stores)
+public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
 {
     /// <summary>
     /// Drains all stores' thread-local buffers into their arenas (merge phase 1). All drains

@@ -5,6 +5,17 @@ using System.Runtime.InteropServices;
 namespace Fabrica.Core.Memory;
 
 /// <summary>
+/// Non-generic base for <see cref="GlobalNodeStore{TNode,TNodeOps}"/>. Lets
+/// <see cref="MergeCoordinator"/> orchestrate drain and reset across stores
+/// without knowing the concrete node types.
+/// </summary>
+public abstract class GlobalNodeStore
+{
+    internal abstract void Drain();
+    public abstract void ResetMergeState();
+}
+
+/// <summary>
 /// Bundles the three components needed to fully manage a single node type's lifecycle: storage
 /// (<see cref="UnsafeSlabArena{T}"/>), reference counts (<see cref="RefCountTable{T}"/>), and
 /// node operations (<typeparamref name="TNodeOps"/>). One instance per node type, shared
@@ -42,7 +53,7 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-public sealed class GlobalNodeStore<TNode, TNodeOps> : IMergeParticipant
+public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
@@ -280,13 +291,13 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : IMergeParticipant
         }
     }
 
-    void IMergeParticipant.Drain() => this.DrainBuffers();
+    internal override void Drain() => this.DrainBuffers();
 
     /// <summary>
     /// Resets all per-tick merge scratch state (thread-local buffers and remap table) so they
     /// are clean for the next tick. Backing arrays are retained for zero steady-state allocation.
     /// </summary>
-    public void ResetMergeState()
+    public override void ResetMergeState()
     {
         foreach (var threadLocalBuffer in _threadLocalBuffers)
             threadLocalBuffer.Reset();
