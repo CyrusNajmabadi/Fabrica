@@ -1,6 +1,6 @@
-using Fabrica.Core.Collections;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Threading;
+using Fabrica.Core.Threading.Queues;
 using Fabrica.Pipeline;
 using Fabrica.Pipeline.Hosting;
 

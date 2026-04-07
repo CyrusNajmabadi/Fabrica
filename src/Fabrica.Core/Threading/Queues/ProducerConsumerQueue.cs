@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Fabrica.Core.Collections;
+namespace Fabrica.Core.Threading.Queues;
 
 /// <summary>
 /// Lock-free single-producer / single-consumer (SPSC) append-only queue backed by a linked chain of contiguous array segments

@@ -1,6 +1,4 @@
-using Fabrica.Core.Threading;
-
-namespace Fabrica.Core.Collections;
+namespace Fabrica.Core.Threading.Queues;
 
 /// <summary>
 /// Lock-free work-stealing deque (Chase-Lev algorithm). Designed for job-pool schedulers where one owner thread pushes and

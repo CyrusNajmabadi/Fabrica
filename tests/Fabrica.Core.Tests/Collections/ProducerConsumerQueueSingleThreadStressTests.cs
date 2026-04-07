@@ -1,4 +1,4 @@
-using Fabrica.Core.Collections;
+using Fabrica.Core.Threading.Queues;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Collections;

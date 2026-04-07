@@ -1,6 +1,6 @@
 using Fabrica.Core.Memory;
 
-namespace Fabrica.Core.Collections;
+namespace Fabrica.Core.Threading.Queues;
 
 public sealed partial class ProducerConsumerQueue<T>
 {

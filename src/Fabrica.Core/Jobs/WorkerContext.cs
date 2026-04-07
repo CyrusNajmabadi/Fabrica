@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Fabrica.Core.Collections;
+using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
 

@@ -1,6 +1,6 @@
-using Fabrica.Core.Collections;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
+using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Pipeline.Tests.Helpers;
 

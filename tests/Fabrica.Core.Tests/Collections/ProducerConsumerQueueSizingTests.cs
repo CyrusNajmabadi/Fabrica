@@ -1,6 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using Fabrica.Core.Collections;
+using Fabrica.Core.Threading.Queues;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Collections;
