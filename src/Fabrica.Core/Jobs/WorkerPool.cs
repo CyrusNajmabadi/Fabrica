@@ -5,29 +5,10 @@ namespace Fabrica.Core.Jobs;
 
 /// <summary>
 /// Shared pool of worker threads backed by per-worker work-stealing deques (Chase-Lev). Multiple
-/// <see cref="JobScheduler"/> instances share a single pool, submitting jobs via
+/// <see cref="JobScheduler"/> instances share a single pool; top-level jobs are submitted via
 /// <see cref="Inject"/>.
 ///
-/// SCHEDULING MODEL
-///   Each worker owns a <see cref="Collections.WorkStealingDeque{T}"/>. Workers pop from their
-///   own deque (LIFO — cache-hot) and steal from peers (FIFO — large tasks) when idle. After
-///   executing a job, the pool atomically decrements all dependent jobs' remaining dependency
-///   counts; any dependent whose count reaches zero is pushed onto the executing worker's deque.
-///
-/// WORK DISCOVERY PRIORITY
-///   1. Pop own deque (LIFO — recently pushed sub-jobs, cache-hot).
-///   2. Steal from peer deques (FIFO — redistribute work).
-///   3. Dequeue from the shared injection queue (cold — newly submitted top-level jobs).
-///
-/// WORKER LIFECYCLE
-///   Uses the announce-then-recheck pattern: when a worker finds no work, it atomically increments
-///   <see cref="_parkedWorkers"/>, re-checks for work (closing the missed-wake race), and only
-///   then blocks on <see cref="_workSignal"/>. <see cref="NotifyWorkAvailable"/> only releases the
-///   semaphore when parked workers exist, preventing unbounded permit accumulation.
-///   <see cref="Dispose"/> sets a shutdown flag, wakes all workers, and joins their threads.
-///
-/// REFERENCE
-///   D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
+/// REFERENCE: D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
 /// </summary>
 public sealed class WorkerPool : IDisposable
 {
@@ -60,8 +41,7 @@ public sealed class WorkerPool : IDisposable
     private int _parkedWorkers;
 
     /// <summary>
-    /// Shared injection queue for top-level job submission. <see cref="JobScheduler.Submit"/> calls
-    /// <see cref="Inject"/> to enqueue here; workers dequeue after exhausting local and peer deques.
+    /// Top-level jobs land here.
     /// </summary>
     private readonly ConcurrentQueue<Job> _injectionQueue = new();
 
@@ -100,21 +80,21 @@ public sealed class WorkerPool : IDisposable
     // ── Job injection ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Enqueues a job into the shared injection queue and wakes a parked worker. Called by
-    /// <see cref="JobScheduler.Submit"/> after stamping the job with its scheduler.
+    /// Enqueues a job into the shared injection queue and wakes a parked worker.
     /// </summary>
     internal void Inject(Job job)
     {
+        // Called by JobScheduler.Submit after stamping the job with its scheduler.
         _injectionQueue.Enqueue(job);
         this.NotifyWorkAvailable();
     }
 
     /// <summary>
-    /// Signals that work is available, waking at most one parked worker. Only releases the
-    /// semaphore when at least one worker is parked, preventing unbounded permit accumulation.
+    /// Signals that work is available, waking at most one parked worker.
     /// </summary>
     internal void NotifyWorkAvailable()
     {
+        // Only release when someone is parked so permits do not accumulate without bound.
         if (Volatile.Read(ref _parkedWorkers) > 0)
             _workSignal.Release();
     }
@@ -123,6 +103,9 @@ public sealed class WorkerPool : IDisposable
 
     private void RunWorker(WorkerContext context)
     {
+        // WORKER LIFECYCLE: announce-then-recheck — when a worker finds no work, it increments _parkedWorkers, re-checks
+        // for work (closing the missed-wake race), then blocks on _workSignal. NotifyWorkAvailable coordinates with
+        // _parkedWorkers (see that method).
         Threading.ThreadPinningNative.TryPinCurrentThread(context.WorkerIndex);
 
         while (!_shutdownRequested)
@@ -150,6 +133,8 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryExecuteOne(WorkerContext context)
     {
+        // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
+        // queue — cold, after local and peer deques (JobScheduler.Submit enqueues via Inject).
         if (context.Deque.TryPop(out var job))
         {
             this.ExecuteJob(job, context);
@@ -185,6 +170,7 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
+        // Dequeue top-level jobs after exhausting local deque and peer steals (see TryExecuteOne).
         if (_injectionQueue.TryDequeue(out var job))
         {
             this.ExecuteJob(job, context);
@@ -209,6 +195,8 @@ public sealed class WorkerPool : IDisposable
         job.State = JobState.Completed;
 #endif
 
+        // SCHEDULING MODEL: after Execute, decrement dependents' RemainingDependencies; any that reach zero are pushed on
+        // this worker's deque.
         this.PropagateCompletion(job, context);
         scheduler.DecrementOutstanding();
 
@@ -245,6 +233,8 @@ public sealed class WorkerPool : IDisposable
 
     public void Dispose()
     {
+        // WORKER LIFECYCLE: set shutdown, wake all parked workers (one release per worker), join threads, dispose sync
+        // primitive.
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 

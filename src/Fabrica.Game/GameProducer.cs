@@ -7,12 +7,8 @@ using Fabrica.Pipeline;
 namespace Fabrica.Game;
 
 /// <summary>
-/// Produces one <see cref="GameWorldImage"/> per tick. Each tick:
-///   1. Builds the 3-job DAG (SpawnItems -> BuildBelts -> PlaceMachines).
-///   2. Submits via <see cref="JobScheduler"/> (blocks until the DAG completes).
-///   3. Runs the merge pipeline: drain -> rewrite + refcount -> collect roots.
-///   4. Builds <see cref="SnapshotSlice{TNode,TNodeOps}"/> instances and increments root refcounts.
-///   5. Resets per-worker buffers and remap tables so they are clean for the next tick.
+/// Produces one <see cref="GameWorldImage"/> per tick by building and executing a job DAG,
+/// merging results into the global stores, and publishing a snapshot.
 /// </summary>
 public readonly struct GameProducer : IProducer<GameWorldImage>
 {

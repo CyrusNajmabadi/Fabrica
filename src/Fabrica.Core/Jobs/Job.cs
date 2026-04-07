@@ -14,71 +14,28 @@ internal enum JobState : byte
 
 /// <summary>
 /// Abstract base class for all jobs in the DAG-based job system. Concrete subclasses carry
-/// strongly-typed input/output buffers; the base class owns the scheduling, dependency, and
-/// pooling machinery.
+/// strongly-typed input/output buffers; the base class owns scheduling, dependency, and pooling
+/// machinery.
 ///
-/// LIFECYCLE
-///   1. <b>Rent</b> — The coordinator (or a parent job) rents a job from its type-specific
-///      <see cref="JobPool{TJob}"/>. If the pool is empty, a new instance is allocated.
-///   2. <b>Configure</b> — The caller sets subclass-specific input fields and wires DAG
-///      dependencies via <see cref="AddDependent"/> or <see cref="DependsOn"/>.
-///   3. <b>Submit</b> — The job is pushed onto a <see cref="Collections.WorkStealingDeque{T}"/>
-///      via <see cref="JobScheduler.Submit"/>.
-///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler passes a
-///      <see cref="JobContext"/> to <see cref="Execute"/>, giving the job its worker identity
-///      for indexing into per-worker buffers. After execution, the scheduler decrements all
-///      dependents' dependency counts, enqueuing any that hit zero.
-///   5. <b>Sweep</b> — After the scheduler's outstanding job count reaches zero, the coordinator
-///      walks the DAG and calls <see cref="Reset"/> on each job, then returns it to its pool.
-///
-/// DAG DEPENDENCIES
-///   Managed through <see cref="AddDependent"/> and <see cref="DependsOn"/>. Internally, each
-///   job tracks its downstream dependents and a remaining-dependency count that gates execution.
-///   The scheduler atomically decrements the count when prerequisites complete; the thread that
-///   brings it to zero enqueues the job.
-///
-/// POOLING
-///   <see cref="PoolNext"/> is the intrusive linked-list pointer used by
-///   <see cref="JobPool{TJob}"/> for lock-free Treiber stack operations. It must not be read
-///   or written by derived classes.
-///
-/// VIRTUAL DISPATCH
-///   <see cref="Execute"/> and <see cref="Reset"/> are virtual calls. At typical job granularity
-///   (microseconds to milliseconds of work per job), the ~2ns vtable lookup is negligible.
-///
-/// FUTURE: SUB-JOB ENQUEUING
-///   If jobs need to spawn sub-jobs during <see cref="Execute"/>, a protected helper on this
-///   base class (e.g. <c>EnqueueChild(Job)</c>) can route through the internal
-///   <see cref="JobContext.WorkerContext"/> without exposing scheduling internals to derived
-///   classes.
+/// <see cref="PoolNext"/> is the intrusive linked-list pointer used by
+/// <see cref="JobPool{TJob}"/> for lock-free Treiber stack operations. It must not be read
+/// or written by derived classes.
 /// </summary>
 public abstract class Job
 {
     /// <summary>
-    /// Number of prerequisite jobs that must complete before this job is eligible to run.
-    /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; decremented atomically
-    /// by the scheduler when a prerequisite completes. Zero means ready to execute.
+    /// Prerequisite count for DAG readiness: zero means this job is eligible to run.
     /// </summary>
-    internal int RemainingDependencies;
+    internal int RemainingDependencies; // AddDependent/DependsOn; scheduler decrements atomically when a prerequisite completes.
 
     /// <summary>
-    /// Downstream jobs whose dependency counts should be decremented when this job completes.
-    /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; iterated by
-    /// <see cref="WorkerPool"/> after <see cref="Execute"/> returns.
-    ///
-    /// LIFETIME: Lazily allocated on the first <see cref="AddDependent"/> or
-    /// <see cref="DependsOn"/> call. Owned by this <see cref="Job"/> instance for its entire
-    /// lifetime — <see cref="Reset"/> clears the count but retains the backing array so it is
-    /// reused across <see cref="JobPool{TJob}"/> cycles without further allocation.
+    /// Downstream jobs notified on completion.
     /// </summary>
     internal UnsafeList<Job>? Dependents;
 
-    /// <summary>
-    /// The <see cref="JobScheduler"/> that owns this job's DAG. Set by <see cref="JobScheduler.Submit"/>
-    /// for root jobs and by <see cref="WorkerPool"/> for sub-jobs and propagated dependents. Read by
-    /// <see cref="WorkerPool"/> to route completion signals to the correct scheduler. Cleared by
-    /// <see cref="JobPool{TJob}.Return"/> when the job is recycled.
-    /// </summary>
+    // Owning scheduler for this job's DAG: set by JobScheduler.Submit for root jobs and by WorkerPool for
+    // sub-jobs and propagated dependents; read by WorkerPool to route completion signals; cleared by
+    // JobPool<TJob>.Return when the job is recycled.
     internal JobScheduler? Scheduler;
 
     /// <summary>
@@ -99,6 +56,8 @@ public abstract class Job
     /// </summary>
     protected internal void AddDependent(Job dependent)
     {
+        // Each job tracks downstream dependents; RemainingDependencies gates execution. The scheduler decrements
+        // counts when prerequisites complete; the thread that brings a dependent to zero enqueues it.
         Dependents ??= new UnsafeList<Job>(4);
         Dependents.Add(dependent);
         dependent.RemainingDependencies++;
@@ -111,6 +70,8 @@ public abstract class Job
     /// </summary>
     protected internal void DependsOn(Job prerequisite)
     {
+        // Mirrors AddDependent: prerequisite lists this as a dependent; this job's RemainingDependencies counts
+        // outstanding prerequisites.
         prerequisite.Dependents ??= new UnsafeList<Job>(4);
         prerequisite.Dependents.Add(this);
         RemainingDependencies++;
@@ -122,16 +83,26 @@ public abstract class Job
     /// Performs the job's work. Called by a worker thread. The <paramref name="context"/> provides
     /// the executing worker's identity for indexing into per-worker buffers.
     /// </summary>
+    // LIFECYCLE (submit): root jobs are pushed onto a work-stealing deque via JobScheduler.Submit.
+    // LIFECYCLE (execute): a worker pops or steals the job; the scheduler passes JobContext for per-worker buffer
+    // indexing. After Execute returns, the scheduler decrements dependents' RemainingDependencies and enqueues any
+    // that reach zero.
+    // VIRTUAL DISPATCH: Execute and Reset are virtual; at typical job granularity the ~2ns vtable cost is negligible.
     protected internal abstract void Execute(JobContext context);
 
     /// <summary>
-    /// Resets this job's state for pool reuse. Called by the coordinator during the DAG sweep
-    /// after the scheduler's outstanding count reaches zero. Subclasses must call
-    /// <c>base.Reset()</c> and clear all input/output buffer references and any other mutable state.
+    /// Clears state for pool reuse; subclasses must call <c>base.Reset()</c> and clear all input/output
+    /// buffer references and any other mutable state.
     /// </summary>
     protected internal virtual void Reset()
     {
+        // Called by the coordinator during the DAG sweep after the scheduler's outstanding job count reaches zero.
+        // Dependents was lazily allocated: Reset clears the count but retains the backing array for reuse across
+        // JobPool cycles.
         Dependents?.Reset();
         RemainingDependencies = 0;
     }
+
+    // FUTURE: sub-job enqueuing from Execute could use a protected helper (e.g. EnqueueChild(Job)) routing through
+    // JobContext.WorkerContext without exposing scheduling internals to derived classes.
 }

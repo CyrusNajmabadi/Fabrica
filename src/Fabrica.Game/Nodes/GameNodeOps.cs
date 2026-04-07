@@ -5,13 +5,9 @@ namespace Fabrica.Game.Nodes;
 
 /// <summary>
 /// Single struct implementing <see cref="INodeOps{TNode}"/> for all three game node types.
-/// The <see cref="INodeVisitor.Visit{T}"/> dispatch uses <c>typeof</c> checks — the JIT eliminates
-/// dead branches, producing specialized code for each call site.
-///
-/// TWO-PHASE INIT
-///   Construct with store references set after all three <see cref="GlobalNodeStore{TNode,TNodeOps}"/>
-///   instances are created (they need the ops struct, and the ops struct needs them). Call
-///   <see cref="GlobalNodeStore{TNode,TNodeOps}.SetNodeOps"/> on each store after wiring up.
+/// Requires two-phase initialization: construct all three <see cref="GlobalNodeStore{TNode,TNodeOps}"/>
+/// instances first, then call <see cref="GlobalNodeStore{TNode,TNodeOps}.SetNodeOps"/> on each
+/// with an ops instance that captures all three store references.
 /// </summary>
 public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, INodeOps<ItemNode>
 {

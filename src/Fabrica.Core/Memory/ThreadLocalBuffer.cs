@@ -11,11 +11,6 @@ namespace Fabrica.Core.Memory;
 ///   <see cref="Handle{T}"/> with the thread ID baked in via <see cref="TaggedHandle.EncodeLocal"/>.
 ///   The caller writes the node data through the returned handle's index into <see cref="this[int]"/>.
 ///
-/// COORDINATOR ACCESS
-///   After the join barrier, the coordinator reads <see cref="WrittenSpan"/> to drain all
-///   newly-created nodes, builds a remap table (local index -> global index), and copies
-///   node data into the global <see cref="UnsafeSlabArena{T}"/>.
-///
 /// REUSE
 ///   <see cref="Reset"/> sets the count to zero without releasing the backing array, so
 ///   steady-state usage incurs no allocation after warmup.
@@ -84,14 +79,11 @@ public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 102
         get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
     }
 
-    /// <summary>
-    /// Returns a reference to the node at the given raw local index. Used by the coordinator
-    /// to read during merge (iterating <see cref="WrittenSpan"/> by ordinal).
-    /// </summary>
+    /// <summary>Returns a reference to the node at the given raw local index.</summary>
     internal ref T this[int localIndex]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[localIndex];
+        get => ref _list[localIndex]; // Coordinator merge path: read by ordinal while iterating WrittenSpan.
     }
 
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>

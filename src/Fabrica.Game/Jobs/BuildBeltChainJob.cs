@@ -7,8 +7,7 @@ namespace Fabrica.Game.Jobs;
 /// <summary>
 /// Depends on <see cref="SpawnItemsJob"/>. Creates a singly-linked chain of
 /// <see cref="BeltSegmentNode"/> segments, wiring each to the next and optionally carrying
-/// an <see cref="ItemNode"/> from the spawn job. Built in reverse so each segment's
-/// <see cref="BeltSegmentNode.Next"/> is known at construction time.
+/// an <see cref="ItemNode"/> from the spawn job.
 /// </summary>
 internal sealed class BuildBeltChainJob : Job
 {
@@ -35,6 +34,7 @@ internal sealed class BuildBeltChainJob : Job
         var threadLocalBuffer = BeltThreadLocalBuffers![context.WorkerIndex];
         var items = _spawnJob!.AllocatedItems!;
 
+        // Built in reverse so each segment's Next handle is known at construction time.
         var next = Handle<BeltSegmentNode>.None;
 
         for (var i = ChainLength - 1; i >= 0; i--)

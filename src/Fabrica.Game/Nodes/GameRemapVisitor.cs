@@ -3,9 +3,8 @@ using Fabrica.Core.Memory;
 namespace Fabrica.Game.Nodes;
 
 /// <summary>
-/// Rewrites local (tagged) handles to global arena indices during the merge. Each handle field
-/// is resolved through the per-type <see cref="RemapTable"/> that
-/// <see cref="GlobalNodeStore{TNode,TNodeOps}.DrainBuffers"/> populated.
+/// Rewrites local (tagged) handles to global arena indices during the merge, resolving each
+/// handle through the per-type <see cref="RemapTable"/> supplied on the struct.
 /// </summary>
 internal struct GameRemapVisitor : INodeVisitor
 {

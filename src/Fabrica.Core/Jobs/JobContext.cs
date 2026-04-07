@@ -3,10 +3,6 @@ namespace Fabrica.Core.Jobs;
 /// <summary>
 /// Minimal execution context passed to <see cref="Job.Execute"/>. Exposes only what downstream
 /// job subclasses need — currently just the worker identity for indexing into per-worker buffers.
-///
-/// Internally holds the full <see cref="WorkerContext"/> so that future protected helpers on
-/// <see cref="Job"/> (e.g. sub-job enqueuing) can route through the scheduler and deque without
-/// changing the <see cref="Job.Execute"/> signature.
 /// </summary>
 public readonly struct JobContext
 {
@@ -16,6 +12,8 @@ public readonly struct JobContext
     /// </summary>
     public readonly int WorkerIndex;
 
+    // Holds the full WorkerContext so future protected helpers on Job (e.g. sub-job enqueuing) can route through
+    // the scheduler and deque without changing the Job.Execute signature.
     internal readonly WorkerContext WorkerContext;
 
     internal JobContext(WorkerContext workerContext)

@@ -14,16 +14,6 @@ namespace Fabrica.Core.Memory;
 ///   <typeparamref name="TNodeOps"/> implements <see cref="INodeOps{TNode}"/> which unifies
 ///   structural knowledge of which fields are children (<see cref="INodeOps{TNode}.EnumerateChildren{TVisitor}"/>)
 ///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{T}"/>).
-///   This eliminates the need for a separate cascade-free handler interface — the visitor pattern
-///   handles everything.
-///
-/// CASCADE-FREE
-///   Owned entirely by this class. When a refcount reaches zero, the cascade loop reads the freed
-///   node from the arena, enumerates its children through <typeparamref name="TNodeOps"/> (as both
-///   enumerator and visitor), and frees the arena slot. Re-entrant decrements (same-type children)
-///   push onto the pending stack and the outer loop processes them — no nested loops, bounded stack
-///   depth. Cross-type cascades trigger the other store's cascade via
-///   <see cref="INodeVisitor.Visit{T}"/> dispatch.
 ///
 /// ROOT OPERATIONS
 ///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
@@ -31,13 +21,12 @@ namespace Fabrica.Core.Memory;
 ///
 /// VALIDATION (DEBUG ONLY)
 ///   Call <see cref="EnableValidation"/> in tests to activate automatic DAG invariant checking
-///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call. The store
-///   uses its own <typeparamref name="TNodeOps"/> as the enumerator — no separate enumerator needed.
+///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call.
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>GlobalNodeStore</c>),
 ///   <typeparamref name="TNodeOps"/>'s <see cref="INodeVisitor.Visit{T}"/> dispatches
-///   to the correct store using <c>typeof</c> checks (JIT-eliminated dead branches).
+///   to the correct store.
 ///
 /// TWO-PHASE INITIALIZATION
 ///   When <typeparamref name="TNodeOps"/> needs a reference back to this store (for same-type
@@ -65,12 +54,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// </summary>
     private readonly UnsafeStack<Handle<TNode>> _cascadePending = new();
 
-    /// <summary>
-    /// True while a decrement cascade is being processed. When a <see cref="DecrementRefCount"/>
-    /// call hits zero during an active cascade (e.g., a same-type child decrement, or a cross-store
-    /// A→B→A bounce), the handle is pushed onto <see cref="_cascadePending"/> and the caller returns
-    /// immediately — the outer cascade loop will process it.
-    /// </summary>
+    /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
 
 #if DEBUG
@@ -105,26 +89,19 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
-    /// needs a reference back to this store (for same-type child decrement during cascade).
+    /// needs a reference back to this store.
     /// </summary>
     public void SetNodeOps(TNodeOps ops) => _nodeOps = ops;
 
     // ── Single-handle operations (used by visitor actions) ─────────────
 
-    /// <summary>Increments the refcount for a single handle. Used by <see cref="INodeVisitor"/> implementations
-    /// during child enumeration.</summary>
+    /// <summary>Increments the refcount for a single handle.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void IncrementRefCount(Handle<TNode> handle)
         => this.RefCounts.Increment(handle);
 
     /// <summary>
-    /// Decrements the refcount for a single handle. If it reaches zero, the handle is pushed onto
-    /// the cascade pending stack. If no cascade is already active, starts the cascade loop which
-    /// reads each freed node, enumerates its children via <typeparamref name="TNodeOps"/>, and frees
-    /// the arena slot.
-    ///
-    /// Re-entrant calls (from within the cascade loop for same-type children, or from cross-store
-    /// A→B→A bounces) push onto the existing pending stack instead of starting a nested loop.
+    /// Decrements the refcount for a single handle. If it reaches zero, cascades to free the node and its children.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DecrementRefCount(Handle<TNode> handle)
@@ -132,6 +109,10 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
         if (!this.RefCounts.Decrement(handle))
             return;
 
+        // Refcount hit zero: push onto the cascade pending stack. If no cascade is active, RunCascade
+        // drains the stack. If a cascade is already active (re-entrant same-type child decrement, or
+        // cross-store A→B→A bounce), the handle stays pending and this call returns — the outer loop
+        // processes it; no nested cascade loops.
         _cascadePending.Push(handle);
 
         if (!_cascadeActive)
@@ -195,12 +176,6 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// Rewrites local (tagged) handles to global indices and then increments child refcounts for all
     /// nodes within the range <c>[startIndex, startIndex + count)</c>.
     ///
-    /// Phase 1 (rewrite): uses <see cref="INodeOps{TNode}.EnumerateRefChildren{TVisitor}"/> with
-    /// <paramref name="remapVisitor"/> to resolve local handles through the remap tables in place.
-    ///
-    /// Phase 2 (refcount): uses <see cref="INodeOps{TNode}.EnumerateChildren{TVisitor}"/> with
-    /// <paramref name="refcountVisitor"/> to increment each child's refcount.
-    ///
     /// BARRIER: all types must finish <see cref="DrainBuffers"/> before any type calls this method,
     /// because cross-type handle rewriting needs the target type's remap table.
     /// </summary>
@@ -211,6 +186,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
         where TRemapVisitor : struct, INodeVisitor
         where TRefcountVisitor : struct, INodeVisitor
     {
+        // Phase 1 (rewrite): EnumerateRefChildren with remapVisitor — resolves local handles through remap tables in place.
         // Walk every newly merged node in the arena. At this point the nodes have been copied verbatim
         // from TLBs, so any Handle<T> fields still contain tagged local values (threadId + localIndex).
         // EnumerateRefChildren hands each handle field *by reference* to the visitor, which resolves
@@ -223,6 +199,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
             _nodeOps.EnumerateRefChildren(ref node, ref remapVisitor);
         }
 
+        // Phase 2 (refcount): EnumerateChildren with refcountVisitor — increments each child's refcount.
         // Walk every newly merged node again (handles are now global after the rewrite loop above).
         // For each node, EnumerateChildren yields each child handle *by value* to the visitor, which
         // increments that child's refcount in the appropriate RefCountTable. This establishes the
@@ -243,8 +220,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// unchanged.
     ///
     /// The caller owns the <see cref="UnsafeList{T}"/> and is responsible for resetting it between
-    /// ticks. In steady state this is zero-allocation: the list's backing array grows to the
-    /// high-water root count and is reused across ticks.
+    /// ticks.
     /// </summary>
     public void CollectAndRemapRoots(
         ThreadLocalBuffer<TNode>[] threadLocalBuffers,
@@ -278,8 +254,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     // ── Root operations ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published
-    /// (e.g., enqueued into the PCQ). The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
+    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published.
+    /// The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
     /// for the index range beforehand.
     /// </summary>
     public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
@@ -303,13 +279,16 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
 
     // ── Cascade loop ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Iteratively processes all handles whose refcount reached zero. For each freed handle: reads
-    /// the node from the arena, enumerates children using <typeparamref name="TNodeOps"/> as both
-    /// enumerator and decrement visitor, then frees the arena slot.
-    /// </summary>
     private void RunCascade()
     {
+        // CASCADE-FREE (owned entirely by this class): when a refcount reaches zero, this loop reads the
+        // freed node from the arena, enumerates its children through TNodeOps (as both enumerator and
+        // visitor), and frees the arena slot. Re-entrant decrements (same-type children) push onto
+        // _cascadePending and the outer loop processes them — no nested loops, bounded stack depth.
+        // Cross-type cascades trigger the other store's cascade via INodeVisitor.Visit dispatch.
+        // The visitor pattern eliminates a separate cascade-free handler interface — TNodeOps handles it.
+        // For cross-type DAGs, Visit{T} dispatch to the correct store often uses typeof checks (JIT may
+        // eliminate dead branches).
         if (_cascadePending.Count == 0)
             return;
 
@@ -331,8 +310,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// <summary>
     /// Enables automatic DAG invariant checking (debug builds only). After every <see cref="IncrementRoots"/>
     /// and <see cref="DecrementRoots"/>, the store runs <see cref="DagValidator.AssertValid"/> in relaxed
-    /// mode with the current set of tracked roots. Uses the stored <typeparamref name="TNodeOps"/> as
-    /// the enumerator. Compiled out entirely in release builds.
+    /// mode with the current set of tracked roots. Compiled out entirely in release builds.
     /// </summary>
     [Conditional("DEBUG")]
     internal void EnableValidation()

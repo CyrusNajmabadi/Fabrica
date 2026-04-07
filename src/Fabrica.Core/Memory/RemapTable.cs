@@ -4,19 +4,9 @@ using System.Runtime.CompilerServices;
 namespace Fabrica.Core.Memory;
 
 /// <summary>
-/// Maps local buffer indices to global arena indices for a single node type during the coordinator
-/// merge. Each worker thread has its own mapping array; local index <c>i</c> on thread <c>t</c>
-/// maps to global index <c>Resolve(t, i)</c>.
-///
-/// STORAGE
-///   <see cref="UnsafeList{T}"/>[] indexed by thread ID. The outer array is fixed-size (worker
-///   count, known at construction). Each inner list grows as mappings are added and retains its
-///   backing array across <see cref="Reset"/> calls for zero steady-state allocation.
-///
-/// NON-GENERIC
-///   The mapping is purely <c>(threadId, localIndex) -> globalIndex</c>, independent of node type.
-///   This allows a single pool of <see cref="RemapTable"/> instances shared across all types and
-///   ticks. The coordinator assigns one instance per node type during each merge pass.
+/// Maps <c>(threadId, localIndex)</c> to a global arena index during merge. Each worker thread has
+/// its own mapping sequence; local index <c>i</c> on thread <c>t</c> maps to global index
+/// <c>Resolve(t, i)</c>.
 ///
 /// THREAD MODEL
 ///   Single-threaded. Built by the coordinator (or a per-type merge worker) during Phase 1, read
@@ -24,6 +14,7 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 public sealed class RemapTable
 {
+    // Outer array: fixed size (thread count). Each inner list grows with mappings and retains backing across Reset.
     private readonly UnsafeList<int>[] _remap;
 
     public RemapTable(int threadCount)

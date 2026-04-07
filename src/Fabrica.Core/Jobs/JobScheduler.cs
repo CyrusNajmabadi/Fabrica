@@ -26,8 +26,7 @@ public sealed class JobScheduler(WorkerPool pool)
     private int _outstandingJobs;
 
     /// <summary>
-    /// Signaled by the worker that decrements <see cref="_outstandingJobs"/> to zero, unparking
-    /// the coordinator in <see cref="Submit"/>. Reset at the start of each wait cycle.
+    /// Unparks the coordinator in <see cref="Submit"/> when outstanding work reaches zero.
     /// </summary>
     private readonly ManualResetEventSlim _completionSignal = new(false);
 
@@ -45,17 +44,11 @@ public sealed class JobScheduler(WorkerPool pool)
 
     // ── Called by WorkerPool execution infrastructure ────────────────────────
 
-    /// <summary>
-    /// Atomically increments the outstanding job count. Called by <see cref="WorkerPool"/> when a
-    /// sub-job is enqueued or a dependent becomes ready.
-    /// </summary>
+    // Called by WorkerPool when a sub-job is enqueued or a dependent becomes ready.
     internal void IncrementOutstanding() => Interlocked.Increment(ref _outstandingJobs);
 
-    /// <summary>
-    /// Atomically decrements the outstanding job count. If it reaches zero, signals
-    /// <see cref="_completionSignal"/> to unpark the coordinator. Called by <see cref="WorkerPool"/>
-    /// after a job finishes execution.
-    /// </summary>
+    // Atomically decrements outstanding count; signals _completionSignal when it reaches zero. Called by WorkerPool
+    // after a job finishes execution.
     internal void DecrementOutstanding()
     {
         if (Interlocked.Decrement(ref _outstandingJobs) == 0)
@@ -80,6 +73,7 @@ public sealed class JobScheduler(WorkerPool pool)
         if (Volatile.Read(ref _outstandingJobs) == 0)
             return true;
 
+        // Reset at the start of each wait cycle.
         _completionSignal.Reset();
 
         if (Volatile.Read(ref _outstandingJobs) == 0)
