@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 using Fabrica.Game.Jobs;

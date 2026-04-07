@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #endif
 
-namespace Fabrica.Core.Memory;
+namespace Fabrica.Core.Collections.Unsafe;
 
 /// <summary>
 /// Growable array-backed list with O(1) indexed access. In release builds, indexing uses

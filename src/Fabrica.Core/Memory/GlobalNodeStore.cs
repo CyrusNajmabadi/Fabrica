@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Fabrica.Core.Collections.Unsafe;
 
 namespace Fabrica.Core.Memory;
 

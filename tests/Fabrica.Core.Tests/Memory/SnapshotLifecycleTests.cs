@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
 using Xunit;
 

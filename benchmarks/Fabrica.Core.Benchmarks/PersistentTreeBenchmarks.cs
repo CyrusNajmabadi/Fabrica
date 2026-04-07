@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
 
 namespace Fabrica.Core.Benchmarks;

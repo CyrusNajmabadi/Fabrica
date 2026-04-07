@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Collections.Unsafe;
 
 namespace Fabrica.Core.Memory;
 
