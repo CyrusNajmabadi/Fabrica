@@ -118,30 +118,12 @@ public class GamePipelineTests : IDisposable
 
         schedulerAccessor.Submit(spawnJob);
 
-        // ── Merge pipeline ───────────────────────────────────────────────
+        // ── Merge pipeline (drain TLBs, rewrite handles, increment child refcounts) ──
 
-        // Phase 1: drain TLBs.
-        var (itemStart, itemCount) = itemStore.DrainBuffers();
-        var (beltStart, beltCount) = beltStore.DrainBuffers();
-        var (machineStart, machineCount) = machineStore.DrainBuffers();
+        var coordinator = new MergeCoordinator([machineStore, beltStore, itemStore]);
+        coordinator.MergeAll();
 
-        Assert.Equal(ItemCount, itemCount);
-        Assert.Equal(ChainLength, beltCount);
-        Assert.Equal(1, machineCount);
-
-        // Phase 2: rewrite handles and increment child refcounts.
-        var refcountVisitor = new GameRefcountVisitor
-        {
-            MachineStore = machineStore,
-            BeltStore = beltStore,
-            ItemStore = itemStore,
-        };
-
-        itemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref refcountVisitor);
-        beltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref refcountVisitor);
-        machineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref refcountVisitor);
-
-        // Phase 3: collect and remap roots.
+        // Collect and remap roots.
         var machineRoots = new UnsafeList<Handle<MachineNode>>();
         machineStore.GetTestAccessor().CollectAndRemapRoots(machineRoots);
         Assert.Equal(1, machineRoots.Count);

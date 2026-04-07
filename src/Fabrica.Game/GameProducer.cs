@@ -1,7 +1,6 @@
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 using Fabrica.Game.Jobs;
-using Fabrica.Game.Nodes;
 using Fabrica.Pipeline;
 
 namespace Fabrica.Game;
@@ -53,21 +52,10 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
 
         // ── 3. Merge pipeline ───────────────────────────────────────────
 
-        // Phase 1: drain all TLBs (barrier — all drains must complete before rewrite).
-        tickState.Coordinator.DrainAll();
+        // Drain all TLBs, rewrite local handles to global, increment child refcounts.
+        tickState.Coordinator.MergeAll();
 
-        // Phase 2: rewrite local handles to global and increment child refcounts.
-        var refcountVisitor = new GameRefcountVisitor
-        {
-            MachineStore = tickState.MachineStore,
-            BeltStore = tickState.BeltStore,
-            ItemStore = tickState.ItemStore,
-        };
-        tickState.ItemStore.RewriteAndIncrementRefCounts(ref refcountVisitor);
-        tickState.BeltStore.RewriteAndIncrementRefCounts(ref refcountVisitor);
-        tickState.MachineStore.RewriteAndIncrementRefCounts(ref refcountVisitor);
-
-        // Phase 3+4: collect roots, build slices, increment root refcounts.
+        // Build typed snapshot slices (collect roots, increment root refcounts).
         image.MachineSlice = tickState.MachineStore.BuildSnapshotSlice();
         image.BeltSlice = tickState.BeltStore.BuildSnapshotSlice();
         image.ItemSlice = tickState.ItemStore.BuildSnapshotSlice();

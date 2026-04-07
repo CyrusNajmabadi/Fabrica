@@ -54,6 +54,24 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
     {
     }
 
+    // ── Increment child refcounts (merge phase 2b) ──────────────────────
+
+    readonly void INodeOps<MachineNode>.IncrementChildRefCounts(in MachineNode node)
+    {
+        if (node.InputBelt.IsValid) BeltStore.IncrementRefCount(node.InputBelt);
+        if (node.OutputBelt.IsValid) BeltStore.IncrementRefCount(node.OutputBelt);
+    }
+
+    readonly void INodeOps<BeltSegmentNode>.IncrementChildRefCounts(in BeltSegmentNode node)
+    {
+        if (node.Next.IsValid) BeltStore.IncrementRefCount(node.Next);
+        if (node.Payload.IsValid) ItemStore.IncrementRefCount(node.Payload);
+    }
+
+    readonly void INodeOps<ItemNode>.IncrementChildRefCounts(in ItemNode node)
+    {
+    }
+
     // ── Handle remapping (used during merge phase 2a) ──────────────────
 
     public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct

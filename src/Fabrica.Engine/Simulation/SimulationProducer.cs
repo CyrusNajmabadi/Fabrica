@@ -16,7 +16,7 @@ namespace Fabrica.Engine.Simulation;
 ///   1. Rent a fresh <see cref="WorldImage"/> from the pool.
 ///   2. Reset per-worker <see cref="ThreadLocalBuffer{T}"/> instances.
 ///   3. Build the job DAG for this tick and call <see cref="JobScheduler.Submit"/> (blocks until complete).
-///   4. Call <see cref="GlobalNodeStore{TNode,TNodeOps}.DrainBuffers"/> / <see cref="GlobalNodeStore{TNode,TNodeOps}.RewriteAndIncrementRefCounts{TRemapVisitor,TRefcountVisitor}"/> per type.
+///   4. Call <see cref="MergeCoordinator.MergeAll"/> (drain all TLBs, rewrite handles, increment child refcounts).
 ///   5. Build <see cref="SnapshotSlice{TNode,TNodeOps}"/> instances from collected roots.
 ///   6. Return the populated image.
 /// </summary>
@@ -43,7 +43,7 @@ internal readonly struct SimulationProducer(
         //   1. Reset per-worker TLBs for each node type.
         //   2. Build the tick's job DAG (concrete Job subclasses that allocate nodes in TLBs).
         //   3. _scheduler.Submit(rootJob) — blocks until the entire DAG completes.
-        //   4. store.DrainBuffers / store.RewriteAndIncrementRefCounts per type.
+        //   4. coordinator.MergeAll() (drain all TLBs, rewrite handles, increment child refcounts).
         //   5. store.BuildSnapshotSlice per type (collect/remap roots and pin refcounts).
         //   6. Populate SnapshotSlices on the WorldImage.
         //

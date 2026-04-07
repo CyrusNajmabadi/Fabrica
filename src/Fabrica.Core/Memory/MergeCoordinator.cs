@@ -1,26 +1,35 @@
 namespace Fabrica.Core.Memory;
 
 /// <summary>
-/// Orchestrates the non-generic phases of the merge pipeline across all registered stores.
-/// <see cref="DrainAll"/> runs phase 1 (TLB drain) for every store, establishing the barrier
-/// that cross-type handle rewriting requires. <see cref="ResetAll"/> clears per-tick scratch state.
+/// Orchestrates the merge pipeline across all registered stores: drain thread-local buffers,
+/// rewrite local handles to global indices, and increment child refcounts. After
+/// <see cref="MergeAll"/> completes, callers can build snapshot slices from each typed store.
 ///
-/// Type-specific phases (rewrite + refcount, root collection, slice building) remain on each
-/// <see cref="GlobalNodeStore{TNode,TNodeOps}"/> because they need the concrete node and ops types.
+/// PIPELINE PHASES
+///   1. <b>Drain</b> — copy each store's TLBs into its arena, building remap tables.
+///      All drains must complete before any rewrite begins (cross-type remap dependency).
+///   2. <b>Rewrite + refcount</b> — for each store, rewrite local handles via remap tables,
+///      then increment child refcounts via <see cref="Nodes.INodeOps{TNode}.IncrementChildRefCounts"/>.
+///   3. <i>(caller)</i> <b>Build slices</b> — per-store, type-specific.
+///   4. <b>Reset</b> — clear TLBs and remap tables for the next tick.
 /// </summary>
 public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
 {
     private readonly GlobalNodeStore[] _stores = stores;
 
     /// <summary>
-    /// Drains all stores' thread-local buffers into their arenas (merge phase 1). All drains
-    /// must complete before any store runs rewrite-and-refcount, because cross-type handle
-    /// rewriting depends on all remap tables being fully populated.
+    /// Executes phases 1 and 2 of the merge pipeline: drains all TLBs, then rewrites handles
+    /// and increments child refcounts for every store. After this returns, callers may call
+    /// <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/> on each typed store,
+    /// then <see cref="ResetAll"/> to prepare for the next tick.
     /// </summary>
-    public void DrainAll()
+    public void MergeAll()
     {
         foreach (var store in _stores)
             store.Drain();
+
+        foreach (var store in _stores)
+            store.RewriteAndIncrementRefCounts();
     }
 
     /// <summary>
