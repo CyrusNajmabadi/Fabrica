@@ -143,7 +143,7 @@ public class GamePipelineTests : IDisposable
 
         // Phase 3: collect and remap roots.
         var machineRoots = new UnsafeList<Handle<MachineNode>>();
-        machineStore.CollectAndRemapRoots(machineRoots);
+        machineStore.GetTestAccessor().CollectAndRemapRoots(machineRoots);
         Assert.Equal(1, machineRoots.Count);
 
         // Increment root refcounts.

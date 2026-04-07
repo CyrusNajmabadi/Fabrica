@@ -57,5 +57,12 @@ public sealed class ObjectPool<T, TAllocator>
         _items.Push(item);
     }
 
-    public int Available => _items.Count;
+    // ── Test accessor ───────────────────────────────────────────────────────
+
+    internal TestAccessor GetTestAccessor() => new(this);
+
+    internal readonly struct TestAccessor(ObjectPool<T, TAllocator> pool)
+    {
+        public int Available => pool._items.Count;
+    }
 }

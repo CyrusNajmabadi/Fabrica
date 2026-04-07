@@ -111,10 +111,10 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     }
 
     /// <summary>
-    /// Creates a store without merge infrastructure. Suitable for tests that manipulate the arena
-    /// and refcounts directly without running the merge pipeline.
+    /// Creates a store without merge infrastructure. Called by <see cref="GlobalNodeStore(int)"/>
+    /// for shared initialization and by <see cref="TestAccessor.Create"/> for test-only stores.
     /// </summary>
-    public GlobalNodeStore()
+    private GlobalNodeStore()
     {
         this.Arena = new UnsafeSlabArena<TNode>();
         this.RefCounts = new RefCountTable<TNode>();
@@ -156,7 +156,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Handle<T> RemapHandle<T>(Handle<T> handle) where T : struct => _remap.Remap(handle);
 
-    internal RemapTable Remap => _remap;
+    private RemapTable Remap => _remap;
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
@@ -291,7 +291,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Collects root handles from all thread-local buffers into <paramref name="destination"/>,
     /// remapping local handles to global indices. Global handles pass through unchanged.
     /// </summary>
-    public void CollectAndRemapRoots(UnsafeList<Handle<TNode>> destination)
+    private void CollectAndRemapRoots(UnsafeList<Handle<TNode>> destination)
     {
         foreach (var threadLocalBuffer in _threadLocalBuffers)
         {
@@ -478,6 +478,9 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
         public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.IncrementRoots(roots);
         public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
+
+        public void CollectAndRemapRoots(UnsafeList<Handle<TNode>> destination) => store.CollectAndRemapRoots(destination);
+        public RemapTable Remap => store._remap;
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;
