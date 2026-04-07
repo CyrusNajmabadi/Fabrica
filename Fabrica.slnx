@@ -10,4 +10,5 @@
   <Project Path="tests/Fabrica.Engine.Tests/Fabrica.Engine.Tests.csproj" />
   <Project Path="tests/Fabrica.JitBaseline/Fabrica.JitBaseline.csproj" />
   <Project Path="tests/Fabrica.SampleGame.Tests/Fabrica.SampleGame.Tests.csproj" />
+  <Project Path="benchmarks/Fabrica.SampleGame.Benchmarks/Fabrica.SampleGame.Benchmarks.csproj" />
 </Solution>

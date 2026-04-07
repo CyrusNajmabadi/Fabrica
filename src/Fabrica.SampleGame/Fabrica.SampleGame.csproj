@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<ItemGroup>
 		<InternalsVisibleTo Include="Fabrica.SampleGame.Tests" />
+		<InternalsVisibleTo Include="Fabrica.SampleGame.Benchmarks" />
 	</ItemGroup>
 
 	<ItemGroup>
