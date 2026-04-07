@@ -82,12 +82,9 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Creates a store with per-worker merge infrastructure (thread-local buffers and remap table).
     /// Call <see cref="SetNodeOps"/> to complete two-phase initialization before using the store.
     /// </summary>
-    public GlobalNodeStore(int workerCount)
+    public GlobalNodeStore(int workerCount) : this()
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
-        this.Arena = new UnsafeSlabArena<TNode>();
-        this.RefCounts = new RefCountTable<TNode>();
-        _nodeOps = default;
         _threadLocalBuffers = new ThreadLocalBuffer<TNode>[workerCount];
         for (var i = 0; i < workerCount; i++)
             _threadLocalBuffers[i] = new ThreadLocalBuffer<TNode>(i);
@@ -107,23 +104,14 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         _remap = default;
     }
 
-    private GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, int workerCount)
+    /// <summary>Test-only: creates a store with caller-provided arena and refcount table.</summary>
+    private GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
     {
         this.Arena = arena;
         this.RefCounts = refCounts;
         _nodeOps = default;
-        if (workerCount > 0)
-        {
-            _threadLocalBuffers = new ThreadLocalBuffer<TNode>[workerCount];
-            for (var i = 0; i < workerCount; i++)
-                _threadLocalBuffers[i] = new ThreadLocalBuffer<TNode>(i);
-            _remap = new RemapTable(workerCount);
-        }
-        else
-        {
-            _threadLocalBuffers = [];
-            _remap = default;
-        }
+        _threadLocalBuffers = [];
+        _remap = default;
     }
 
     /// <summary>The slab-backed arena storing nodes of type <typeparamref name="TNode"/>.</summary>
@@ -454,8 +442,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         /// returned store to complete two-phase initialization.
         /// </summary>
         public static GlobalNodeStore<TNode, TNodeOps> Create(
-            UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, int workerCount = 0)
-            => new(arena, refCounts, workerCount);
+            UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
+            => new(arena, refCounts);
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;

@@ -138,13 +138,8 @@ public class CoordinatorMergeTests
     private static (GlobalNodeStore<ParentNode, MergeNodeOps> ParentStore, GlobalNodeStore<ChildNode, MergeNodeOps> ChildStore)
         CreateStores(int workerCount = 1)
     {
-        var childArena = new UnsafeSlabArena<ChildNode>();
-        var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = GlobalNodeStore<ChildNode, MergeNodeOps>.TestAccessor.Create(childArena, childRefCounts, workerCount);
-
-        var parentArena = new UnsafeSlabArena<ParentNode>();
-        var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = GlobalNodeStore<ParentNode, MergeNodeOps>.TestAccessor.Create(parentArena, parentRefCounts, workerCount);
+        var childStore = new GlobalNodeStore<ChildNode, MergeNodeOps>(workerCount);
+        var parentStore = new GlobalNodeStore<ParentNode, MergeNodeOps>(workerCount);
 
         var ops = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);

@@ -134,13 +134,8 @@ public class JobMergePipelineTests : IDisposable
     private static (GlobalNodeStore<ParentNode, TestNodeOps> ParentStore, GlobalNodeStore<ChildNode, TestNodeOps> ChildStore)
         CreateStores(int workerCount = 4)
     {
-        var childArena = new UnsafeSlabArena<ChildNode>();
-        var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = GlobalNodeStore<ChildNode, TestNodeOps>.TestAccessor.Create(childArena, childRefCounts, workerCount);
-
-        var parentArena = new UnsafeSlabArena<ParentNode>();
-        var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = GlobalNodeStore<ParentNode, TestNodeOps>.TestAccessor.Create(parentArena, parentRefCounts, workerCount);
+        var childStore = new GlobalNodeStore<ChildNode, TestNodeOps>(workerCount);
+        var parentStore = new GlobalNodeStore<ParentNode, TestNodeOps>(workerCount);
 
         var ops = new TestNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
