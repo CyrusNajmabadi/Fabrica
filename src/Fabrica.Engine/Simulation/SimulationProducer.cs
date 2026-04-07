@@ -40,12 +40,9 @@ internal readonly struct SimulationProducer(
         var image = _imagePool.Rent();
 
         // TODO: Once WorldImage contains real node types, this method will:
-        //   1. Reset per-worker TLBs for each node type.
-        //   2. Build the tick's job DAG (concrete Job subclasses that allocate nodes in TLBs).
-        //   3. _scheduler.Submit(rootJob) — blocks until the entire DAG completes.
-        //   4. coordinator.MergeAll() (drain all TLBs, rewrite handles, increment child refcounts).
-        //   5. store.BuildSnapshotSlice per type (collect/remap roots and pin refcounts).
-        //   6. Populate SnapshotSlices on the WorldImage.
+        //   1. Build the tick's job DAG (concrete Job subclasses that allocate nodes in TLBs).
+        //   2. _scheduler.Submit(rootJob) — blocks until the entire DAG completes.
+        //   3. using (var merge = coordinator.MergeAll()) { build snapshot slices per type }.
         //
         // The integration test in JobMergePipelineTests proves this pipeline end-to-end
         // with concrete node types and real worker threads.

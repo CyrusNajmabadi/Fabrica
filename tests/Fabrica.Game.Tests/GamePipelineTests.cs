@@ -121,15 +121,15 @@ public class GamePipelineTests : IDisposable
         // ── Merge pipeline (drain TLBs, rewrite handles, increment child refcounts) ──
 
         var coordinator = new MergeCoordinator([machineStore, beltStore, itemStore]);
-        coordinator.MergeAll();
+        UnsafeList<Handle<MachineNode>> machineRoots;
+        using (var merge = coordinator.MergeAll())
+        {
+            machineRoots = new UnsafeList<Handle<MachineNode>>();
+            machineStore.GetTestAccessor().CollectAndRemapRoots(machineRoots);
+            Assert.Equal(1, machineRoots.Count);
 
-        // Collect and remap roots.
-        var machineRoots = new UnsafeList<Handle<MachineNode>>();
-        machineStore.GetTestAccessor().CollectAndRemapRoots(machineRoots);
-        Assert.Equal(1, machineRoots.Count);
-
-        // Increment root refcounts.
-        machineStore.GetTestAccessor().IncrementRoots(machineRoots.WrittenSpan);
+            machineStore.GetTestAccessor().IncrementRoots(machineRoots.WrittenSpan);
+        }
 
         // ── Validate the DAG ─────────────────────────────────────────────
 

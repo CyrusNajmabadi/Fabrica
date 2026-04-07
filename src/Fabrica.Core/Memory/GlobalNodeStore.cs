@@ -16,6 +16,12 @@ public abstract class GlobalNodeStore
     internal abstract void Drain();
     internal abstract void RewriteAndIncrementRefCounts();
     internal abstract void ResetMergeState();
+
+    /// <summary>
+    /// Set by <see cref="MergeCoordinator.MergeAll"/> after drain+rewrite completes, cleared by
+    /// <see cref="MergeCoordinator.MergeTransaction.Dispose"/>. Guards <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/>.
+    /// </summary>
+    internal bool IsMergeActive;
 }
 
 /// <summary>
@@ -269,6 +275,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
+        Debug.Assert(IsMergeActive, "BuildSnapshotSlice must be called within a MergeTransaction scope.");
         var roots = new UnsafeList<Handle<TNode>>();
         this.CollectAndRemapRoots(roots);
         this.IncrementRoots(roots.WrittenSpan);

@@ -52,16 +52,12 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
 
         // ── 3. Merge pipeline ───────────────────────────────────────────
 
-        // Drain all TLBs, rewrite local handles to global, increment child refcounts.
-        tickState.Coordinator.MergeAll();
-
-        // Build typed snapshot slices (collect roots, increment root refcounts).
-        image.MachineSlice = tickState.MachineStore.BuildSnapshotSlice();
-        image.BeltSlice = tickState.BeltStore.BuildSnapshotSlice();
-        image.ItemSlice = tickState.ItemStore.BuildSnapshotSlice();
-
-        // ── 4. Reset ────────────────────────────────────────────────────
-        tickState.Coordinator.ResetAll();
+        using (var merge = tickState.Coordinator.MergeAll())
+        {
+            image.MachineSlice = tickState.MachineStore.BuildSnapshotSlice();
+            image.BeltSlice = tickState.BeltStore.BuildSnapshotSlice();
+            image.ItemSlice = tickState.ItemStore.BuildSnapshotSlice();
+        }
 
         return image;
     }

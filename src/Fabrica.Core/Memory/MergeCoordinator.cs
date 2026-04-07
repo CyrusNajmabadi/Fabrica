@@ -2,16 +2,17 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Orchestrates the merge pipeline across all registered stores: drain thread-local buffers,
-/// rewrite local handles to global indices, and increment child refcounts. After
-/// <see cref="MergeAll"/> completes, callers can build snapshot slices from each typed store.
+/// rewrite local handles to global indices, and increment child refcounts.
 ///
-/// PIPELINE PHASES
+/// PIPELINE PHASES (managed via <see cref="MergeAll"/> and <see cref="MergeTransaction"/>)
 ///   1. <b>Drain</b> — copy each store's TLBs into its arena, building remap tables.
 ///      All drains must complete before any rewrite begins (cross-type remap dependency).
 ///   2. <b>Rewrite + refcount</b> — for each store, rewrite local handles via remap tables,
 ///      then increment child refcounts via <see cref="Nodes.INodeOps{TNode}.IncrementChildRefCounts"/>.
-///   3. <i>(caller)</i> <b>Build slices</b> — per-store, type-specific.
-///   4. <b>Reset</b> — clear TLBs and remap tables for the next tick.
+///   3. <i>(caller)</i> <b>Build slices</b> — per-store, type-specific. Only valid within the
+///      returned <see cref="MergeTransaction"/> scope.
+///   4. <b>Reset</b> — automatic on <see cref="MergeTransaction.Dispose"/>; clears TLBs and remap
+///      tables for the next tick.
 /// </summary>
 public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
 {
@@ -19,25 +20,38 @@ public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
 
     /// <summary>
     /// Executes phases 1 and 2 of the merge pipeline: drains all TLBs, then rewrites handles
-    /// and increments child refcounts for every store. After this returns, callers may call
-    /// <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/> on each typed store,
-    /// then <see cref="ResetAll"/> to prepare for the next tick.
+    /// and increments child refcounts for every store. Returns a <see cref="MergeTransaction"/>
+    /// that must be disposed to reset merge state. Snapshot slices may only be built within the
+    /// transaction scope.
     /// </summary>
-    public void MergeAll()
+    public MergeTransaction MergeAll()
     {
         foreach (var store in _stores)
             store.Drain();
 
         foreach (var store in _stores)
             store.RewriteAndIncrementRefCounts();
+
+        foreach (var store in _stores)
+            store.IsMergeActive = true;
+
+        return new MergeTransaction(_stores);
     }
 
     /// <summary>
-    /// Resets all stores' per-tick merge scratch (thread-local buffers and remap tables).
+    /// Scoped handle returned by <see cref="MergeAll"/>. While alive, stores accept
+    /// <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/> calls. Disposing resets
+    /// all merge state (TLBs, remap tables) for the next tick.
     /// </summary>
-    public void ResetAll()
+    public struct MergeTransaction(GlobalNodeStore[] stores) : IDisposable
     {
-        foreach (var store in _stores)
-            store.ResetMergeState();
+        public readonly void Dispose()
+        {
+            foreach (var store in stores)
+            {
+                store.IsMergeActive = false;
+                store.ResetMergeState();
+            }
+        }
     }
 }
