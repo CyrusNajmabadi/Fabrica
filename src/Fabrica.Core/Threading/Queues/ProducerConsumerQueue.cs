@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Fabrica.Core.Collections.Unsafe;
 
 namespace Fabrica.Core.Threading.Queues;
 
@@ -80,7 +81,7 @@ public sealed partial class ProducerConsumerQueue<T>
 
     /// <summary>LIFO stack of slabs whose items have been fully cleaned. The producer pops from here before allocating a fresh
     /// slab, giving recently-returned slabs the best chance of still being in CPU cache.</summary>
-    private readonly Stack<Slab> _freeSlabs = new();
+    private readonly UnsafeStack<Slab> _freeSlabs = new();
 
     // ═══════════════════════════ CONSTRUCTORS ════════════════════════════════
 
