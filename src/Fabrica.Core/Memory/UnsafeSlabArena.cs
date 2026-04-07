@@ -112,29 +112,38 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     }
 
     /// <summary>
-    /// Allocates <paramref name="count"/> contiguous entries by bumping the high-water mark, bypassing the free list.
-    /// Returns the starting global index. The caller must initialise all entries in the range
-    /// <c>[startIndex, startIndex + count)</c>. Used by the coordinator merge to batch-allocate global slots for an
-    /// entire <see cref="ThreadLocalBuffer{T}"/>.
+    /// Allocates <paramref name="count"/> entries into <paramref name="destination"/>, reusing free-list slots first
+    /// then bump-allocating the remainder contiguously. This gives steady-state zero allocation (freed slots are
+    /// recycled) while preserving the fast sequential-write path when the free-list is exhausted.
     /// </summary>
-    public int AllocateBatch(int count)
+    public void AllocateBatch(int count, UnsafeList<Handle<T>> destination)
     {
         _owner.AssertOwnerThread();
         Debug.Assert(count >= 0, $"AllocateBatch called with negative count {count}.");
 
-        if (count == 0)
-            return _highWater;
+        _count += count;
 
+        // Phase 1: drain the free-list (LIFO — cache-hot slots first).
+        while (count > 0 && _freeList.TryPop(out var freed))
+        {
+            destination.Add(freed);
+            count--;
+        }
+
+        if (count == 0)
+            return;
+
+        // Phase 2: bump-allocate the remainder as a contiguous run.
         var startIndex = _highWater;
         _highWater += count;
-        _count += count;
 
         for (var i = startIndex; i < _highWater; i += _directory.SlabLength)
             _directory.EnsureSlab(i);
 
         _directory.EnsureSlab(_highWater - 1);
 
-        return startIndex;
+        for (var i = 0; i < count; i++)
+            destination.Add(new Handle<T>(startIndex + i));
     }
 
     /// <summary>
