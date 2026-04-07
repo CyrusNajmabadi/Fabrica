@@ -72,31 +72,24 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         tickState.BeltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref refcountVisitor);
         tickState.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref refcountVisitor);
 
-        // Phase 3: collect and remap root handles for all types.
-        tickState.MachineStore.CollectAndRemapRoots(tickState.MachineRoots);
-        tickState.BeltStore.CollectAndRemapRoots(tickState.BeltRoots);
-        tickState.ItemStore.CollectAndRemapRoots(tickState.ItemRoots);
+        // Phase 3: collect roots directly into the lists that the snapshot slices will own.
+        var machineRoots = new UnsafeList<Handle<MachineNode>>();
+        tickState.MachineStore.CollectAndRemapRoots(machineRoots);
+
+        var beltRoots = new UnsafeList<Handle<BeltSegmentNode>>();
+        tickState.BeltStore.CollectAndRemapRoots(beltRoots);
+
+        var itemRoots = new UnsafeList<Handle<ItemNode>>();
+        tickState.ItemStore.CollectAndRemapRoots(itemRoots);
 
         // ── 4. Build snapshot slices ────────────────────────────────────
-        var machineRootList = new UnsafeList<Handle<MachineNode>>();
-        foreach (var root in tickState.MachineRoots.WrittenSpan)
-            machineRootList.Add(root);
-
-        var beltRootList = new UnsafeList<Handle<BeltSegmentNode>>();
-        foreach (var root in tickState.BeltRoots.WrittenSpan)
-            beltRootList.Add(root);
-
-        var itemRootList = new UnsafeList<Handle<ItemNode>>();
-        foreach (var root in tickState.ItemRoots.WrittenSpan)
-            itemRootList.Add(root);
-
-        image.MachineSlice = new SnapshotSlice<MachineNode, GameNodeOps>(tickState.MachineStore, machineRootList);
+        image.MachineSlice = new SnapshotSlice<MachineNode, GameNodeOps>(tickState.MachineStore, machineRoots);
         image.MachineSlice.IncrementRootRefCounts();
 
-        image.BeltSlice = new SnapshotSlice<BeltSegmentNode, GameNodeOps>(tickState.BeltStore, beltRootList);
+        image.BeltSlice = new SnapshotSlice<BeltSegmentNode, GameNodeOps>(tickState.BeltStore, beltRoots);
         image.BeltSlice.IncrementRootRefCounts();
 
-        image.ItemSlice = new SnapshotSlice<ItemNode, GameNodeOps>(tickState.ItemStore, itemRootList);
+        image.ItemSlice = new SnapshotSlice<ItemNode, GameNodeOps>(tickState.ItemStore, itemRoots);
         image.ItemSlice.IncrementRootRefCounts();
 
         // ── 5. Reset buffers for the next tick ──────────────────────────

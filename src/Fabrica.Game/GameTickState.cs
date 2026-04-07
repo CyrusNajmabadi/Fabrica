@@ -13,10 +13,6 @@ internal sealed class GameTickState
     internal readonly GlobalNodeStore<BeltSegmentNode, GameNodeOps> BeltStore;
     internal readonly GlobalNodeStore<ItemNode, GameNodeOps> ItemStore;
 
-    internal readonly UnsafeList<Handle<MachineNode>> MachineRoots = new();
-    internal readonly UnsafeList<Handle<BeltSegmentNode>> BeltRoots = new();
-    internal readonly UnsafeList<Handle<ItemNode>> ItemRoots = new();
-
     internal GameTickState(int workerCount)
     {
         MachineStore = new(workerCount);
@@ -35,18 +31,13 @@ internal sealed class GameTickState
     }
 
     /// <summary>
-    /// Resets all per-tick scratch state (thread-local buffers, remap tables, root lists)
-    /// so they are clean for the next tick. Backing arrays are retained for zero steady-state
-    /// allocation.
+    /// Resets all per-tick scratch state (thread-local buffers and remap tables) so they are
+    /// clean for the next tick. Backing arrays are retained for zero steady-state allocation.
     /// </summary>
     internal void Reset()
     {
         MachineStore.ResetMergeState();
         BeltStore.ResetMergeState();
         ItemStore.ResetMergeState();
-
-        MachineRoots.Reset();
-        BeltRoots.Reset();
-        ItemRoots.Reset();
     }
 }
