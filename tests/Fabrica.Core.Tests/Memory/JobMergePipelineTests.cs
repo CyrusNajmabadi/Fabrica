@@ -149,11 +149,11 @@ public class JobMergePipelineTests : IDisposable
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = new GlobalNodeStore<ChildNode, TestNodeOps>(childArena, childRefCounts, default);
+        var childStore = GlobalNodeStore<ChildNode, TestNodeOps>.TestAccessor.Create(childArena, childRefCounts);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = new GlobalNodeStore<ParentNode, TestNodeOps>(parentArena, parentRefCounts, default);
+        var parentStore = GlobalNodeStore<ParentNode, TestNodeOps>.TestAccessor.Create(parentArena, parentRefCounts);
 
         var ops = new TestNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);

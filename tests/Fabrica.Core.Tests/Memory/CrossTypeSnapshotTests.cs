@@ -133,11 +133,11 @@ public class CrossTypeSnapshotTests
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = new GlobalNodeStore<ChildNode, CrossTypeNodeOps>(childArena, childRefCounts, default);
+        var childStore = GlobalNodeStore<ChildNode, CrossTypeNodeOps>.TestAccessor.Create(childArena, childRefCounts);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = new GlobalNodeStore<ParentNode, CrossTypeNodeOps>(parentArena, parentRefCounts, default);
+        var parentStore = GlobalNodeStore<ParentNode, CrossTypeNodeOps>.TestAccessor.Create(parentArena, parentRefCounts);
 
         var ops = new CrossTypeNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);

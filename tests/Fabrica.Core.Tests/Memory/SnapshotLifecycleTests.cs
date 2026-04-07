@@ -46,7 +46,7 @@ public class SnapshotLifecycleTests
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        _store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        _store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
         _store.SetNodeOps(new TreeNodeOps { Store = _store });
         _store.EnableValidation();
     }
@@ -445,7 +445,7 @@ public class SnapshotLifecycleTests
             // Fresh store per permutation so freed nodes from prior iterations don't interfere.
             var arena = new UnsafeSlabArena<TreeNode>();
             var refCounts = new RefCountTable<TreeNode>();
-            var store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+            var store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
             store.SetNodeOps(new TreeNodeOps { Store = store });
 
             var root = BuildPerfectTreeInStore(store, 3);

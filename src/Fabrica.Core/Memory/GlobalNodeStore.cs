@@ -84,11 +84,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// </summary>
     public GlobalNodeStore() : this(new UnsafeSlabArena<TNode>(), new RefCountTable<TNode>(), default) { }
 
-    /// <summary>
-    /// Creates a store with caller-provided arena and refcount table. Used by tests (via IVT)
-    /// that need to inspect internal state.
-    /// </summary>
-    internal GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
+    private GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
     {
         this.Arena = arena;
         this.RefCounts = refCounts;
@@ -421,6 +417,17 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
 
     internal readonly struct TestAccessor(GlobalNodeStore<TNode, TNodeOps> store)
     {
+        /// <summary>
+        /// Creates a store with caller-provided arena and refcount table so tests can inspect
+        /// internal state. Call <see cref="GlobalNodeStore{TNode,TNodeOps}.SetNodeOps"/> on the
+        /// returned store to complete two-phase initialization.
+        /// </summary>
+        public static GlobalNodeStore<TNode, TNodeOps> Create(
+            UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
+            => new(arena, refCounts, default);
+
+        public UnsafeSlabArena<TNode> Arena => store.Arena;
+        public RefCountTable<TNode> RefCounts => store.RefCounts;
         public TNodeOps NodeOps => store._nodeOps;
         public bool CascadeActive => store._cascadeActive;
     }
