@@ -69,13 +69,30 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
 
+    /// <summary>Per-worker append buffers for nodes created during the parallel work phase.
+    /// Empty array when the store has no merge infrastructure (test-only parameterless constructor).</summary>
     private readonly ThreadLocalBuffer<TNode>[] _threadLocalBuffers;
+
+    /// <summary>Maps <c>(threadId, localIndex)</c> pairs to global arena indices during merge.
+    /// Default (no-op) when the store has no merge infrastructure.</summary>
     private readonly RemapTable _remap;
+
+    /// <summary>Starting global index of the most recent <see cref="DrainBuffers"/> batch.
+    /// Read by the parameterless <see cref="RewriteAndIncrementRefCounts{TRefcountVisitor}"/>
+    /// overload to iterate the newly drained range.</summary>
     private int _lastDrainStart;
+
+    /// <summary>Number of nodes in the most recent <see cref="DrainBuffers"/> batch.</summary>
     private int _lastDrainCount;
 
 #if DEBUG
+    /// <summary>Running root-handle reference counts for debug validation. Each
+    /// <see cref="IncrementRoots"/> increments and each <see cref="DecrementRoots"/> decrements.
+    /// Null until <see cref="TestAccessor.EnableValidation"/> is called.</summary>
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
+
+    /// <summary>Delegate that runs <see cref="DagValidator.AssertValid"/> against the current
+    /// tracked roots. Null until <see cref="TestAccessor.EnableValidation"/> is called.</summary>
     private Action? _runValidation;
 #endif
 
@@ -131,11 +148,14 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     public ThreadLocalBuffer<TNode>[] ThreadLocalBuffers => _threadLocalBuffers;
 
     /// <summary>
-    /// The remap table mapping local (thread-local buffer) indices to global arena indices.
-    /// Populated by <see cref="DrainBuffers"/> and consumed by <see cref="RewriteAndIncrementRefCounts"/>
-    /// and <see cref="CollectAndRemapRoots"/>.
+    /// Rewrites a local (tagged) handle to its corresponding global handle using the remap table
+    /// populated by <see cref="DrainBuffers"/>. Global and <see cref="Handle{T}.None"/> handles are
+    /// returned unchanged.
     /// </summary>
-    public RemapTable Remap => _remap;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Handle<T> RemapHandle<T>(Handle<T> handle) where T : struct => _remap.Remap(handle);
+
+    internal RemapTable Remap => _remap;
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct

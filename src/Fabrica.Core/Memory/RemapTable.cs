@@ -13,7 +13,7 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded. Built by the coordinator (or a per-type merge worker) during Phase 1, read
 ///   during Phase 2a. No synchronization.
 /// </summary>
-public readonly struct RemapTable
+internal readonly struct RemapTable
 {
     private readonly UnsafeList<int>[] _perThreadMappings;
 

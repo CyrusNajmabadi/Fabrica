@@ -70,13 +70,13 @@ public class CoordinatorMergeTests
             if (typeof(T) == typeof(ParentNode))
             {
                 var parentHandle = Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle);
-                parentHandle = ParentStore.Remap.Remap(parentHandle);
+                parentHandle = ParentStore.RemapHandle(parentHandle);
                 handle = Unsafe.As<Handle<ParentNode>, Handle<T>>(ref parentHandle);
             }
             else if (typeof(T) == typeof(ChildNode))
             {
                 var childHandle = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle);
-                childHandle = ChildStore.Remap.Remap(childHandle);
+                childHandle = ChildStore.RemapHandle(childHandle);
                 handle = Unsafe.As<Handle<ChildNode>, Handle<T>>(ref childHandle);
             }
         }

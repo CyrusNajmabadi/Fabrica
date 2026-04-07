@@ -68,9 +68,9 @@ public class JobMergePipelineTests : IDisposable
         public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
         {
             if (typeof(T) == typeof(ParentNode))
-                handle = ParentStore.Remap.Remap(handle);
+                handle = ParentStore.RemapHandle(handle);
             else if (typeof(T) == typeof(ChildNode))
-                handle = ChildStore.Remap.Remap(handle);
+                handle = ChildStore.RemapHandle(handle);
         }
     }
 
