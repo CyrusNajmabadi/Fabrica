@@ -8,22 +8,35 @@ namespace Fabrica.Core.Jobs;
 /// <see cref="JobScheduler"/> instances share a single pool; top-level jobs are submitted via
 /// <see cref="Inject"/>.
 ///
+/// <para>
+/// The pool consists of <c>workerCount</c> background threads and <c>coordinatorCount</c>
+/// coordinator slots. Coordinators are external threads (e.g. the game loop) that participate in
+/// work-stealing when they submit a job DAG. Each <see cref="JobScheduler"/> attaches to one
+/// coordinator slot via <see cref="AttachCoordinator"/>.
+/// </para>
+///
 /// REFERENCE: D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
 /// </summary>
 public sealed class WorkerPool : IDisposable
 {
-    /// <summary>Worker contexts, one per background thread. Length equals <see cref="_workerCount"/>.</summary>
+    /// <summary>
+    /// All worker contexts: background workers at indices <c>[0, _backgroundWorkerCount)</c>,
+    /// coordinator slots at <c>[_backgroundWorkerCount, _backgroundWorkerCount + coordinatorCount)</c>.
+    /// </summary>
     private readonly WorkerContext[] _allContexts;
 
-    /// <summary>Background worker threads. Length equals <see cref="_workerCount"/>.</summary>
+    /// <summary>Background worker threads. Length equals <see cref="_backgroundWorkerCount"/>.</summary>
     private readonly Thread[] _workerThreads;
 
-    /// <summary>Number of background worker threads.</summary>
-    private readonly int _workerCount;
+    /// <summary>Number of background worker threads (excludes coordinator slots).</summary>
+    private readonly int _backgroundWorkerCount;
+
+    /// <summary>Total number of worker contexts (background + coordinator).</summary>
+    private readonly int _totalWorkerCount;
 
     /// <summary>
-    /// Shared semaphore for parking idle workers. Only released when <see cref="_parkedWorkers"/>
-    /// is positive, preventing unbounded permit accumulation.
+    /// Shared semaphore for parking idle background workers. Only released when
+    /// <see cref="_parkedWorkers"/> is positive, preventing unbounded permit accumulation.
     /// </summary>
     private readonly SemaphoreSlim _workSignal;
 
@@ -34,32 +47,41 @@ public sealed class WorkerPool : IDisposable
     private int _disposed;
 
     /// <summary>
-    /// Number of workers currently parked (blocked on <see cref="_workSignal"/>). Used by
-    /// <see cref="NotifyWorkAvailable"/> to avoid releasing the semaphore when no one is waiting,
-    /// which would cause unbounded permit accumulation. Updated via announce-then-recheck.
+    /// Number of background workers currently parked (blocked on <see cref="_workSignal"/>). Used
+    /// by <see cref="NotifyWorkAvailable"/> to avoid releasing the semaphore when no one is
+    /// waiting, which would cause unbounded permit accumulation. Updated via announce-then-recheck.
     /// </summary>
     private int _parkedWorkers;
 
     /// <summary>
-    /// Top-level jobs land here.
+    /// Top-level jobs injected via the test accessor's <see cref="JobScheduler.TestAccessor.Inject"/>
+    /// land here. Not used by the coordinator fast-path (<see cref="JobScheduler.Submit"/>), which
+    /// pushes directly onto the coordinator's deque.
     /// </summary>
     private readonly ConcurrentQueue<Job> _injectionQueue = new();
 
+    /// <summary>Next coordinator slot index to hand out via <see cref="AttachCoordinator"/>.</summary>
+    private int _nextCoordinatorSlot;
+
     internal const int MaxWorkerCount = 127;
 
-    public WorkerPool(int workerCount = -1)
+    public WorkerPool(int workerCount = -1, int coordinatorCount = 0)
     {
         if (workerCount < 0)
             workerCount = Math.Min(Environment.ProcessorCount, MaxWorkerCount);
 
         ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(workerCount, MaxWorkerCount);
+        ArgumentOutOfRangeException.ThrowIfLessThan(coordinatorCount, 0);
 
-        _workerCount = workerCount;
+        var totalCount = workerCount + coordinatorCount;
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(totalCount, MaxWorkerCount);
+
+        _backgroundWorkerCount = workerCount;
+        _totalWorkerCount = totalCount;
         _workSignal = new SemaphoreSlim(0);
 
-        _allContexts = new WorkerContext[workerCount];
-        for (var i = 0; i < workerCount; i++)
+        _allContexts = new WorkerContext[totalCount];
+        for (var i = 0; i < totalCount; i++)
             _allContexts[i] = new WorkerContext(this, i);
 
         _workerThreads = new Thread[workerCount];
@@ -75,7 +97,23 @@ public sealed class WorkerPool : IDisposable
         }
     }
 
-    public int WorkerCount => _workerCount;
+    /// <summary>
+    /// Total number of worker contexts (background threads + coordinator slots). Use this to size
+    /// per-worker data structures (e.g. thread-local buffers).
+    /// </summary>
+    public int WorkerCount => _totalWorkerCount;
+
+    /// <summary>
+    /// Claims the next available coordinator slot and returns its <see cref="WorkerContext"/>.
+    /// Each <see cref="JobScheduler"/> calls this once during construction.
+    /// </summary>
+    internal WorkerContext AttachCoordinator()
+    {
+        var slot = Interlocked.Increment(ref _nextCoordinatorSlot) - 1;
+        var index = _backgroundWorkerCount + slot;
+        Debug.Assert(index < _allContexts.Length, $"No coordinator slots remaining (requested slot {slot}, total contexts {_allContexts.Length}).");
+        return _allContexts[index];
+    }
 
     // ── Job injection ─────────────────────────────────────────────────────────
 
@@ -131,7 +169,11 @@ public sealed class WorkerPool : IDisposable
 
     // ── Core execution ──────────────────────────────────────────────────────
 
-    private bool TryExecuteOne(WorkerContext context)
+    /// <summary>
+    /// Attempts to find and execute one job. Tries local deque, then steals from peers, then
+    /// checks the injection queue. Called by both background workers and coordinator threads.
+    /// </summary>
+    internal bool TryExecuteOne(WorkerContext context)
     {
         // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
         // queue — cold, after local and peer deques (JobScheduler.Submit enqueues via Inject).
@@ -233,13 +275,11 @@ public sealed class WorkerPool : IDisposable
 
     public void Dispose()
     {
-        // WORKER LIFECYCLE: set shutdown, wake all parked workers (one release per worker), join threads, dispose sync
-        // primitive.
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
         _shutdownRequested = true;
-        _workSignal.Release(_workerCount);
+        _workSignal.Release(_backgroundWorkerCount);
 
         foreach (var thread in _workerThreads)
             thread.Join();
@@ -254,6 +294,7 @@ public sealed class WorkerPool : IDisposable
     internal readonly struct TestAccessor(WorkerPool pool)
     {
         public WorkerContext GetWorkerContext(int index) => pool._allContexts[index];
-        public int WorkerCount => pool._workerCount;
+        public int BackgroundWorkerCount => pool._backgroundWorkerCount;
+        public int WorkerCount => pool._totalWorkerCount;
     }
 }

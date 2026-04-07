@@ -34,7 +34,7 @@ public class JobSchedulerTests
     [Fact]
     public void SingleJob_Executes()
     {
-        using var pool = new WorkerPool(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -47,7 +47,7 @@ public class JobSchedulerTests
     [Fact]
     public void SingleJob_ReceivesWorkerContext()
     {
-        using var pool = new WorkerPool(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -67,7 +67,7 @@ public class JobSchedulerTests
     [Fact]
     public void Chain_ExecutesInDependencyOrder()
     {
-        using var pool = new WorkerPool(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -90,7 +90,7 @@ public class JobSchedulerTests
     [Fact]
     public void FanOutFanIn_RespectsDependencies()
     {
-        using var pool = new WorkerPool(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -121,7 +121,7 @@ public class JobSchedulerTests
     [Fact]
     public void Diamond_JoinExecutesOnce()
     {
-        using var pool = new WorkerPool(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -150,7 +150,7 @@ public class JobSchedulerTests
     [Fact]
     public void JobCanEnqueueSubJobs()
     {
-        using var pool = new WorkerPool(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -176,7 +176,7 @@ public class JobSchedulerTests
     [Fact]
     public void OutstandingCount_ReachesZeroAfterCompletion()
     {
-        using var pool = new WorkerPool(workerCount: 2);
+        using var pool = new WorkerPool(workerCount: 2, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -218,7 +218,7 @@ public class JobSchedulerTests
     public void Stress_ManyIndependentJobs()
     {
         const int JobCount = 200;
-        using var pool = new WorkerPool(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -241,7 +241,7 @@ public class JobSchedulerTests
     public void Stress_DeepChain()
     {
         const int Depth = 100;
-        using var pool = new WorkerPool(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -272,7 +272,7 @@ public class JobSchedulerTests
     public void Stress_WideFanOut()
     {
         const int FanWidth = 50;
-        using var pool = new WorkerPool(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
@@ -300,7 +300,7 @@ public class JobSchedulerTests
     [Fact]
     public void TwoSchedulers_SharePool_BothComplete()
     {
-        using var pool = new WorkerPool(workerCount: 4);
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 2);
         var schedulerA = new JobScheduler(pool);
         var schedulerB = new JobScheduler(pool);
         var accessorA = schedulerA.GetTestAccessor();

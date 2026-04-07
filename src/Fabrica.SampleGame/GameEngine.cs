@@ -32,7 +32,7 @@ public static class GameEngine
         // the stores to render snapshots, and ReleaseResources (called when the consumer retires
         // a snapshot) decrements root refcounts on those same stores. The worker pool may also be
         // shared for read-only render jobs in the future.
-        var workerPool = new WorkerPool(simulationWorkerCount);
+        var workerPool = new WorkerPool(simulationWorkerCount, coordinatorCount: 1);
         var scheduler = new JobScheduler(workerPool);
         var tickState = new GameTickState(workerPool.WorkerCount);
 

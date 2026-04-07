@@ -43,7 +43,7 @@ internal static class SimulationEngine
         var imagePool = new ObjectPool<WorldImage, WorldImage.Allocator>(SimulationConstants.SnapshotPoolSize);
         var shared = new SharedPipelineState<WorldImage>(queue);
 
-        var workerPool = new WorkerPool(simulationWorkerCount);
+        var workerPool = new WorkerPool(simulationWorkerCount, coordinatorCount: 1);
         var scheduler = new JobScheduler(workerPool);
         var producer = new SimulationProducer(imagePool, scheduler);
         var consumer = new RenderConsumer<TRenderer>(renderWorkerCount, renderer);
