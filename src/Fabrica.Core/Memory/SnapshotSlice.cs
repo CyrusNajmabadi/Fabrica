@@ -10,6 +10,7 @@ namespace Fabrica.Core.Memory;
 /// LIFECYCLE
 ///   Build phase: call <see cref="AddRoot"/> for each root handle.
 ///   Publish: call <see cref="IncrementRootRefCounts"/> — bumps refcounts so the snapshot "holds" its roots.
+///   Release: call <see cref="Release"/> — decrements root refcounts and cascades freed nodes.
 ///
 /// ROOT SEMANTICS
 ///   Roots are per-snapshot. Each snapshot must explicitly declare its own root set — roots from prior
@@ -76,4 +77,11 @@ public readonly struct SnapshotSlice<TNode, TNodeOps>(GlobalNodeStore<TNode, TNo
     /// </summary>
     public void IncrementRootRefCounts()
         => _store.IncrementRoots(this.Roots);
+
+    /// <summary>
+    /// Decrements the refcount of every root in this slice and cascades any that hit zero.
+    /// Called when the snapshot holding this slice is released.
+    /// </summary>
+    public void Release()
+        => _store.DecrementRoots(this.Roots);
 }

@@ -217,7 +217,7 @@ public class CrossTypeSnapshotTests
         Assert.Equal(1, childStore.RefCounts.GetCount(childA));
         Assert.Equal(1, childStore.RefCounts.GetCount(childB));
 
-        parentStore.DecrementRoots(parentSlice.Roots);
+        parentSlice.Release();
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(parentRoot));
         Assert.Equal(0, childStore.RefCounts.GetCount(childRoot));
@@ -256,10 +256,10 @@ public class CrossTypeSnapshotTests
 
         Assert.Equal(2, childStore.RefCounts.GetCount(childLeaf));
 
-        parentStore.DecrementRoots(slice1.Roots);
+        slice1.Release();
         Assert.Equal(1, childStore.RefCounts.GetCount(childLeaf));
 
-        parentStore.DecrementRoots(slice2.Roots);
+        slice2.Release();
         Assert.Equal(0, childStore.RefCounts.GetCount(childLeaf));
     }
 
@@ -288,10 +288,10 @@ public class CrossTypeSnapshotTests
 
         Assert.Equal(2, childStore.RefCounts.GetCount(childNode));
 
-        parentStore.DecrementRoots(parentSlice.Roots);
+        parentSlice.Release();
         Assert.Equal(1, childStore.RefCounts.GetCount(childNode));
 
-        childStore.DecrementRoots(childSlice.Roots);
+        childSlice.Release();
         Assert.Equal(0, childStore.RefCounts.GetCount(childNode));
     }
 
@@ -325,19 +325,19 @@ public class CrossTypeSnapshotTests
 
         if (releaseParentFirst)
         {
-            parentStore.DecrementRoots(parentSlice.Roots);
+            parentSlice.Release();
             Assert.Equal(1, childStore.RefCounts.GetCount(childRoot));
             Assert.Equal(1, childStore.RefCounts.GetCount(childA));
 
-            childStore.DecrementRoots(childSlice.Roots);
+            childSlice.Release();
         }
         else
         {
-            childStore.DecrementRoots(childSlice.Roots);
+            childSlice.Release();
             Assert.Equal(1, childStore.RefCounts.GetCount(childRoot));
             Assert.Equal(1, childStore.RefCounts.GetCount(childA));
 
-            parentStore.DecrementRoots(parentSlice.Roots);
+            parentSlice.Release();
         }
 
         Assert.Equal(0, childStore.RefCounts.GetCount(childRoot));
@@ -386,8 +386,8 @@ public class CrossTypeSnapshotTests
         Assert.Equal(1, parentStore.RefCounts.GetCount(pRoot));
 
         // Release both slices (simulating releasing the composite snapshot)
-        parentStore.DecrementRoots(parentSlice.Roots);
-        childStore.DecrementRoots(childSlice.Roots);
+        parentSlice.Release();
+        childSlice.Release();
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(pRoot));
         Assert.Equal(0, parentStore.RefCounts.GetCount(pLeaf));
@@ -424,15 +424,15 @@ public class CrossTypeSnapshotTests
 
         if (releaseParentSliceFirst)
         {
-            parentStore.DecrementRoots(parentSlice.Roots);
+            parentSlice.Release();
             Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf));
-            childStore.DecrementRoots(childSlice.Roots);
+            childSlice.Release();
         }
         else
         {
-            childStore.DecrementRoots(childSlice.Roots);
+            childSlice.Release();
             Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf));
-            parentStore.DecrementRoots(parentSlice.Roots);
+            parentSlice.Release();
         }
 
         Assert.Equal(0, childStore.RefCounts.GetCount(cLeaf));
@@ -490,7 +490,7 @@ public class CrossTypeSnapshotTests
         Assert.Equal(1, childStore.RefCounts.GetCount(cB));
         Assert.Equal(1, childStore.RefCounts.GetCount(cC));
 
-        parentStore.DecrementRoots(parentSlice.Roots);
+        parentSlice.Release();
 
         Assert.Equal(0, childStore.RefCounts.GetCount(shared));
         Assert.Equal(0, childStore.RefCounts.GetCount(exclusive));
@@ -551,8 +551,8 @@ public class CrossTypeSnapshotTests
         for (var step = 0; step < 3; step++)
         {
             var snapshotIndex = order[step];
-            parentStore.DecrementRoots(parentSlices[snapshotIndex].Roots);
-            childStore.DecrementRoots(childSlices[snapshotIndex].Roots);
+            parentSlices[snapshotIndex].Release();
+            childSlices[snapshotIndex].Release();
 
             Assert.Equal(0, parentStore.RefCounts.GetCount(parentRoots[snapshotIndex]));
 
@@ -601,7 +601,7 @@ public class CrossTypeSnapshotTests
         Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf2));
         Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf3));
 
-        parentStore.DecrementRoots(parentSlice.Roots);
+        parentSlice.Release();
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(pRoot));
         Assert.Equal(0, parentStore.RefCounts.GetCount(pMid));
@@ -648,12 +648,12 @@ public class CrossTypeSnapshotTests
         Assert.Equal(2, childStore.RefCounts.GetCount(cLeaf));
 
         // Release parent first — cMid drops to 1, cLeaf stays at 2
-        parentStore.DecrementRoots(parentSlice.Roots);
+        parentSlice.Release();
         Assert.Equal(1, childStore.RefCounts.GetCount(cMid));
         Assert.Equal(2, childStore.RefCounts.GetCount(cLeaf));
 
         // Release child slice — everything cascades to 0
-        childStore.DecrementRoots(childSlice.Roots);
+        childSlice.Release();
         Assert.Equal(0, childStore.RefCounts.GetCount(cRoot));
         Assert.Equal(0, childStore.RefCounts.GetCount(cMid));
         Assert.Equal(0, childStore.RefCounts.GetCount(cLeaf));
@@ -778,7 +778,7 @@ public class CrossTypeSnapshotTests
         AssertCrossStoreValid(parentStore, childStore, [pRoot], []);
 
         // Release — everything freed
-        parentStore.DecrementRoots(parentSlice.Roots);
+        parentSlice.Release();
 
         // Valid after full release (empty world)
         AssertCrossStoreValid(parentStore, childStore, [], []);

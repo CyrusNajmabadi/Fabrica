@@ -78,7 +78,7 @@ public class SnapshotSliceTests
         Assert.Equal(1, store.RefCounts.GetCount(root));
         Assert.Equal(1, store.RefCounts.GetCount(leaf));
 
-        store.DecrementRoots(slice.Roots);
+        slice.Release();
         Assert.Equal(0, store.RefCounts.GetCount(root));
         Assert.Equal(0, store.RefCounts.GetCount(leaf));
     }
@@ -103,7 +103,7 @@ public class SnapshotSliceTests
         Assert.Equal(1, store.RefCounts.GetCount(b));
         Assert.Equal(1, store.RefCounts.GetCount(c));
 
-        store.DecrementRoots(slice.Roots);
+        slice.Release();
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
@@ -195,13 +195,13 @@ public class SnapshotSliceTests
 
         Assert.Equal(2, store.RefCounts.GetCount(a));
 
-        store.DecrementRoots(slice1.Roots);
+        slice1.Release();
         Assert.Equal(0, store.RefCounts.GetCount(root1));
         Assert.Equal(1, store.RefCounts.GetCount(a));
         Assert.Equal(1, store.RefCounts.GetCount(b));
         Assert.Equal(1, store.RefCounts.GetCount(c));
 
-        store.DecrementRoots(slice2.Roots);
+        slice2.Release();
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
@@ -226,11 +226,11 @@ public class SnapshotSliceTests
         slice2.AddRoot(root2);
         slice2.IncrementRootRefCounts();
 
-        store.DecrementRoots(slice2.Roots);
+        slice2.Release();
         Assert.Equal(0, store.RefCounts.GetCount(root2));
         Assert.Equal(1, store.RefCounts.GetCount(a));
 
-        store.DecrementRoots(slice1.Roots);
+        slice1.Release();
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
@@ -275,7 +275,7 @@ public class SnapshotSliceTests
         Assert.Equal(2, store.RefCounts.GetCount(b));
 
         // Release old snapshot
-        store.DecrementRoots(slice1.Roots);
+        slice1.Release();
 
         // Old spine freed: root, a, c
         Assert.Equal(0, store.RefCounts.GetCount(root));
@@ -294,7 +294,7 @@ public class SnapshotSliceTests
         Assert.Equal(1, store.RefCounts.GetCount(cPrime));
 
         // Release new snapshot — everything freed
-        store.DecrementRoots(slice2.Roots);
+        slice2.Release();
 
         Assert.Equal(0, store.RefCounts.GetCount(rootPrime));
         Assert.Equal(0, store.RefCounts.GetCount(aPrime));
@@ -336,7 +336,7 @@ public class SnapshotSliceTests
         for (var step = 0; step < 3; step++)
         {
             var snapshotIndex = order[step];
-            store.DecrementRoots(slices[snapshotIndex].Roots);
+            slices[snapshotIndex].Release();
             Assert.Equal(0, store.RefCounts.GetCount(roots[snapshotIndex]));
 
             var remainingCount = 2 - step;

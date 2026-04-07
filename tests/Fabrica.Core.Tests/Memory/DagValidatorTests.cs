@@ -370,7 +370,7 @@ public class DagValidatorTests
         // Release old root
         var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
         slice.AddRoot(root);
-        store.DecrementRoots(slice.Roots);
+        slice.Release();
 
         AssertValid(store, [newRoot]);
     }
@@ -391,7 +391,7 @@ public class DagValidatorTests
 
             var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
             slice.AddRoot(root);
-            store.DecrementRoots(slice.Roots);
+            slice.Release();
 
             root = newRoot;
             AssertValid(store, [root]);
@@ -407,7 +407,7 @@ public class DagValidatorTests
 
         var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
         slice.AddRoot(root);
-        store.DecrementRoots(slice.Roots);
+        slice.Release();
 
         AssertValid(store, []);
     }
