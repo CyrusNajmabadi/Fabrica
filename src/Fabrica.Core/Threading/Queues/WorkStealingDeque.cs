@@ -42,7 +42,7 @@ namespace Fabrica.Core.Threading.Queues;
 ///   D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
 ///   N. M. Lê et al., "Correct and Efficient Work-Stealing for Weak Memory Models," PPoPP 2013.
 /// </summary>
-public sealed class WorkStealingDeque<T>
+internal sealed class WorkStealingDeque<T>
 {
     private const int DefaultInitialCapacity = 32;
     private const int MinimumCapacity = 4;

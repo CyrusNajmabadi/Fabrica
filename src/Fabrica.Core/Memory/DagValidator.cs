@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Memory;
@@ -126,7 +127,7 @@ internal static class DagValidator
 
         // DFS from each root
         var childBuffer = new List<NodeRef>();
-        var dfsStack = new Stack<(NodeRef node, bool entering)>();
+        var dfsStack = new UnsafeStack<(NodeRef node, bool entering)>();
 
         for (var i = 0; i < roots.Length; i++)
         {
@@ -138,9 +139,9 @@ internal static class DagValidator
 
             dfsStack.Push((root, true));
 
-            while (dfsStack.Count > 0)
+            while (dfsStack.TryPop(out var entry))
             {
-                var (node, entering) = dfsStack.Pop();
+                var (node, entering) = entry;
 
                 if (!entering)
                 {

@@ -10,6 +10,8 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
 {
+    private readonly GlobalNodeStore[] _stores = (GlobalNodeStore[])stores.Clone();
+
     /// <summary>
     /// Drains all stores' thread-local buffers into their arenas (merge phase 1). All drains
     /// must complete before any store runs rewrite-and-refcount, because cross-type handle
@@ -17,7 +19,7 @@ public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
     /// </summary>
     public void DrainAll()
     {
-        foreach (var store in stores)
+        foreach (var store in _stores)
             store.Drain();
     }
 
@@ -26,7 +28,7 @@ public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
     /// </summary>
     public void ResetAll()
     {
-        foreach (var store in stores)
+        foreach (var store in _stores)
             store.ResetMergeState();
     }
 }

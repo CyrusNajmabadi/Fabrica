@@ -177,9 +177,9 @@ public class CoordinatorMergeTests
         Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
         Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(2)].Value);
 
-        Assert.Equal(0, childStore.Remap.Resolve(0, 0));
-        Assert.Equal(1, childStore.Remap.Resolve(1, 0));
-        Assert.Equal(2, childStore.Remap.Resolve(1, 1));
+        Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(1, 0));
+        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(1, 1));
     }
 
     [Fact]
@@ -217,9 +217,9 @@ public class CoordinatorMergeTests
         Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
         Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(1)].Value);
 
-        Assert.Equal(0, childStore.Remap.Resolve(0, 0));
-        Assert.Equal(0, childStore.Remap.Count(1));
-        Assert.Equal(1, childStore.Remap.Resolve(2, 0));
+        Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(0, childStore.GetTestAccessor().Remap.Count(1));
+        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(2, 0));
     }
 
     // ═══════════════════════════ Phase 2a tests ══════════════════════════
@@ -346,12 +346,12 @@ public class CoordinatorMergeTests
         Assert.Equal(0, parentStart);
         Assert.Equal(3, parentCount);
 
-        Assert.Equal(0, childStore.Remap.Resolve(0, 0));
-        Assert.Equal(1, childStore.Remap.Resolve(1, 0));
-        Assert.Equal(2, childStore.Remap.Resolve(1, 1));
-        Assert.Equal(0, parentStore.Remap.Resolve(0, 0));
-        Assert.Equal(1, parentStore.Remap.Resolve(1, 0));
-        Assert.Equal(2, parentStore.Remap.Resolve(1, 1));
+        Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(1, 0));
+        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(1, 1));
+        Assert.Equal(0, parentStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(1, parentStore.GetTestAccessor().Remap.Resolve(1, 0));
+        Assert.Equal(2, parentStore.GetTestAccessor().Remap.Resolve(1, 1));
 
         Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
         Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
@@ -398,7 +398,7 @@ public class CoordinatorMergeTests
         // ── Root collection + remap + increment ──────────────────────────
 
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(rootList);
+        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
         var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
@@ -446,7 +446,7 @@ public class CoordinatorMergeTests
 
         // Root collection + remap + increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(rootList);
+        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
@@ -511,7 +511,7 @@ public class CoordinatorMergeTests
 
         // Collect + remap roots, then increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(rootList);
+        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);

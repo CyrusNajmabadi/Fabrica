@@ -12,7 +12,7 @@ public sealed class ObjectPoolTests
     {
         var pool = new ObjectPool<Dummy, DummyAllocator>(5);
 
-        Assert.Equal(5, pool.Available);
+        Assert.Equal(5, pool.GetTestAccessor().Available);
     }
 
     [Fact]
@@ -20,9 +20,9 @@ public sealed class ObjectPoolTests
     {
         var pool = new ObjectPool<Dummy, DummyAllocator>(1);
 
-        Assert.Equal(1, pool.Available);
+        Assert.Equal(1, pool.GetTestAccessor().Available);
         Assert.NotNull(pool.Rent());
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
     }
 
     // ── Rent basics ──────────────────────────────────────────────────────────
@@ -33,10 +33,10 @@ public sealed class ObjectPoolTests
         var pool = new ObjectPool<Dummy, DummyAllocator>(1);
 
         var item = pool.Rent();
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
 
         pool.Return(item);
-        Assert.Equal(1, pool.Available);
+        Assert.Equal(1, pool.GetTestAccessor().Available);
 
         Assert.Same(item, pool.Rent());
     }
@@ -55,7 +55,7 @@ public sealed class ObjectPoolTests
         Assert.NotNull(third);
         Assert.NotSame(first, second);
         Assert.NotSame(second, third);
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
     }
 
     // ── LIFO order ───────────────────────────────────────────────────────────
@@ -93,13 +93,13 @@ public sealed class ObjectPoolTests
         pool.Return(b);
         pool.Return(c);
 
-        Assert.Equal(3, pool.Available);
+        Assert.Equal(3, pool.GetTestAccessor().Available);
 
         var r1 = pool.Rent();
         var r2 = pool.Rent();
         var r3 = pool.Rent();
 
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
         Assert.Contains(a, new[] { r1, r2, r3 });
         Assert.Contains(b, new[] { r1, r2, r3 });
         Assert.Contains(c, new[] { r1, r2, r3 });
@@ -114,7 +114,7 @@ public sealed class ObjectPoolTests
         pool.Return(item);
         pool.Return(item);
 
-        Assert.Equal(2, pool.Available);
+        Assert.Equal(2, pool.GetTestAccessor().Available);
 
         var r1 = pool.Rent();
         var r2 = pool.Rent();
@@ -152,13 +152,13 @@ public sealed class ObjectPoolTests
         for (var i = 0; i < 20; i++)
             rented.Add(pool.Rent());
 
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
         Assert.Equal(20, rented.Count);
 
         foreach (var item in rented)
             pool.Return(item);
 
-        Assert.Equal(20, pool.Available);
+        Assert.Equal(20, pool.GetTestAccessor().Available);
 
         for (var i = 0; i < 20; i++)
         {
@@ -166,29 +166,29 @@ public sealed class ObjectPoolTests
             Assert.Contains(item, rented);
         }
 
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
     }
 
     [Fact]
     public void Available_AccuratelyTracksPoolDepth()
     {
         var pool = new ObjectPool<Dummy, DummyAllocator>(3);
-        Assert.Equal(3, pool.Available);
+        Assert.Equal(3, pool.GetTestAccessor().Available);
 
         pool.Rent();
-        Assert.Equal(2, pool.Available);
+        Assert.Equal(2, pool.GetTestAccessor().Available);
 
         pool.Rent();
-        Assert.Equal(1, pool.Available);
+        Assert.Equal(1, pool.GetTestAccessor().Available);
 
         pool.Rent();
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
 
         pool.Rent();
-        Assert.Equal(0, pool.Available);
+        Assert.Equal(0, pool.GetTestAccessor().Available);
 
         pool.Return(new Dummy());
-        Assert.Equal(1, pool.Available);
+        Assert.Equal(1, pool.GetTestAccessor().Available);
     }
 
     private readonly struct DummyAllocator : IAllocator<Dummy>
