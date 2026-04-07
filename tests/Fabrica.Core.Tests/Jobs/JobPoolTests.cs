@@ -132,7 +132,7 @@ public class JobPoolTests
 
         Assert.Same(job, reused);
         Assert.Equal(0, reused.RemainingDependencies);
-        Assert.Equal(0, reused.DependentCount);
+        Assert.Equal(0, reused.Dependents!.Count);
         Assert.Null(reused.PoolNext);
     }
 

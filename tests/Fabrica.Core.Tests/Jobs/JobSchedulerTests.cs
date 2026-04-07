@@ -201,7 +201,7 @@ public class JobSchedulerTests
 
         Assert.Same(job, reused);
         Assert.Equal(0, reused.RemainingDependencies);
-        Assert.Equal(0, reused.DependentCount);
+        Assert.Equal(0, reused.Dependents!.Count);
         Assert.Null(reused.Scheduler);
 #if DEBUG
         Assert.Equal(JobState.Pending, reused.State);

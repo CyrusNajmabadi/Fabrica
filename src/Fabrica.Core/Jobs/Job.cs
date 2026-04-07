@@ -1,3 +1,5 @@
+using Fabrica.Core.Memory;
+
 namespace Fabrica.Core.Jobs;
 
 #if DEBUG
@@ -64,12 +66,10 @@ public abstract class Job
     /// <summary>
     /// Downstream jobs whose dependency counts should be decremented when this job completes.
     /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; iterated by the scheduler
-    /// after <see cref="Execute"/> returns.
+    /// after <see cref="Execute"/> returns. Lazily allocated on first <see cref="AddDependent"/>
+    /// call and reused across pool cycles via <see cref="UnsafeList{T}.Reset"/>.
     /// </summary>
-    internal Job[]? Dependents;
-
-    /// <summary>Number of valid entries in <see cref="Dependents"/>.</summary>
-    internal int DependentCount;
+    internal UnsafeList<Job>? Dependents;
 
     /// <summary>
     /// The <see cref="JobScheduler"/> that owns this job's DAG. Set by <see cref="JobScheduler.Submit"/>
@@ -98,10 +98,8 @@ public abstract class Job
     /// </summary>
     protected void AddDependent(Job dependent)
     {
-        Dependents ??= new Job[4];
-        if (DependentCount >= Dependents.Length)
-            Array.Resize(ref Dependents, Dependents.Length * 2);
-        Dependents[DependentCount++] = dependent;
+        Dependents ??= new UnsafeList<Job>(4);
+        Dependents.Add(dependent);
         dependent.RemainingDependencies++;
     }
 
@@ -113,10 +111,8 @@ public abstract class Job
     /// </summary>
     protected void DependsOn(Job prerequisite)
     {
-        prerequisite.Dependents ??= new Job[4];
-        if (prerequisite.DependentCount >= prerequisite.Dependents.Length)
-            Array.Resize(ref prerequisite.Dependents, prerequisite.Dependents.Length * 2);
-        prerequisite.Dependents[prerequisite.DependentCount++] = this;
+        prerequisite.Dependents ??= new UnsafeList<Job>(4);
+        prerequisite.Dependents.Add(this);
         RemainingDependencies++;
     }
 
@@ -136,9 +132,7 @@ public abstract class Job
     /// </summary>
     protected internal virtual void Reset()
     {
-        if (Dependents != null)
-            Array.Clear(Dependents, 0, DependentCount);
-        DependentCount = 0;
+        Dependents?.Reset();
         RemainingDependencies = 0;
     }
 }
