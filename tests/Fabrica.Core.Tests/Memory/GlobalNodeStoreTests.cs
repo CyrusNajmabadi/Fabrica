@@ -42,7 +42,7 @@ public class GlobalNodeStoreTests
         var refCounts = new RefCountTable<TreeNode>();
         var store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
         store.SetNodeOps(new TreeNodeOps { Store = store });
-        store.EnableValidation();
+        store.GetTestAccessor().EnableValidation();
         return store;
     }
 

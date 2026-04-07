@@ -80,11 +80,10 @@ public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 102
         get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
     }
 
-    /// <summary>Returns a reference to the node at the given raw local index.</summary>
-    internal ref T this[int localIndex]
+    private ref T this[int localIndex]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[localIndex]; // Coordinator merge path: read by ordinal while iterating WrittenSpan.
+        get => ref _list[localIndex];
     }
 
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>

@@ -137,18 +137,16 @@ public class HandleRewriterTests
         var threadLocalBuffer = new ThreadLocalBuffer<TreeNode>(threadId: 2);
 
         var leafHandle = threadLocalBuffer.Allocate();
-        var leafIndex = TaggedHandle.DecodeLocalIndex(leafHandle.Index);
-        threadLocalBuffer[leafIndex] = new TreeNode { Value = 10, Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
+        threadLocalBuffer[leafHandle] = new TreeNode { Value = 10, Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
 
         var parentHandle = threadLocalBuffer.Allocate();
-        var parentIndex = TaggedHandle.DecodeLocalIndex(parentHandle.Index);
-        threadLocalBuffer[parentIndex] = new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None };
+        threadLocalBuffer[parentHandle] = new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None };
 
         int[] remap = [500, 501];
         var visitor = new TestVisitor(remap);
         var enumerator = new TreeChildEnumerator();
 
-        var parent = threadLocalBuffer[parentIndex];
+        var parent = threadLocalBuffer[parentHandle];
         enumerator.EnumerateRefChildren(ref parent, ref visitor);
 
         Assert.Equal(500, parent.Left.Index);

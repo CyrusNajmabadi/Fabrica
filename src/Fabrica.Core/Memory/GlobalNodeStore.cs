@@ -32,7 +32,7 @@ public abstract class GlobalNodeStore
 ///   refcount updates for snapshot root sets.
 ///
 /// VALIDATION (DEBUG ONLY)
-///   Call <see cref="EnableValidation"/> in tests to activate automatic DAG invariant checking
+///   Call <see cref="TestAccessor.EnableValidation"/> in tests to activate automatic DAG invariant checking
 ///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call.
 ///
 /// CROSS-TYPE DAGS
@@ -355,7 +355,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// mode with the current set of tracked roots. Compiled out entirely in release builds.
     /// </summary>
     [Conditional("DEBUG")]
-    internal void EnableValidation()
+    private void EnableValidation()
     {
 #if DEBUG
         _trackedRootCounts = [];
@@ -445,6 +445,9 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         public static GlobalNodeStore<TNode, TNodeOps> Create(
             UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
             => new(arena, refCounts);
+
+        [Conditional("DEBUG")]
+        public void EnableValidation() => store.EnableValidation();
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;

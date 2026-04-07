@@ -49,7 +49,7 @@ public class SnapshotLifecycleTests
         var refCounts = new RefCountTable<TreeNode>();
         _store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
         _store.SetNodeOps(new TreeNodeOps { Store = _store });
-        _store.EnableValidation();
+        _store.GetTestAccessor().EnableValidation();
     }
 
     private Handle<TreeNode> AllocNode(Handle<TreeNode> left, Handle<TreeNode> right)

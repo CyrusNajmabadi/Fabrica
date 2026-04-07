@@ -143,8 +143,8 @@ public class CrossTypeSnapshotTests
         var ops = new CrossTypeNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
         parentStore.SetNodeOps(ops);
-        childStore.EnableValidation();
-        parentStore.EnableValidation();
+        childStore.GetTestAccessor().EnableValidation();
+        parentStore.GetTestAccessor().EnableValidation();
 
         return (parentStore, childStore);
     }
