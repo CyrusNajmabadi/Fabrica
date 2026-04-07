@@ -12,8 +12,6 @@ public class JobPoolTests
         public int Value { get; set; }
         public bool Executed { get; set; }
 
-        internal void AddDep(Job dependent) => this.AddDependent(dependent);
-
         protected internal override void Execute(WorkerContext context)
             => this.Executed = true;
 
@@ -125,7 +123,7 @@ public class JobPoolTests
         var job = pool.Rent();
 
         var otherJob = pool.Rent();
-        job.AddDep(otherJob);
+        job.AddDependent(otherJob);
 
         pool.Return(job);
         var reused = pool.Rent();

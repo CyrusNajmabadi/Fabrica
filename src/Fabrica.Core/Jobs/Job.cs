@@ -93,10 +93,9 @@ public abstract class Job
 
     /// <summary>
     /// Registers <paramref name="dependent"/> to run after this job completes. Increments the
-    /// dependent's remaining-dependency count so the scheduler knows to wait. Call from within
-    /// a derived class: <c>this.AddDependent(downstream)</c>.
+    /// dependent's remaining-dependency count so the scheduler knows to wait.
     /// </summary>
-    protected void AddDependent(Job dependent)
+    protected internal void AddDependent(Job dependent)
     {
         Dependents ??= new UnsafeList<Job>(4);
         Dependents.Add(dependent);
@@ -106,10 +105,9 @@ public abstract class Job
     /// <summary>
     /// Declares that this job depends on <paramref name="prerequisite"/>: this job will not
     /// execute until <paramref name="prerequisite"/> completes. Adds this job to the prerequisite's
-    /// dependents list and increments this job's remaining-dependency count. Call from within
-    /// a derived class: <c>this.DependsOn(upstream)</c>.
+    /// dependents list and increments this job's remaining-dependency count.
     /// </summary>
-    protected void DependsOn(Job prerequisite)
+    protected internal void DependsOn(Job prerequisite)
     {
         prerequisite.Dependents ??= new UnsafeList<Job>(4);
         prerequisite.Dependents.Add(this);

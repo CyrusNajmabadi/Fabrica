@@ -14,8 +14,6 @@ public class JobSchedulerTests
         public int ExecutedOnWorker { get; set; } = -1;
         public Action<WorkerContext>? OnExecute { get; set; }
 
-        internal void AddDep(Job dependent) => this.AddDependent(dependent);
-
         protected internal override void Execute(WorkerContext context)
         {
             this.ExecutedOnWorker = context.WorkerIndex;
@@ -77,8 +75,8 @@ public class JobSchedulerTests
         var jobB = new TestJob { OnExecute = _ => order.Enqueue("B") };
         var jobC = new TestJob { OnExecute = _ => order.Enqueue("C") };
 
-        jobA.AddDep(jobB);
-        jobB.AddDep(jobC);
+        jobA.AddDependent(jobB);
+        jobB.AddDependent(jobC);
 
         Assert.True(scheduler.Submit(jobA, millisecondsTimeout: 5000));
 
@@ -100,10 +98,10 @@ public class JobSchedulerTests
         var right = new TestJob { OnExecute = _ => order.Enqueue("right") };
         var join = new TestJob { OnExecute = _ => order.Enqueue("join") };
 
-        root.AddDep(left);
-        root.AddDep(right);
-        left.AddDep(join);
-        right.AddDep(join);
+        root.AddDependent(left);
+        root.AddDependent(right);
+        left.AddDependent(join);
+        right.AddDependent(join);
 
         Assert.True(scheduler.Submit(root, millisecondsTimeout: 5000));
 
@@ -133,10 +131,10 @@ public class JobSchedulerTests
             OnExecute = _ => Interlocked.Increment(ref joinExecutionCount),
         };
 
-        root.AddDep(left);
-        root.AddDep(right);
-        left.AddDep(join);
-        right.AddDep(join);
+        root.AddDependent(left);
+        root.AddDependent(right);
+        left.AddDependent(join);
+        right.AddDependent(join);
 
         Assert.True(scheduler.Submit(root, millisecondsTimeout: 5000));
 
@@ -190,8 +188,8 @@ public class JobSchedulerTests
         var jobPool = new JobPool<TestJob>();
 
         var job = jobPool.Rent();
-        job.AddDep(new TestJob());
-        job.AddDep(new TestJob());
+        job.AddDependent(new TestJob());
+        job.AddDependent(new TestJob());
 #if DEBUG
         job.State = JobState.Completed;
 #endif
@@ -253,7 +251,7 @@ public class JobSchedulerTests
         }
 
         for (var i = 0; i < Depth - 1; i++)
-            jobs[i].AddDep(jobs[i + 1]);
+            jobs[i].AddDependent(jobs[i + 1]);
 
         Assert.True(scheduler.Submit(jobs[0], millisecondsTimeout: 10000));
 
@@ -281,8 +279,8 @@ public class JobSchedulerTests
             {
                 OnExecute = _ => Interlocked.Increment(ref executionCount),
             };
-            root.AddDep(child);
-            child.AddDep(join);
+            root.AddDependent(child);
+            child.AddDependent(join);
         }
         Assert.True(scheduler.Submit(root, millisecondsTimeout: 10000));
 
