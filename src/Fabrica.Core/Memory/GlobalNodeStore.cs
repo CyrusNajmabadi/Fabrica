@@ -17,13 +17,26 @@ public abstract class GlobalNodeStore
     internal abstract void RewriteAndIncrementRefCounts();
     internal abstract void ResetMergeState();
 
-    /// <summary>
-    /// Set by <see cref="MergeCoordinator.MergeAll"/> before drain begins, cleared by
-    /// <see cref="MergeCoordinator.MergeTransaction.Dispose"/> after reset completes. Guards
-    /// <see cref="Drain"/>, <see cref="RewriteAndIncrementRefCounts"/>, <see cref="ResetMergeState"/>,
-    /// and <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/>.
-    /// </summary>
-    internal bool IsMergeActive;
+#if DEBUG
+    private bool _isMergeActive;
+#endif
+
+    [Conditional("DEBUG")]
+    internal void SetMergeActive(bool value)
+    {
+#if DEBUG
+        _isMergeActive = value;
+#endif
+    }
+
+    [Conditional("DEBUG")]
+    internal void AssertMergeActive(
+        [CallerMemberName] string caller = "")
+    {
+#if DEBUG
+        Debug.Assert(_isMergeActive, $"{caller} must be called within a MergeTransaction scope.");
+#endif
+    }
 }
 
 /// <summary>
@@ -254,7 +267,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     internal override void RewriteAndIncrementRefCounts()
     {
-        Debug.Assert(IsMergeActive, "RewriteAndIncrementRefCounts must be called within a MergeTransaction scope.");
+        this.AssertMergeActive();
         var startIndex = _lastDrainStart;
         var count = _lastDrainCount;
 
@@ -278,7 +291,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
-        Debug.Assert(IsMergeActive, "BuildSnapshotSlice must be called within a MergeTransaction scope.");
+        this.AssertMergeActive();
         var roots = new UnsafeList<Handle<TNode>>();
         this.CollectAndRemapRoots(roots);
         this.IncrementRoots(roots.WrittenSpan);
@@ -300,7 +313,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
     internal override void Drain()
     {
-        Debug.Assert(IsMergeActive, "Drain must be called within a MergeTransaction scope.");
+        this.AssertMergeActive();
         this.DrainBuffers();
     }
 
@@ -310,7 +323,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     internal override void ResetMergeState()
     {
-        Debug.Assert(IsMergeActive, "ResetMergeState must be called within a MergeTransaction scope.");
+        this.AssertMergeActive();
         foreach (var threadLocalBuffer in _threadLocalBuffers)
             threadLocalBuffer.Reset();
         _remap.Reset();

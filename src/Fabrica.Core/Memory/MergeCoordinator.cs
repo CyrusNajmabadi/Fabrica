@@ -27,7 +27,7 @@ public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
     public MergeTransaction MergeAll()
     {
         foreach (var store in _stores)
-            store.IsMergeActive = true;
+            store.SetMergeActive(true);
 
         foreach (var store in _stores)
             store.Drain();
@@ -51,7 +51,7 @@ public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
                 store.ResetMergeState();
 
             foreach (var store in stores)
-                store.IsMergeActive = false;
+                store.SetMergeActive(false);
         }
     }
 }

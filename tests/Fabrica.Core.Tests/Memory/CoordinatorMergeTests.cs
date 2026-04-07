@@ -239,8 +239,8 @@ public class CoordinatorMergeTests
         childStore.DrainBuffers();
         parentStore.DrainBuffers();
 
-        parentStore.IsMergeActive = true;
-        childStore.IsMergeActive = true;
+        parentStore.SetMergeActive(true);
+        childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
@@ -269,8 +269,8 @@ public class CoordinatorMergeTests
 
         parentStore.DrainBuffers();
 
-        parentStore.IsMergeActive = true;
-        childStore.IsMergeActive = true;
+        parentStore.SetMergeActive(true);
+        childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
@@ -354,8 +354,8 @@ public class CoordinatorMergeTests
         // ── Rewrite + refcount ───────────────────────────────────────────
         // Barrier: all types finished Phase 1 before fixup begins.
 
-        parentStore.IsMergeActive = true;
-        childStore.IsMergeActive = true;
+        parentStore.SetMergeActive(true);
+        childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
         childStore.RewriteAndIncrementRefCounts();
 
@@ -435,8 +435,8 @@ public class CoordinatorMergeTests
         childStore.DrainBuffers();
         parentStore.DrainBuffers();
 
-        parentStore.IsMergeActive = true;
-        childStore.IsMergeActive = true;
+        parentStore.SetMergeActive(true);
+        childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
         // Root collection + remap + increment
@@ -496,8 +496,8 @@ public class CoordinatorMergeTests
         childStore.DrainBuffers();
         parentStore.DrainBuffers();
 
-        parentStore.IsMergeActive = true;
-        childStore.IsMergeActive = true;
+        parentStore.SetMergeActive(true);
+        childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
         // After structural refcount pass: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
