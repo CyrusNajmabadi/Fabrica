@@ -42,12 +42,12 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
 #if DEBUG
     /// <summary>Called in <see cref="Rent"/> after reading head but before the CAS that pops it.
     /// Tests can inject a concurrent operation here to force the CAS-lost retry path.</summary>
-    internal Action? DebugBeforeRentCas { get; set; }
+    private Action? _debugBeforeRentCas;
 
     /// <summary>Called in <see cref="Return"/> after setting PoolNext but before the CAS that
     /// pushes the item. Tests can inject a concurrent operation here to force the CAS-lost
     /// retry path.</summary>
-    internal Action? DebugBeforeReturnCas { get; set; }
+    private Action? _debugBeforeReturnCas;
 #endif
 
     /// <summary>
@@ -69,7 +69,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
             var next = (TJob?)head.PoolNext;
 
 #if DEBUG
-            this.DebugBeforeRentCas?.Invoke();
+            _debugBeforeRentCas?.Invoke();
 #endif
 
             if (Interlocked.CompareExchange(ref _head, next, head) == head)
@@ -103,7 +103,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
             item.PoolNext = head;
 
 #if DEBUG
-            this.DebugBeforeReturnCas?.Invoke();
+            _debugBeforeReturnCas?.Invoke();
 #endif
 
             if (Interlocked.CompareExchange(ref _head, item, head) == head)
@@ -141,5 +141,19 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     internal struct TestAccessor(JobPool<TJob> pool)
     {
         public readonly TJob? Head => Volatile.Read(ref pool._head);
+
+#if DEBUG
+        public readonly Action? DebugBeforeRentCas
+        {
+            get => pool._debugBeforeRentCas;
+            set => pool._debugBeforeRentCas = value;
+        }
+
+        public readonly Action? DebugBeforeReturnCas
+        {
+            get => pool._debugBeforeReturnCas;
+            set => pool._debugBeforeReturnCas = value;
+        }
+#endif
     }
 }

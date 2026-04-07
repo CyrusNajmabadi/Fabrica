@@ -1,6 +1,4 @@
-using Fabrica.Core.Threading;
-
-namespace Fabrica.Core.Collections;
+namespace Fabrica.Core.Threading.Queues;
 
 /// <summary>
 /// Lock-free work-stealing deque (Chase-Lev algorithm). Designed for job-pool schedulers where one owner thread pushes and
@@ -67,23 +65,17 @@ public sealed class WorkStealingDeque<T>
     // ── Debug injection points for deterministic interleaving tests ──────────
 
 #if DEBUG
-    /// <summary>Called in <see cref="TryPop"/> after detecting this is the last element (top == bottom) but before the CAS that
-    /// claims it. Tests can inject a steal here to force the CAS-lost path. Note: at this point <c>_bottom</c> has already been
-    /// decremented, so a normal <see cref="TrySteal"/> will see the deque as empty. Use
-    /// <see cref="TestAccessor.SimulateStealCas"/> to directly advance <c>_top</c>, simulating a thief whose steal was already
-    /// in flight before the owner decremented bottom.</summary>
-    internal Action? DebugBeforePopCas { get; set; }
-
-    /// <summary>Called in <see cref="TrySteal"/> after reading the item but before the CAS that claims it. Tests can inject
-    /// another steal or pop here to force the CAS-lost path.</summary>
-    internal Action? DebugBeforeStealCas { get; set; }
+    private Action? _debugBeforePopCas;
+    private Action? _debugBeforeStealCas;
 #endif
 
     // ═══════════════════════════ CONSTRUCTORS ═════════════════════════════════
 
-    /// <summary>Creates a deque with the specified initial capacity. Capacity is rounded up to the next power of 2
-    /// (minimum 4).</summary>
-    internal WorkStealingDeque(int initialCapacity = DefaultInitialCapacity)
+    public WorkStealingDeque() : this(DefaultInitialCapacity)
+    {
+    }
+
+    private WorkStealingDeque(int initialCapacity)
     {
         var capacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(initialCapacity, MinimumCapacity));
         _buffer = new RingBuffer(capacity);
@@ -151,7 +143,7 @@ public sealed class WorkStealingDeque<T>
                 // This is the last element. Both the owner (us, via pop) and thieves (via steal) may be competing for it.
                 // Use CAS on _top to resolve the race: whoever successfully advances top from t to t+1 wins the item.
 #if DEBUG
-                this.DebugBeforePopCas?.Invoke();
+                _debugBeforePopCas?.Invoke();
 #endif
                 if (Interlocked.CompareExchange(ref _top, top + 1, top) != top)
                 {
@@ -204,7 +196,7 @@ public sealed class WorkStealingDeque<T>
             // Atomically advance top to claim this item. If another thief (or the owner in a last-element pop) already
             // advanced top past our snapshot, the CAS fails and we report failure — no item was lost, someone else got it.
 #if DEBUG
-            this.DebugBeforeStealCas?.Invoke();
+            _debugBeforeStealCas?.Invoke();
 #endif
             if (Interlocked.CompareExchange(ref _top, top + 1, top) != top)
             {
@@ -240,8 +232,7 @@ public sealed class WorkStealingDeque<T>
     /// <summary>Returns <c>true</c> if the deque appears empty. Same non-linearizable caveats as <see cref="Count"/>.</summary>
     public bool IsEmpty => this.Count == 0;
 
-    /// <summary>Current capacity of the backing buffer. May increase after growth; never decreases.</summary>
-    internal int Capacity => _buffer.Capacity;
+    private int Capacity => _buffer.Capacity;
 
     // ═══════════════════════════ BUFFER MANAGEMENT ═══════════════════════════
 
@@ -277,6 +268,24 @@ public sealed class WorkStealingDeque<T>
     /// </summary>
     internal struct TestAccessor(WorkStealingDeque<T> deque)
     {
+        public static WorkStealingDeque<T> Create(int initialCapacity) => new(initialCapacity);
+
+        public readonly int Capacity => deque.Capacity;
+
+#if DEBUG
+        public readonly Action? DebugBeforePopCas
+        {
+            get => deque._debugBeforePopCas;
+            set => deque._debugBeforePopCas = value;
+        }
+
+        public readonly Action? DebugBeforeStealCas
+        {
+            get => deque._debugBeforeStealCas;
+            set => deque._debugBeforeStealCas = value;
+        }
+#endif
+
         /// <summary>
         /// Simulates the final CAS step of a steal that was already in flight (i.e., the thief had already read top and bottom
         /// and confirmed <c>top &lt; bottom</c> before the owner decremented bottom). This directly advances <c>_top</c> and

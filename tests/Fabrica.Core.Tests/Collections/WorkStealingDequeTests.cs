@@ -1,4 +1,4 @@
-using Fabrica.Core.Collections;
+using Fabrica.Core.Threading.Queues;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Collections;
@@ -191,7 +191,7 @@ public class WorkStealingDequeTests
         var accessor = deque.GetTestAccessor();
         var stolenItem = -1;
 
-        deque.DebugBeforePopCas = () =>
+        accessor.DebugBeforePopCas = () =>
         {
             Assert.True(accessor.SimulateStealCas(out stolenItem));
         };
@@ -210,7 +210,7 @@ public class WorkStealingDequeTests
 
         var accessor = deque.GetTestAccessor();
 
-        deque.DebugBeforePopCas = () =>
+        accessor.DebugBeforePopCas = () =>
         {
             accessor.SimulateStealCas(out _);
         };
@@ -231,9 +231,10 @@ public class WorkStealingDequeTests
 
         var interceptedItem = -1;
 
-        deque.DebugBeforeStealCas = () =>
+        var accessor = deque.GetTestAccessor();
+        accessor.DebugBeforeStealCas = () =>
         {
-            deque.DebugBeforeStealCas = null;
+            accessor.DebugBeforeStealCas = null;
             Assert.True(deque.TrySteal(out interceptedItem));
         };
 
@@ -257,7 +258,7 @@ public class WorkStealingDequeTests
 
         var accessor = deque.GetTestAccessor();
 
-        deque.DebugBeforeStealCas = () =>
+        accessor.DebugBeforeStealCas = () =>
         {
             accessor.SimulateStealCas(out _);
         };
@@ -273,13 +274,14 @@ public class WorkStealingDequeTests
     [Fact]
     public void Push_BeyondInitialCapacity_GrowsBuffer()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 4);
-        Assert.Equal(4, deque.Capacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(4);
+        var accessor = deque.GetTestAccessor();
+        Assert.Equal(4, accessor.Capacity);
 
         for (var i = 0; i < 5; i++)
             deque.Push(i);
 
-        Assert.Equal(8, deque.Capacity);
+        Assert.Equal(8, accessor.Capacity);
         Assert.Equal(5, deque.Count);
 
         for (var i = 4; i >= 0; i--)
@@ -292,7 +294,7 @@ public class WorkStealingDequeTests
     [Fact]
     public void Growth_PreservesAllItems_WhenReadViaSteal()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 4);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(4);
 
         for (var i = 0; i < 20; i++)
             deque.Push(i);
@@ -307,12 +309,12 @@ public class WorkStealingDequeTests
     [Fact]
     public void MultipleGrowths_PreserveAllItems()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 4);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(4);
 
         for (var i = 0; i < 100; i++)
             deque.Push(i);
 
-        Assert.True(deque.Capacity >= 100);
+        Assert.True(deque.GetTestAccessor().Capacity >= 100);
 
         for (var i = 99; i >= 0; i--)
         {
@@ -324,7 +326,7 @@ public class WorkStealingDequeTests
     [Fact]
     public void Growth_FromPartiallyConsumedDeque_PreservesLiveItems()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 4);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(4);
 
         for (var i = 0; i < 4; i++)
             deque.Push(i);
@@ -350,7 +352,8 @@ public class WorkStealingDequeTests
     [Fact]
     public void RepeatedPushPop_ReusesSlotsCorrectly()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 4);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(4);
+        var accessor = deque.GetTestAccessor();
 
         for (var cycle = 0; cycle < 50; cycle++)
         {
@@ -360,13 +363,14 @@ public class WorkStealingDequeTests
             Assert.True(deque.IsEmpty);
         }
 
-        Assert.Equal(4, deque.Capacity);
+        Assert.Equal(4, accessor.Capacity);
     }
 
     [Fact]
     public void RepeatedPushSteal_ReusesSlotsCorrectly()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 4);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(4);
+        var accessor = deque.GetTestAccessor();
 
         for (var cycle = 0; cycle < 50; cycle++)
         {
@@ -376,7 +380,7 @@ public class WorkStealingDequeTests
             Assert.True(deque.IsEmpty);
         }
 
-        Assert.Equal(4, deque.Capacity);
+        Assert.Equal(4, accessor.Capacity);
     }
 
     // ═══════════════════════════ REFERENCE TYPES ════════════════════════════
@@ -399,29 +403,29 @@ public class WorkStealingDequeTests
     [Fact]
     public void Constructor_RoundsCapacityUpToPowerOfTwo()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 5);
-        Assert.Equal(8, deque.Capacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(5);
+        Assert.Equal(8, deque.GetTestAccessor().Capacity);
     }
 
     [Fact]
     public void Constructor_EnforcesMinimumCapacity()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 1);
-        Assert.Equal(4, deque.Capacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(1);
+        Assert.Equal(4, deque.GetTestAccessor().Capacity);
     }
 
     [Fact]
     public void Constructor_PowerOfTwoCapacity_StaysAsIs()
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity: 16);
-        Assert.Equal(16, deque.Capacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(16);
+        Assert.Equal(16, deque.GetTestAccessor().Capacity);
     }
 
     [Fact]
     public void DefaultCapacity_Is32()
     {
         var deque = new WorkStealingDeque<int>();
-        Assert.Equal(32, deque.Capacity);
+        Assert.Equal(32, deque.GetTestAccessor().Capacity);
     }
 
     // ═══════════════════════════ COUNT ACCURACY ══════════════════════════════

@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -67,9 +69,9 @@ public class JobMergePipelineTests : IDisposable
         public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
         {
             if (typeof(T) == typeof(ParentNode))
-                handle = ParentStore.Remap.Remap(handle);
+                handle = ParentStore.RemapHandle(handle);
             else if (typeof(T) == typeof(ChildNode))
-                handle = ChildStore.Remap.Remap(handle);
+                handle = ChildStore.RemapHandle(handle);
         }
     }
 
@@ -166,7 +168,7 @@ public class JobMergePipelineTests : IDisposable
             for (var i = 0; i < ChildCount; i++)
             {
                 var handle = threadLocalBuffer.Allocate();
-                threadLocalBuffer[TaggedHandle.DecodeLocalIndex(handle.Index)] = new ChildNode { Value = ValueStart + i };
+                threadLocalBuffer[handle] = new ChildNode { Value = ValueStart + i };
                 AllocatedHandles[i] = handle;
             }
         }
@@ -202,7 +204,7 @@ public class JobMergePipelineTests : IDisposable
             for (var i = 0; i < allChildHandles.Count; i++)
             {
                 lastHandle = threadLocalBuffer.Allocate();
-                threadLocalBuffer[TaggedHandle.DecodeLocalIndex(lastHandle.Index)] = new ParentNode
+                threadLocalBuffer[lastHandle] = new ParentNode
                 {
                     LeftParent = previousParent,
                     ChildRef = allChildHandles[i],
@@ -301,7 +303,7 @@ public class JobMergePipelineTests : IDisposable
         var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");
 
-        parentStore.IncrementRoots(roots);
+        parentStore.GetTestAccessor().IncrementRoots(roots);
 
         // ── DagValidator ─────────────────────────────────────────────────
 
@@ -312,7 +314,7 @@ public class JobMergePipelineTests : IDisposable
 
         // ── Cascade-free ─────────────────────────────────────────────────
 
-        parentStore.DecrementRoots(roots);
+        parentStore.GetTestAccessor().DecrementRoots(roots);
 
         Assert.Equal(0, parentStore.Arena.GetTestAccessor().Count);
         Assert.Equal(0, childStore.Arena.GetTestAccessor().Count);

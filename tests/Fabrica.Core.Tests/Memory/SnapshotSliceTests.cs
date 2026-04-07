@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -42,7 +44,7 @@ public class SnapshotSliceTests
         var refCounts = new RefCountTable<TreeNode>();
         var store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
         store.SetNodeOps(new TreeNodeOps { Store = store });
-        store.EnableValidation();
+        store.GetTestAccessor().EnableValidation();
         return store;
     }
 
@@ -70,15 +72,15 @@ public class SnapshotSliceTests
         var leaf = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
         var root = AllocNode(store, leaf, Handle<TreeNode>.None, 0);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(root);
+        var roots = new UnsafeList<Handle<TreeNode>>();
+        roots.Add(root);
+        var slice = store.GetTestAccessor().BuildSnapshotSlice(roots);
         Assert.Equal(1, slice.Count);
 
-        slice.IncrementRootRefCounts();
         Assert.Equal(1, store.RefCounts.GetCount(root));
         Assert.Equal(1, store.RefCounts.GetCount(leaf));
 
-        slice.Release();
+        store.ReleaseSnapshotSlice(slice);
         Assert.Equal(0, store.RefCounts.GetCount(root));
         Assert.Equal(0, store.RefCounts.GetCount(leaf));
     }
@@ -92,18 +94,18 @@ public class SnapshotSliceTests
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
         var c = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 3);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(a);
-        slice.AddRoot(b);
-        slice.AddRoot(c);
+        var roots = new UnsafeList<Handle<TreeNode>>();
+        roots.Add(a);
+        roots.Add(b);
+        roots.Add(c);
+        var slice = store.GetTestAccessor().BuildSnapshotSlice(roots);
         Assert.Equal(3, slice.Count);
 
-        slice.IncrementRootRefCounts();
         Assert.Equal(1, store.RefCounts.GetCount(a));
         Assert.Equal(1, store.RefCounts.GetCount(b));
         Assert.Equal(1, store.RefCounts.GetCount(c));
 
-        slice.Release();
+        store.ReleaseSnapshotSlice(slice);
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
@@ -113,60 +115,62 @@ public class SnapshotSliceTests
     public void Roots_ReturnsCorrectSpan()
     {
         var store = CreateStore();
-        var a = store.Arena.Allocate();
-        var b = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(Math.Max(a.Index, b.Index) + 1);
+        var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
+        var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(a);
-        slice.AddRoot(b);
+        var rootList = new UnsafeList<Handle<TreeNode>>();
+        rootList.Add(a);
+        rootList.Add(b);
+        var slice = store.GetTestAccessor().BuildSnapshotSlice(rootList);
 
         var roots = slice.Roots;
         Assert.Equal(2, roots.Length);
         Assert.Equal(a, roots[0]);
         Assert.Equal(b, roots[1]);
+
+        store.ReleaseSnapshotSlice(slice);
     }
 
     [Fact]
     public void Clear_ResetsForReuse()
     {
         var store = CreateStore();
-        var a = store.Arena.Allocate();
-        var b = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(Math.Max(a.Index, b.Index) + 1);
+        var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
+        var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(a);
-        slice.AddRoot(b);
+        var list = new UnsafeList<Handle<TreeNode>>();
+        list.Add(a);
+        list.Add(b);
+        var slice = store.GetTestAccessor().BuildSnapshotSlice(list);
         Assert.Equal(2, slice.Count);
+        store.ReleaseSnapshotSlice(slice);
 
-        slice.RootHandles.Reset();
-        Assert.Equal(0, slice.Count);
-        Assert.True(slice.Roots.IsEmpty);
-
-        slice.AddRoot(a);
-        Assert.Equal(1, slice.Count);
+        list.Reset();
+        list.Add(a);
+        var sliceOne = store.GetTestAccessor().BuildSnapshotSlice(list);
+        Assert.Equal(1, sliceOne.Count);
+        store.ReleaseSnapshotSlice(sliceOne);
     }
 
     [Fact]
     public void PooledList_CanBeReusedAcrossSlices()
     {
         var store = CreateStore();
-        var a = store.Arena.Allocate();
-        var b = store.Arena.Allocate();
-        store.RefCounts.EnsureCapacity(Math.Max(a.Index, b.Index) + 1);
+        var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
+        var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
 
         var sharedList = new UnsafeList<Handle<TreeNode>>();
-
-        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, sharedList);
-        slice1.AddRoot(a);
+        sharedList.Add(a);
+        var slice1 = store.GetTestAccessor().BuildSnapshotSlice(sharedList);
         Assert.Equal(1, slice1.Count);
-        slice1.RootHandles.Reset();
+        store.ReleaseSnapshotSlice(slice1);
 
-        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, sharedList);
-        slice2.AddRoot(b);
+        sharedList.Reset();
+        sharedList.Add(b);
+        var slice2 = store.GetTestAccessor().BuildSnapshotSlice(sharedList);
         Assert.Equal(1, slice2.Count);
         Assert.Equal(b, slice2.Roots[0]);
+        store.ReleaseSnapshotSlice(slice2);
     }
 
     // ── Multi-snapshot structural sharing ────────────────────────────────
@@ -185,23 +189,21 @@ public class SnapshotSliceTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice1.AddRoot(root1);
-        slice1.IncrementRootRefCounts();
-
-        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice2.AddRoot(root2);
-        slice2.IncrementRootRefCounts();
-
+        var roots1 = new UnsafeList<Handle<TreeNode>>();
+        roots1.Add(root1);
+        var slice1 = store.GetTestAccessor().BuildSnapshotSlice(roots1);
+        var roots2 = new UnsafeList<Handle<TreeNode>>();
+        roots2.Add(root2);
+        var slice2 = store.GetTestAccessor().BuildSnapshotSlice(roots2);
         Assert.Equal(2, store.RefCounts.GetCount(a));
 
-        slice1.Release();
+        store.ReleaseSnapshotSlice(slice1);
         Assert.Equal(0, store.RefCounts.GetCount(root1));
         Assert.Equal(1, store.RefCounts.GetCount(a));
         Assert.Equal(1, store.RefCounts.GetCount(b));
         Assert.Equal(1, store.RefCounts.GetCount(c));
 
-        slice2.Release();
+        store.ReleaseSnapshotSlice(slice2);
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
@@ -218,19 +220,17 @@ public class SnapshotSliceTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice1.AddRoot(root1);
-        slice1.IncrementRootRefCounts();
-
-        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice2.AddRoot(root2);
-        slice2.IncrementRootRefCounts();
-
-        slice2.Release();
+        var roots1 = new UnsafeList<Handle<TreeNode>>();
+        roots1.Add(root1);
+        var slice1 = store.GetTestAccessor().BuildSnapshotSlice(roots1);
+        var roots2 = new UnsafeList<Handle<TreeNode>>();
+        roots2.Add(root2);
+        var slice2 = store.GetTestAccessor().BuildSnapshotSlice(roots2);
+        store.ReleaseSnapshotSlice(slice2);
         Assert.Equal(0, store.RefCounts.GetCount(root2));
         Assert.Equal(1, store.RefCounts.GetCount(a));
 
-        slice1.Release();
+        store.ReleaseSnapshotSlice(slice1);
         Assert.Equal(0, store.RefCounts.GetCount(a));
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
@@ -257,25 +257,23 @@ public class SnapshotSliceTests
         var b = AllocNode(store, e, f, 2);
         var root = AllocNode(store, a, b, 0);
 
-        var slice1 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice1.AddRoot(root);
-        slice1.IncrementRootRefCounts();
-
+        var rootsOld = new UnsafeList<Handle<TreeNode>>();
+        rootsOld.Add(root);
+        var slice1 = store.GetTestAccessor().BuildSnapshotSlice(rootsOld);
         // Path-copy: change leaf c → c'. New spine: a' → (c', d), root' → (a', b).
         var cPrime = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 99);
         var aPrime = AllocNode(store, cPrime, d, 1);
         var rootPrime = AllocNode(store, aPrime, b, 0);
 
-        var slice2 = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice2.AddRoot(rootPrime);
-        slice2.IncrementRootRefCounts();
-
+        var rootsNew = new UnsafeList<Handle<TreeNode>>();
+        rootsNew.Add(rootPrime);
+        var slice2 = store.GetTestAccessor().BuildSnapshotSlice(rootsNew);
         // d has 2 parents (a, a'), b has 2 parents (root, root')
         Assert.Equal(2, store.RefCounts.GetCount(d));
         Assert.Equal(2, store.RefCounts.GetCount(b));
 
         // Release old snapshot
-        slice1.Release();
+        store.ReleaseSnapshotSlice(slice1);
 
         // Old spine freed: root, a, c
         Assert.Equal(0, store.RefCounts.GetCount(root));
@@ -294,7 +292,7 @@ public class SnapshotSliceTests
         Assert.Equal(1, store.RefCounts.GetCount(cPrime));
 
         // Release new snapshot — everything freed
-        slice2.Release();
+        store.ReleaseSnapshotSlice(slice2);
 
         Assert.Equal(0, store.RefCounts.GetCount(rootPrime));
         Assert.Equal(0, store.RefCounts.GetCount(aPrime));
@@ -319,15 +317,15 @@ public class SnapshotSliceTests
         var store = CreateStore();
 
         var shared = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 99);
-        var roots = new Handle<TreeNode>[3];
+        var rootHandles = new Handle<TreeNode>[3];
         var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[3];
 
         for (var i = 0; i < 3; i++)
         {
-            roots[i] = AllocNode(store, shared, Handle<TreeNode>.None, i);
-            slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-            slices[i].AddRoot(roots[i]);
-            slices[i].IncrementRootRefCounts();
+            rootHandles[i] = AllocNode(store, shared, Handle<TreeNode>.None, i);
+            var list = new UnsafeList<Handle<TreeNode>>();
+            list.Add(rootHandles[i]);
+            slices[i] = store.GetTestAccessor().BuildSnapshotSlice(list);
         }
 
         Assert.Equal(3, store.RefCounts.GetCount(shared));
@@ -336,8 +334,8 @@ public class SnapshotSliceTests
         for (var step = 0; step < 3; step++)
         {
             var snapshotIndex = order[step];
-            slices[snapshotIndex].Release();
-            Assert.Equal(0, store.RefCounts.GetCount(roots[snapshotIndex]));
+            store.ReleaseSnapshotSlice(slices[snapshotIndex]);
+            Assert.Equal(0, store.RefCounts.GetCount(rootHandles[snapshotIndex]));
 
             var remainingCount = 2 - step;
             Assert.Equal(remainingCount, store.RefCounts.GetCount(shared));

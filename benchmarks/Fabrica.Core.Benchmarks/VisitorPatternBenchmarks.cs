@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Benchmarks;
 

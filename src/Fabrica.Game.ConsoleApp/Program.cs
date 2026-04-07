@@ -1,5 +1,5 @@
-using Fabrica.Core.Collections;
 using Fabrica.Core.Threading;
+using Fabrica.Core.Threading.Queues;
 using Fabrica.Game;
 using Fabrica.Pipeline;
 

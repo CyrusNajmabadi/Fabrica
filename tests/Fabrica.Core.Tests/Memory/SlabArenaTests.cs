@@ -22,9 +22,8 @@ public class UnsafeSlabArenaTests
     [StructLayout(LayoutKind.Sequential, Size = 90_000)]
     private struct OversizedEntry;
 
-    /// <summary>Creates an arena with tiny parameters for edge-case testing. With slabShift=2, each slab holds 4 entries.</summary>
     private static UnsafeSlabArena<Int32Entry> CreateTinyArena(int directoryLength = 4, int slabShift = 2)
-        => new(directoryLength, slabShift);
+        => UnsafeSlabArena<Int32Entry>.TestAccessor.Create(directoryLength, slabShift);
 
     // ═══════════════════════════ Allocation basics ════════════════════════
 
@@ -365,7 +364,7 @@ public class UnsafeSlabArenaTests
     [Fact]
     public void SlabShiftZero_OneEntryPerSlab()
     {
-        var arena = new UnsafeSlabArena<Int32Entry>(directoryLength: 4, slabShift: 0);
+        var arena = UnsafeSlabArena<Int32Entry>.TestAccessor.Create(directoryLength: 4, slabShift: 0);
         var ta = arena.GetTestAccessor();
 
         Assert.Equal(1, ta.SlabLength);
@@ -395,7 +394,7 @@ public class UnsafeSlabArenaTests
     {
         var slabLength = 1 << slabShift;
         var directoryLength = (count / slabLength) + 2;
-        var arena = new UnsafeSlabArena<Int32Entry>(directoryLength, slabShift);
+        var arena = UnsafeSlabArena<Int32Entry>.TestAccessor.Create(directoryLength, slabShift);
         var ta = arena.GetTestAccessor();
 
         var seen = new HashSet<Handle<Int32Entry>>();
@@ -420,7 +419,7 @@ public class UnsafeSlabArenaTests
     {
         var slabLength = 1 << slabShift;
         var directoryLength = (count / slabLength) + 2;
-        var arena = new UnsafeSlabArena<Int32Entry>(directoryLength, slabShift);
+        var arena = UnsafeSlabArena<Int32Entry>.TestAccessor.Create(directoryLength, slabShift);
         var ta = arena.GetTestAccessor();
 
         // Allocate all
@@ -718,19 +717,6 @@ public class SlabSizeHelperTests
         Assert.Equal(0, SlabSizeHelper<OversizedPayload>.OffsetMask);
     }
 
-    [Fact]
-    public void SharedHelper_MatchesPcqHelper()
-    {
-        Assert.Equal(
-            SlabSizeHelper<int>.SlabLength,
-            Fabrica.Core.Collections.ProducerConsumerQueue<int>.SlabSizeHelper.SlabLength);
-        Assert.Equal(
-            SlabSizeHelper<int>.SlabShift,
-            Fabrica.Core.Collections.ProducerConsumerQueue<int>.SlabSizeHelper.SlabShift);
-        Assert.Equal(
-            SlabSizeHelper<int>.OffsetMask,
-            Fabrica.Core.Collections.ProducerConsumerQueue<int>.SlabSizeHelper.OffsetMask);
-    }
 
     [StructLayout(LayoutKind.Sequential, Size = 4096)]
     private struct LargePayload;

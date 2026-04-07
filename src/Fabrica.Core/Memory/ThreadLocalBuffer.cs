@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Collections.Unsafe;
 
 namespace Fabrica.Core.Memory;
 
@@ -19,7 +20,7 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded during the work phase (the owning worker). Single-threaded during
 ///   the merge phase (the coordinator or a merge-worker for this type). No synchronization.
 /// </summary>
-public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
+public readonly struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
 {
     private readonly UnsafeList<T> _list = new(initialCapacity);
     private readonly UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
@@ -79,11 +80,10 @@ public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 102
         get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
     }
 
-    /// <summary>Returns a reference to the node at the given raw local index.</summary>
-    internal ref T this[int localIndex]
+    private ref T this[int localIndex]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[localIndex]; // Coordinator merge path: read by ordinal while iterating WrittenSpan.
+        get => ref _list[localIndex];
     }
 
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Game.Nodes;
 
@@ -58,11 +59,11 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
     public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
     {
         if (typeof(T) == typeof(MachineNode))
-            handle = MachineStore.Remap.Remap(handle);
+            handle = MachineStore.RemapHandle(handle);
         else if (typeof(T) == typeof(BeltSegmentNode))
-            handle = BeltStore.Remap.Remap(handle);
+            handle = BeltStore.RemapHandle(handle);
         else if (typeof(T) == typeof(ItemNode))
-            handle = ItemStore.Remap.Remap(handle);
+            handle = ItemStore.RemapHandle(handle);
     }
 
     // ── Cascade dispatch ────────────────────────────────────────────────

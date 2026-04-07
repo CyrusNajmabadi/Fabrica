@@ -17,7 +17,7 @@ namespace Fabrica.Core.Memory;
 /// <see cref="Handle{T}"/> itself remains a clean <c>int</c> wrapper. These helpers interpret the
 /// raw index contextually during work phases and the coordinator merge.
 /// </summary>
-public static class TaggedHandle
+internal static class TaggedHandle
 {
     /// <summary>Maximum number of worker threads that can be encoded in a local handle.</summary>
     internal const int MaxThreads = 128;

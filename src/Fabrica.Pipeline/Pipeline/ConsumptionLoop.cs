@@ -4,7 +4,7 @@ using Fabrica.Core.Threading;
 namespace Fabrica.Pipeline;
 
 /// <summary>
-/// The consumption ("consumer") thread. Processes pipeline entries from the <see cref="Core.Collections.ProducerConsumerQueue{T}"/>
+/// The consumption ("consumer") thread. Processes pipeline entries from the <see cref="Core.Threading.Queues.ProducerConsumerQueue{T}"/>
 /// at ≈60 fps and coordinates deferred consumers (e.g. periodic saves) via a min-heap schedule.
 ///
 /// FRAME LOOP  (RunOneIteration)
@@ -112,7 +112,7 @@ public sealed partial class ConsumptionLoop<TPayload, TConsumer, TClock, TWaiter
 
     [Conditional("DEBUG")]
     private void AssertSegmentTickInvariants(
-        in Core.Collections.ProducerConsumerQueue<PipelineEntry<TPayload>>.Segment segment)
+        in Core.Threading.Queues.ProducerConsumerQueue<PipelineEntry<TPayload>>.Segment segment)
     {
 #if DEBUG
         if (_debugLastHeldBackTick >= 0)

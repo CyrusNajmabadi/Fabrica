@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 
 // Each wrapper is NoInlining so DOTNET_JitDisasm shows a clean, isolated listing per scenario.
 // The JIT still inlines *into* these wrappers (AggressiveInlining on Visit), so the generated

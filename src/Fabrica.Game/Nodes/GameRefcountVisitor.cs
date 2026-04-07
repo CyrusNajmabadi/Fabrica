@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Game.Nodes;
 

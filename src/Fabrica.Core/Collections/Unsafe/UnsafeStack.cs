@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace Fabrica.Core.Memory;
+namespace Fabrica.Core.Collections.Unsafe;
 
 /// <summary>
 /// Minimal LIFO stack backed by an <see cref="UnsafeList{T}"/>. Provides push/pop semantics

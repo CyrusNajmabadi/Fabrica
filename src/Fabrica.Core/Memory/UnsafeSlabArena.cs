@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
@@ -56,9 +57,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     {
     }
 
-    /// <summary>Creates an arena with caller-specified directory length and slab shift. Intended for tests that need small
-    /// parameters to exercise edge cases without allocating large amounts of memory.</summary>
-    internal UnsafeSlabArena(int directoryLength, int slabShift)
+    private UnsafeSlabArena(int directoryLength, int slabShift)
         => _directory = new UnsafeSlabDirectory<T>(directoryLength, slabShift);
 
     // ── Public API ────────────────────────────────────────────────────────
@@ -157,6 +156,8 @@ internal sealed class UnsafeSlabArena<T> where T : struct
 
     internal readonly struct TestAccessor(UnsafeSlabArena<T> arena)
     {
+        public static UnsafeSlabArena<T> Create(int directoryLength, int slabShift) => new(directoryLength, slabShift);
+
         public T[][] Directory => arena._directory.RawArray;
         public int DirectoryLength => arena._directory.DirectoryLength;
         public int Count => arena._count;

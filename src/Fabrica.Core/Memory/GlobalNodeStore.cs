@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Fabrica.Core.Collections.Unsafe;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Memory;
 
@@ -27,12 +29,12 @@ public abstract class GlobalNodeStore
 ///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{T}"/>).
 ///
 /// ROOT OPERATIONS
-///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
-///   refcount updates for snapshot root sets.
+///   <see cref="BuildSnapshotSlice"/> increments root refcounts when creating a snapshot.
+///   <see cref="ReleaseSnapshotSlice"/> decrements root refcounts and cascades freed nodes.
 ///
 /// VALIDATION (DEBUG ONLY)
-///   Call <see cref="EnableValidation"/> in tests to activate automatic DAG invariant checking
-///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call.
+///   Call <see cref="TestAccessor.EnableValidation"/> in tests to activate automatic DAG invariant checking
+///   after every root increment/decrement.
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>GlobalNodeStore</c>),
@@ -68,13 +70,30 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
 
+    /// <summary>Per-worker append buffers for nodes created during the parallel work phase.
+    /// Empty array when the store has no merge infrastructure (test-only parameterless constructor).</summary>
     private readonly ThreadLocalBuffer<TNode>[] _threadLocalBuffers;
+
+    /// <summary>Maps <c>(threadId, localIndex)</c> pairs to global arena indices during merge.
+    /// Default (no-op) when the store has no merge infrastructure.</summary>
     private readonly RemapTable _remap;
+
+    /// <summary>Starting global index of the most recent <see cref="DrainBuffers"/> batch.
+    /// Read by the parameterless <see cref="RewriteAndIncrementRefCounts{TRefcountVisitor}"/>
+    /// overload to iterate the newly drained range.</summary>
     private int _lastDrainStart;
+
+    /// <summary>Number of nodes in the most recent <see cref="DrainBuffers"/> batch.</summary>
     private int _lastDrainCount;
 
 #if DEBUG
+    /// <summary>Running root-handle reference counts for debug validation. Each
+    /// <see cref="IncrementRoots"/> increments and each <see cref="DecrementRoots"/> decrements.
+    /// Null until <see cref="TestAccessor.EnableValidation"/> is called.</summary>
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
+
+    /// <summary>Delegate that runs <see cref="DagValidator.AssertValid"/> against the current
+    /// tracked roots. Null until <see cref="TestAccessor.EnableValidation"/> is called.</summary>
     private Action? _runValidation;
 #endif
 
@@ -130,11 +149,14 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     public ThreadLocalBuffer<TNode>[] ThreadLocalBuffers => _threadLocalBuffers;
 
     /// <summary>
-    /// The remap table mapping local (thread-local buffer) indices to global arena indices.
-    /// Populated by <see cref="DrainBuffers"/> and consumed by <see cref="RewriteAndIncrementRefCounts"/>
-    /// and <see cref="CollectAndRemapRoots"/>.
+    /// Rewrites a local (tagged) handle to its corresponding global handle using the remap table
+    /// populated by <see cref="DrainBuffers"/>. Global and <see cref="Handle{T}.None"/> handles are
+    /// returned unchanged.
     /// </summary>
-    public RemapTable Remap => _remap;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Handle<T> RemapHandle<T>(Handle<T> handle) where T : struct => _remap.Remap(handle);
+
+    internal RemapTable Remap => _remap;
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
@@ -254,16 +276,15 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         => this.RewriteAndIncrementRefCounts(_lastDrainStart, _lastDrainCount, ref refcountVisitor);
 
     /// <summary>
-    /// Collects roots from thread-local buffers, builds a <see cref="SnapshotSlice{TNode, TNodeOps}"/>,
-    /// and increments root refcounts. Combines phases 3 and 4 of the merge pipeline into one call.
+    /// Collects roots from thread-local buffers, increments their refcounts (the snapshot now owns them),
+    /// and returns a <see cref="SnapshotSlice{TNode, TNodeOps}"/>. Combines phases 3 and 4 of the merge pipeline.
     /// </summary>
     public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
         var roots = new UnsafeList<Handle<TNode>>();
         this.CollectAndRemapRoots(roots);
-        var slice = new SnapshotSlice<TNode, TNodeOps>(this, roots);
-        slice.IncrementRootRefCounts();
-        return slice;
+        this.IncrementRoots(roots.WrittenSpan);
+        return new SnapshotSlice<TNode, TNodeOps>(this, roots);
     }
 
     /// <summary>
@@ -295,21 +316,22 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     // ── Root operations ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published.
-    /// The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
-    /// for the index range beforehand.
+    /// Releases a snapshot slice by decrementing root refcounts and cascading any that hit zero.
+    /// This is the counterpart to <see cref="BuildSnapshotSlice"/>.
     /// </summary>
-    public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
+    public void ReleaseSnapshotSlice(SnapshotSlice<TNode, TNodeOps> slice)
+    {
+        this.DecrementRoots(slice.Roots);
+        slice.Clear();
+    }
+
+    private void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         this.RefCounts.IncrementBatch(roots);
         this.TrackAndValidateAfterIncrement(roots);
     }
 
-    /// <summary>
-    /// Decrements the refcount for each root handle and cascades any that hit zero. Called when a
-    /// snapshot holding these roots is released (e.g., retired by the consumer after processing).
-    /// </summary>
-    public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
+    private void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         this.TrackBeforeDecrement(roots);
         Debug.Assert(!_cascadeActive, "DecrementRoots must not be called during an active cascade.");
@@ -354,7 +376,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// mode with the current set of tracked roots. Compiled out entirely in release builds.
     /// </summary>
     [Conditional("DEBUG")]
-    internal void EnableValidation()
+    private void EnableValidation()
     {
 #if DEBUG
         _trackedRootCounts = [];
@@ -444,6 +466,18 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         public static GlobalNodeStore<TNode, TNodeOps> Create(
             UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
             => new(arena, refCounts);
+
+        [Conditional("DEBUG")]
+        public void EnableValidation() => store.EnableValidation();
+
+        public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice(UnsafeList<Handle<TNode>> roots)
+        {
+            store.IncrementRoots(roots.WrittenSpan);
+            return new SnapshotSlice<TNode, TNodeOps>(store, roots);
+        }
+
+        public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.IncrementRoots(roots);
+        public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;

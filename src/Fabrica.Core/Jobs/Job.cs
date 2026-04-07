@@ -1,4 +1,4 @@
-using Fabrica.Core.Memory;
+using Fabrica.Core.Collections.Unsafe;
 
 namespace Fabrica.Core.Jobs;
 

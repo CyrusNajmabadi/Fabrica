@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Benchmarks;
 
@@ -460,7 +462,7 @@ public class SingleForkReleaseBenchmarks
     [Benchmark]
     public int Release_Only()
     {
-        _store.DecrementRoots(_preForkedRoots.AsSpan(0, this.N));
+        _store.GetTestAccessor().DecrementRoots(_preForkedRoots.AsSpan(0, this.N));
         return _preForkedRoots[this.N].Index;
     }
 

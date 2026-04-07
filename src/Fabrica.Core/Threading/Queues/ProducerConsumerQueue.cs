@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using Fabrica.Core.Collections.Unsafe;
+using Fabrica.Core.Memory;
 
-namespace Fabrica.Core.Collections;
+namespace Fabrica.Core.Threading.Queues;
 
 /// <summary>
 /// Lock-free single-producer / single-consumer (SPSC) append-only queue backed by a linked chain of contiguous array segments
@@ -43,7 +45,7 @@ public sealed partial class ProducerConsumerQueue<T>
 {
     // ═══════════════════════════ FIELDS ══════════════════════════════════════
 
-    /// <summary>Number of items per slab. Defaults to <see cref="SlabSizeHelper.SlabLength"/> (LOH-aware power-of-2 sizing).
+    /// <summary>Number of items per slab. Defaults to <see cref="SlabSizeHelper{T}.SlabLength"/> (LOH-aware power-of-2 sizing).
     /// Tests may provide a smaller value via the internal constructor to make multi-slab scenarios easy to exercise without
     /// producing thousands of items.</summary>
     private readonly int _slabLength;
@@ -80,18 +82,16 @@ public sealed partial class ProducerConsumerQueue<T>
 
     /// <summary>LIFO stack of slabs whose items have been fully cleaned. The producer pops from here before allocating a fresh
     /// slab, giving recently-returned slabs the best chance of still being in CPU cache.</summary>
-    private readonly Stack<Slab> _freeSlabs = new();
+    private readonly UnsafeStack<Slab> _freeSlabs = new();
 
     // ═══════════════════════════ CONSTRUCTORS ════════════════════════════════
 
     /// <summary>Creates a <see cref="ProducerConsumerQueue{T}"/> with the default LOH-aware slab length.</summary>
-    public ProducerConsumerQueue() : this(SlabSizeHelper.SlabLength)
+    public ProducerConsumerQueue() : this(SlabSizeHelper<T>.SlabLength)
     {
     }
 
-    /// <summary>Creates a <see cref="ProducerConsumerQueue{T}"/> with a caller-specified slab length. Intended for tests that need
-    /// small slabs to easily exercise multi-slab edge cases.</summary>
-    internal ProducerConsumerQueue(int slabLength)
+    private ProducerConsumerQueue(int slabLength)
     {
         _slabLength = slabLength;
         var slab = this.AllocateSlab();

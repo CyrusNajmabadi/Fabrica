@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using Fabrica.Core.Collections;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Threading;
+using Fabrica.Core.Threading.Queues;
 using Fabrica.Engine.Simulation;
 using Fabrica.Engine.World;
 using Fabrica.Pipeline;

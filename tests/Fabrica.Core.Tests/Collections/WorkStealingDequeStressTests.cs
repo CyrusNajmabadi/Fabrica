@@ -1,4 +1,4 @@
-using Fabrica.Core.Collections;
+using Fabrica.Core.Threading.Queues;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Collections;
@@ -16,7 +16,7 @@ public class WorkStealingDequeStressTests
     [InlineData(200_000, 1024)]
     public void Stress_OwnerPushes_SingleThiefSteals_NoItemsLost(int itemCount, int initialCapacity)
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
 
         var stolen = new List<int>();
         var thiefDone = new ManualResetEventSlim(false);
@@ -60,7 +60,7 @@ public class WorkStealingDequeStressTests
     [InlineData(200_000, 1024, 7)]
     public void Stress_OwnerPushPop_SingleThiefSteals_NoItemsLost(int itemCount, int initialCapacity, int popEveryN)
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
 
         var ownerPopped = new List<int>();
         var stolen = new List<int>();
@@ -111,7 +111,7 @@ public class WorkStealingDequeStressTests
     public void Stress_OwnerPushPop_MultipleThieves_NoItemsLost(
         int itemCount, int initialCapacity, int thiefCount, int popEveryN)
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
 
         var ownerPopped = new List<int>();
         var stolenBags = new List<int>[thiefCount];
@@ -170,7 +170,7 @@ public class WorkStealingDequeStressTests
     public void Stress_GrowthUnderContention_NoItemsLost(
         int itemCount, int initialCapacity, int thiefCount, int popEveryN)
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
 
         var ownerPopped = new List<int>();
         var stolenBags = new List<int>[thiefCount];
@@ -230,7 +230,7 @@ public class WorkStealingDequeStressTests
     public void Stress_RapidPushPopCycles_ThievesCompete_NoItemsLost(
         int itemCount, int initialCapacity, int thiefCount)
     {
-        var deque = new WorkStealingDeque<int>(initialCapacity);
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
 
         var ownerPopped = new List<int>();
         var stolenBags = new List<int>[thiefCount];

@@ -1,12 +1,14 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
 
 /// <summary>
-/// Golden-file tests that verify the JIT produces the expected native code for critical visitor methods.
+/// Golden-file tests that verify the JIT produces the expected native code for critical visitor methods
+/// (<see cref="INodeVisitor"/> dispatch).
 /// Uses <c>DOTNET_JitDisasm</c> to dump the JIT output from the <c>Fabrica.JitBaseline</c> helper app,
 /// normalizes volatile values (absolute addresses), and compares against checked-in baseline files.
 ///

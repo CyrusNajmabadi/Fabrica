@@ -38,6 +38,7 @@ public sealed class JobScheduler(WorkerPool pool)
     /// </summary>
     public void Submit(Job job)
     {
+        Debug.Assert(Volatile.Read(ref _outstandingJobs) == 0, "Submit called while a DAG is already in flight.");
         this.InjectJob(job);
         this.WaitForCompletion();
     }
