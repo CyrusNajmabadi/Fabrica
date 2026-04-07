@@ -40,7 +40,7 @@ public class SnapshotSliceTests
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        var store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
         store.SetNodeOps(new TreeNodeOps { Store = store });
         store.EnableValidation();
         return store;
@@ -335,9 +335,9 @@ public class SnapshotSliceTests
         var order = new[] { first, second, third };
         for (var step = 0; step < 3; step++)
         {
-            var idx = order[step];
-            store.DecrementRoots(slices[idx].Roots);
-            Assert.Equal(0, store.RefCounts.GetCount(roots[idx]));
+            var snapshotIndex = order[step];
+            store.DecrementRoots(slices[snapshotIndex].Roots);
+            Assert.Equal(0, store.RefCounts.GetCount(roots[snapshotIndex]));
 
             var remainingCount = 2 - step;
             Assert.Equal(remainingCount, store.RefCounts.GetCount(shared));

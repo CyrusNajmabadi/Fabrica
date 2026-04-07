@@ -415,8 +415,8 @@ public class RefCountTableTests
             batchHandles[i] = new Handle<DummyNode>(batch[i]);
         var hitZero = new UnsafeStack<Handle<DummyNode>>();
         table.DecrementBatch(batchHandles, hitZero);
-        while (hitZero.TryPop(out var h))
-            freed.Add(h.Index);
+        while (hitZero.TryPop(out var freedHandle))
+            freed.Add(freedHandle.Index);
 
         Assert.Equal(1, table.GetCount(new Handle<DummyNode>(0)));
         Assert.Equal(0, table.GetCount(new Handle<DummyNode>(1)));
@@ -534,8 +534,8 @@ public class RefCountTableTests
 
         var hitZero = new UnsafeStack<Handle<DummyNode>>();
         table.DecrementBatch(handles, hitZero);
-        while (hitZero.TryPop(out var h))
-            freed.Add(h.Index);
+        while (hitZero.TryPop(out var freedHandle))
+            freed.Add(freedHandle.Index);
 
         Assert.Equal(Count, freed.Count);
         for (var i = 0; i < Count; i++)
@@ -657,11 +657,11 @@ public class RefCountTableTests
             var directoryLength = Math.Max(4, (nodesPerTable + slabLength - 1) / slabLength);
 
             this.Runners = new CascadeRunner[3];
-            for (var t = 0; t < 3; t++)
+            for (var tableIndex = 0; tableIndex < 3; tableIndex++)
             {
-                this.Tables[t] = CreateTinyTable(directoryLength: directoryLength, slabShift: SlabShift);
-                this.Tables[t].EnsureCapacity(nodesPerTable);
-                this.Runners[t] = new CascadeRunner(this.Tables[t]);
+                this.Tables[tableIndex] = CreateTinyTable(directoryLength: directoryLength, slabShift: SlabShift);
+                this.Tables[tableIndex].EnsureCapacity(nodesPerTable);
+                this.Runners[tableIndex] = new CascadeRunner(this.Tables[tableIndex]);
             }
         }
 
@@ -764,11 +764,11 @@ public class RefCountTableTests
             Assert.Contains(1, ctx.Freed[ct]);
         }
 
-        for (var t = 0; t < 3; t++)
+        for (var tableIndex = 0; tableIndex < 3; tableIndex++)
         {
-            if (t == origin || childTables.Contains(t))
+            if (tableIndex == origin || childTables.Contains(tableIndex))
                 continue;
-            Assert.Empty(ctx.Freed[t]);
+            Assert.Empty(ctx.Freed[tableIndex]);
         }
     }
 
@@ -1368,19 +1368,19 @@ public class RefCountTableTests
     private sealed class PersistentTreeHarness(MultiTableContext ctx)
     {
         private readonly MultiTableContext _ctx = ctx;
-        private readonly List<(int t, int i)> _allNodes = [];
-        private readonly Dictionary<(int t, int i), List<(int t, int i)>> _children = [];
-        private readonly List<(int t, int i)> _activeRoots = [];
+        private readonly List<(int TableId, int NodeIndex)> _allNodes = [];
+        private readonly Dictionary<(int TableId, int NodeIndex), List<(int TableId, int NodeIndex)>> _children = [];
+        private readonly List<(int TableId, int NodeIndex)> _activeRoots = [];
         private int _nextIndex;
 
-        public (int t, int i) AllocNode(int tableId)
+        public (int TableId, int NodeIndex) AllocNode(int tableId)
         {
             var node = (tableId, _nextIndex++);
             _allNodes.Add(node);
             return node;
         }
 
-        public void AddEdge((int t, int i) parent, (int t, int i) child)
+        public void AddEdge((int TableId, int NodeIndex) parent, (int TableId, int NodeIndex) child)
         {
             if (!_children.TryGetValue(parent, out var list))
             {
@@ -1389,28 +1389,28 @@ public class RefCountTableTests
             }
 
             list.Add(child);
-            _ctx.AddEdge(parent.t, parent.i, child.t, child.i);
-            _ctx.Tables[child.t].Increment(new Handle<DummyNode>(child.i));
+            _ctx.AddEdge(parent.TableId, parent.NodeIndex, child.TableId, child.NodeIndex);
+            _ctx.Tables[child.TableId].Increment(new Handle<DummyNode>(child.NodeIndex));
         }
 
-        public void AddRoot((int t, int i) node)
+        public void AddRoot((int TableId, int NodeIndex) node)
         {
             _activeRoots.Add(node);
-            _ctx.Tables[node.t].Increment(new Handle<DummyNode>(node.i));
+            _ctx.Tables[node.TableId].Increment(new Handle<DummyNode>(node.NodeIndex));
         }
 
-        public void ReleaseRoot((int t, int i) node)
+        public void ReleaseRoot((int TableId, int NodeIndex) node)
         {
-            Assert.True(_activeRoots.Remove(node), $"Root ({node.t},{node.i}) not found");
-            _ctx.Decrement(node.t, node.i);
+            Assert.True(_activeRoots.Remove(node), $"Root ({node.TableId},{node.NodeIndex}) not found");
+            _ctx.Decrement(node.TableId, node.NodeIndex);
         }
 
         /// <summary>Builds a complete binary tree of the given depth, distributing nodes round-robin across 3 tables.
         /// Returns heap-order array: node i has children at 2i+1 and 2i+2.</summary>
-        public (int t, int i)[] BuildCompleteBinaryTree(int depth)
+        public (int TableId, int NodeIndex)[] BuildCompleteBinaryTree(int depth)
         {
             var count = (1 << (depth + 1)) - 1;
-            var nodes = new (int t, int i)[count];
+            var nodes = new (int TableId, int NodeIndex)[count];
 
             for (var n = 0; n < count; n++)
                 nodes[n] = this.AllocNode(n % 3);
@@ -1429,7 +1429,7 @@ public class RefCountTableTests
         /// <summary>Creates a new version by path-copying from root to the given heap-order position.
         /// New nodes are created along the path; children not on the path are shared from the original.
         /// Returns a new tree array (clone of source with path positions replaced by new nodes).</summary>
-        public (int t, int i)[] PathCopy((int t, int i)[] tree, int targetPosition)
+        public (int TableId, int NodeIndex)[] PathCopy((int TableId, int NodeIndex)[] tree, int targetPosition)
         {
             Assert.True(targetPosition >= 0 && targetPosition < tree.Length);
 
@@ -1444,16 +1444,16 @@ public class RefCountTableTests
             path.Add(0);
             path.Reverse();
 
-            var newTree = ((int t, int i)[])tree.Clone();
-            foreach (var p in path)
-                newTree[p] = this.AllocNode(_nextIndex % 3);
+            var newTree = ((int TableId, int NodeIndex)[])tree.Clone();
+            foreach (var heapIndex in path)
+                newTree[heapIndex] = this.AllocNode(_nextIndex % 3);
 
-            foreach (var p in path)
+            foreach (var heapIndex in path)
             {
-                var left = (2 * p) + 1;
-                var right = (2 * p) + 2;
-                if (left < tree.Length) this.AddEdge(newTree[p], newTree[left]);
-                if (right < tree.Length) this.AddEdge(newTree[p], newTree[right]);
+                var left = (2 * heapIndex) + 1;
+                var right = (2 * heapIndex) + 2;
+                if (left < tree.Length) this.AddEdge(newTree[heapIndex], newTree[left]);
+                if (right < tree.Length) this.AddEdge(newTree[heapIndex], newTree[right]);
             }
 
             return newTree;
@@ -1467,44 +1467,44 @@ public class RefCountTableTests
             foreach (var node in _allNodes)
             {
                 var exp = expected.GetValueOrDefault(node);
-                var actual = _ctx.Tables[node.t].GetCount(new Handle<DummyNode>(node.i));
+                var actual = _ctx.Tables[node.TableId].GetCount(new Handle<DummyNode>(node.NodeIndex));
                 Assert.Equal(exp, actual);
             }
         }
 
-        private Dictionary<(int t, int i), int> ComputeExpected()
+        private Dictionary<(int TableId, int NodeIndex), int> ComputeExpected()
         {
-            var rc = new Dictionary<(int t, int i), int>();
+            var expectedRefCounts = new Dictionary<(int TableId, int NodeIndex), int>();
 
             foreach (var root in _activeRoots)
-                rc[root] = rc.GetValueOrDefault(root) + 1;
+                expectedRefCounts[root] = expectedRefCounts.GetValueOrDefault(root) + 1;
 
             foreach (var node in this.TopoSort())
             {
-                if (rc.GetValueOrDefault(node) <= 0) continue;
-                if (!_children.TryGetValue(node, out var ch)) continue;
-                foreach (var child in ch)
-                    rc[child] = rc.GetValueOrDefault(child) + 1;
+                if (expectedRefCounts.GetValueOrDefault(node) <= 0) continue;
+                if (!_children.TryGetValue(node, out var childList)) continue;
+                foreach (var child in childList)
+                    expectedRefCounts[child] = expectedRefCounts.GetValueOrDefault(child) + 1;
             }
 
-            return rc;
+            return expectedRefCounts;
         }
 
-        private List<(int t, int i)> TopoSort()
+        private List<(int TableId, int NodeIndex)> TopoSort()
         {
-            var visited = new HashSet<(int t, int i)>();
-            var order = new List<(int t, int i)>();
+            var visited = new HashSet<(int TableId, int NodeIndex)>();
+            var order = new List<(int TableId, int NodeIndex)>();
             foreach (var node in _allNodes)
                 this.TopoVisit(node, visited, order);
             order.Reverse();
             return order;
         }
 
-        private void TopoVisit((int t, int i) node, HashSet<(int t, int i)> visited, List<(int t, int i)> order)
+        private void TopoVisit((int TableId, int NodeIndex) node, HashSet<(int TableId, int NodeIndex)> visited, List<(int TableId, int NodeIndex)> order)
         {
             if (!visited.Add(node)) return;
-            if (_children.TryGetValue(node, out var ch))
-                foreach (var child in ch)
+            if (_children.TryGetValue(node, out var childList))
+                foreach (var child in childList)
                     this.TopoVisit(child, visited, order);
             order.Add(node);
         }
@@ -1583,27 +1583,27 @@ public class RefCountTableTests
     public void Persistent_Depth3_FourVersions_AllReleaseOrders(int[] order)
     {
         var ctx = new MultiTableContext(nodesPerTable: 64);
-        var h = new PersistentTreeHarness(ctx);
+        var harness = new PersistentTreeHarness(ctx);
 
-        var v1 = h.BuildCompleteBinaryTree(3); // 15 nodes
-        h.AddRoot(v1[0]);
+        var v1 = harness.BuildCompleteBinaryTree(3); // 15 nodes
+        harness.AddRoot(v1[0]);
 
-        var v2 = h.PathCopy(v1, 3);  // modify left-left leaf
-        h.AddRoot(v2[0]);
+        var v2 = harness.PathCopy(v1, 3);  // modify left-left leaf
+        harness.AddRoot(v2[0]);
 
-        var v3 = h.PathCopy(v1, 5);  // modify right-left leaf
-        h.AddRoot(v3[0]);
+        var v3 = harness.PathCopy(v1, 5);  // modify right-left leaf
+        harness.AddRoot(v3[0]);
 
-        var v4 = h.PathCopy(v2, 10); // modify right-side leaf from V2
-        h.AddRoot(v4[0]);
+        var v4 = harness.PathCopy(v2, 10); // modify right-side leaf from V2
+        harness.AddRoot(v4[0]);
 
-        h.Verify();
+        harness.Verify();
 
         var roots = new[] { v1[0], v2[0], v3[0], v4[0] };
-        foreach (var idx in order)
+        foreach (var releaseOrderIndex in order)
         {
-            h.ReleaseRoot(roots[idx]);
-            h.Verify();
+            harness.ReleaseRoot(roots[releaseOrderIndex]);
+            harness.Verify();
         }
     }
 
@@ -1612,27 +1612,27 @@ public class RefCountTableTests
     public void Persistent_Depth3_FiveRootsWithInterior_AllReleaseOrders(int[] order)
     {
         var ctx = new MultiTableContext(nodesPerTable: 64);
-        var h = new PersistentTreeHarness(ctx);
+        var harness = new PersistentTreeHarness(ctx);
 
-        var v1 = h.BuildCompleteBinaryTree(3);
-        h.AddRoot(v1[0]);
+        var v1 = harness.BuildCompleteBinaryTree(3);
+        harness.AddRoot(v1[0]);
 
-        var v2 = h.PathCopy(v1, 4);
-        h.AddRoot(v2[0]);
+        var v2 = harness.PathCopy(v1, 4);
+        harness.AddRoot(v2[0]);
 
-        var v3 = h.PathCopy(v1, 6);
-        h.AddRoot(v3[0]);
+        var v3 = harness.PathCopy(v1, 6);
+        harness.AddRoot(v3[0]);
 
-        h.AddRoot(v1[1]);  // interior root: left subtree of V1
-        h.AddRoot(v2[2]);  // interior root: right subtree of V2
+        harness.AddRoot(v1[1]);  // interior root: left subtree of V1
+        harness.AddRoot(v2[2]);  // interior root: right subtree of V2
 
-        h.Verify();
+        harness.Verify();
 
         var roots = new[] { v1[0], v2[0], v3[0], v1[1], v2[2] };
-        foreach (var idx in order)
+        foreach (var releaseOrderIndex in order)
         {
-            h.ReleaseRoot(roots[idx]);
-            h.Verify();
+            harness.ReleaseRoot(roots[releaseOrderIndex]);
+            harness.Verify();
         }
     }
 
@@ -1641,28 +1641,28 @@ public class RefCountTableTests
     public void Persistent_Depth3_ChainedPathCopies_AllReleaseOrders(int[] order)
     {
         var ctx = new MultiTableContext(nodesPerTable: 64);
-        var h = new PersistentTreeHarness(ctx);
+        var harness = new PersistentTreeHarness(ctx);
 
         // Each version is a path-copy of the previous — chained modifications
-        var v1 = h.BuildCompleteBinaryTree(3);
-        h.AddRoot(v1[0]);
+        var v1 = harness.BuildCompleteBinaryTree(3);
+        harness.AddRoot(v1[0]);
 
-        var v2 = h.PathCopy(v1, 3);
-        h.AddRoot(v2[0]);
+        var v2 = harness.PathCopy(v1, 3);
+        harness.AddRoot(v2[0]);
 
-        var v3 = h.PathCopy(v2, 6);
-        h.AddRoot(v3[0]);
+        var v3 = harness.PathCopy(v2, 6);
+        harness.AddRoot(v3[0]);
 
-        var v4 = h.PathCopy(v3, 4);
-        h.AddRoot(v4[0]);
+        var v4 = harness.PathCopy(v3, 4);
+        harness.AddRoot(v4[0]);
 
-        h.Verify();
+        harness.Verify();
 
         var roots = new[] { v1[0], v2[0], v3[0], v4[0] };
-        foreach (var idx in order)
+        foreach (var releaseOrderIndex in order)
         {
-            h.ReleaseRoot(roots[idx]);
-            h.Verify();
+            harness.ReleaseRoot(roots[releaseOrderIndex]);
+            harness.Verify();
         }
     }
 
@@ -1671,32 +1671,32 @@ public class RefCountTableTests
     public void Persistent_Depth4_SixVersions_SampledOrders(int[] order)
     {
         var ctx = new MultiTableContext(nodesPerTable: 128);
-        var h = new PersistentTreeHarness(ctx);
+        var harness = new PersistentTreeHarness(ctx);
 
-        var v1 = h.BuildCompleteBinaryTree(4); // 31 nodes
-        h.AddRoot(v1[0]);
+        var v1 = harness.BuildCompleteBinaryTree(4); // 31 nodes
+        harness.AddRoot(v1[0]);
 
-        var v2 = h.PathCopy(v1, 15); // leftmost leaf (depth 4)
-        h.AddRoot(v2[0]);
+        var v2 = harness.PathCopy(v1, 15); // leftmost leaf (depth 4)
+        harness.AddRoot(v2[0]);
 
-        var v3 = h.PathCopy(v1, 22); // middle-right leaf
-        h.AddRoot(v3[0]);
+        var v3 = harness.PathCopy(v1, 22); // middle-right leaf
+        harness.AddRoot(v3[0]);
 
-        var v4 = h.PathCopy(v2, 30); // rightmost leaf from V2
-        h.AddRoot(v4[0]);
+        var v4 = harness.PathCopy(v2, 30); // rightmost leaf from V2
+        harness.AddRoot(v4[0]);
 
-        var v5 = h.PathCopy(v3, 7);  // interior node from V3
-        h.AddRoot(v5[0]);
+        var v5 = harness.PathCopy(v3, 7);  // interior node from V3
+        harness.AddRoot(v5[0]);
 
-        h.AddRoot(v1[1]);            // interior root: left subtree of V1
+        harness.AddRoot(v1[1]);            // interior root: left subtree of V1
 
-        h.Verify();
+        harness.Verify();
 
         var roots = new[] { v1[0], v2[0], v3[0], v4[0], v5[0], v1[1] };
-        foreach (var idx in order)
+        foreach (var releaseOrderIndex in order)
         {
-            h.ReleaseRoot(roots[idx]);
-            h.Verify();
+            harness.ReleaseRoot(roots[releaseOrderIndex]);
+            harness.Verify();
         }
     }
 
@@ -1704,51 +1704,51 @@ public class RefCountTableTests
     public void Persistent_InterleavedAddAndRelease()
     {
         var ctx = new MultiTableContext(nodesPerTable: 64);
-        var h = new PersistentTreeHarness(ctx);
+        var harness = new PersistentTreeHarness(ctx);
 
         // Build original and add root
-        var v1 = h.BuildCompleteBinaryTree(3);
-        h.AddRoot(v1[0]);
-        h.Verify();
+        var v1 = harness.BuildCompleteBinaryTree(3);
+        harness.AddRoot(v1[0]);
+        harness.Verify();
 
         // Create V2, add root
-        var v2 = h.PathCopy(v1, 5);
-        h.AddRoot(v2[0]);
-        h.Verify();
+        var v2 = harness.PathCopy(v1, 5);
+        harness.AddRoot(v2[0]);
+        harness.Verify();
 
         // Release V1 — V2's shared subtrees survive
-        h.ReleaseRoot(v1[0]);
-        h.Verify();
+        harness.ReleaseRoot(v1[0]);
+        harness.Verify();
 
         // Create V3 from V2 (still alive)
-        var v3 = h.PathCopy(v2, 3);
-        h.AddRoot(v3[0]);
-        h.Verify();
+        var v3 = harness.PathCopy(v2, 3);
+        harness.AddRoot(v3[0]);
+        harness.Verify();
 
         // Add interior root to V2's right subtree — keeps it alive independently
-        h.AddRoot(v2[2]);
-        h.Verify();
+        harness.AddRoot(v2[2]);
+        harness.Verify();
 
         // Release V2 — interior root keeps right subtree alive
-        h.ReleaseRoot(v2[0]);
-        h.Verify();
+        harness.ReleaseRoot(v2[0]);
+        harness.Verify();
 
         // Create V4 from V3 (still alive)
-        var v4 = h.PathCopy(v3, 6);
-        h.AddRoot(v4[0]);
-        h.Verify();
+        var v4 = harness.PathCopy(v3, 6);
+        harness.AddRoot(v4[0]);
+        harness.Verify();
 
         // Release V3
-        h.ReleaseRoot(v3[0]);
-        h.Verify();
+        harness.ReleaseRoot(v3[0]);
+        harness.Verify();
 
         // Release interior root
-        h.ReleaseRoot(v2[2]);
-        h.Verify();
+        harness.ReleaseRoot(v2[2]);
+        harness.Verify();
 
         // Release V4 — everything should clean up
-        h.ReleaseRoot(v4[0]);
-        h.Verify();
+        harness.ReleaseRoot(v4[0]);
+        harness.Verify();
     }
 
     // ── Fork-then-release: only the old spine is freed ───────────────────
@@ -1764,21 +1764,21 @@ public class RefCountTableTests
     {
         var nodeCount = (1 << (depth + 1)) - 1;
         var ctx = new MultiTableContext(nodesPerTable: nodeCount * 3);
-        var h = new PersistentTreeHarness(ctx);
+        var harness = new PersistentTreeHarness(ctx);
 
-        var v1 = h.BuildCompleteBinaryTree(depth);
-        h.AddRoot(v1[0]);
-        h.Verify();
+        var v1 = harness.BuildCompleteBinaryTree(depth);
+        harness.AddRoot(v1[0]);
+        harness.Verify();
 
-        var v2 = h.PathCopy(v1, targetLeaf);
-        h.AddRoot(v2[0]);
-        h.Verify();
+        var v2 = harness.PathCopy(v1, targetLeaf);
+        harness.AddRoot(v2[0]);
+        harness.Verify();
 
         var freedBefore = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
         Assert.Equal(0, freedBefore);
 
-        h.ReleaseRoot(v1[0]);
-        h.Verify();
+        harness.ReleaseRoot(v1[0]);
+        harness.Verify();
 
         // The old root was released. Only the old spine (root → target) should be freed.
         // Path length = depth + 1 nodes (root through the target leaf).
@@ -1787,7 +1787,7 @@ public class RefCountTableTests
         Assert.Equal(pathLength, freedAfter);
 
         // Verify each freed node is one of the old spine positions
-        var freedSet = new HashSet<(int t, int i)>();
+        var freedSet = new HashSet<(int TableId, int NodeIndex)>();
         for (var table = 0; table < 3; table++)
             foreach (var idx in ctx.Freed[table])
                 freedSet.Add((table, idx));
@@ -1811,21 +1811,21 @@ public class RefCountTableTests
         }
 
         pathPositions.Add(0);
-        foreach (var p in pathPositions)
-            Assert.True(ctx.Tables[v2[p].t].GetCount(new Handle<DummyNode>(v2[p].i)) > 0,
-                $"V2 spine node at position {p} should be alive");
+        foreach (var pathPosition in pathPositions)
+            Assert.True(ctx.Tables[v2[pathPosition].TableId].GetCount(new Handle<DummyNode>(v2[pathPosition].NodeIndex)) > 0,
+                $"V2 spine node at position {pathPosition} should be alive");
 
         // Shared subtree nodes (not on the path) should still be alive with refcount 1
         for (var n = 0; n < nodeCount; n++)
         {
             if (pathPositions.Contains(n)) continue;
-            var (t, i) = v1[n]; // same as v2[n] for non-path positions
-            Assert.True(ctx.Tables[t].GetCount(new Handle<DummyNode>(i)) > 0, $"Shared node at position {n} should be alive");
+            var (tableId, nodeIndex) = v1[n]; // same as v2[n] for non-path positions
+            Assert.True(ctx.Tables[tableId].GetCount(new Handle<DummyNode>(nodeIndex)) > 0, $"Shared node at position {n} should be alive");
         }
 
         // Release V2 — now everything should be freed
-        h.ReleaseRoot(v2[0]);
-        h.Verify();
+        harness.ReleaseRoot(v2[0]);
+        harness.Verify();
 
         var totalFreed = ctx.Freed[0].Count + ctx.Freed[1].Count + ctx.Freed[2].Count;
         Assert.Equal(nodeCount + pathLength, totalFreed);

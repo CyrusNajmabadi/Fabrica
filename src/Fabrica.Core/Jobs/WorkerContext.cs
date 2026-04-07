@@ -4,12 +4,9 @@ using Fabrica.Core.Collections;
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
-/// Per-worker context passed to jobs during execution. Each worker thread has its own context
-/// instance, providing access to the thread's work-stealing deque and worker identity.
-///
-/// Jobs use <see cref="Enqueue"/> to push ready sub-jobs onto the executing thread's deque.
-/// The <see cref="WorkerPool"/> passes this context to <see cref="Job.Execute"/>, so it is only
-/// accessible during execution.
+/// Per-worker internal context owned by <see cref="WorkerPool"/>. Each worker thread has its own
+/// instance, providing access to the thread's work-stealing deque, steal offset, and current
+/// scheduler. Not exposed to job subclasses — they receive a <see cref="JobContext"/> instead.
 ///
 /// THREAD MODEL
 ///   <see cref="Enqueue"/> calls <see cref="WorkStealingDeque{T}.Push"/>, which is an owner-only

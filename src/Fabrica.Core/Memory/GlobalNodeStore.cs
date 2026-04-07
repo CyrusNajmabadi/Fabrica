@@ -14,16 +14,6 @@ namespace Fabrica.Core.Memory;
 ///   <typeparamref name="TNodeOps"/> implements <see cref="INodeOps{TNode}"/> which unifies
 ///   structural knowledge of which fields are children (<see cref="INodeOps{TNode}.EnumerateChildren{TVisitor}"/>)
 ///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{T}"/>).
-///   This eliminates the need for a separate cascade-free handler interface — the visitor pattern
-///   handles everything.
-///
-/// CASCADE-FREE
-///   Owned entirely by this class. When a refcount reaches zero, the cascade loop reads the freed
-///   node from the arena, enumerates its children through <typeparamref name="TNodeOps"/> (as both
-///   enumerator and visitor), and frees the arena slot. Re-entrant decrements (same-type children)
-///   push onto the pending stack and the outer loop processes them — no nested loops, bounded stack
-///   depth. Cross-type cascades trigger the other store's cascade via
-///   <see cref="INodeVisitor.Visit{T}"/> dispatch.
 ///
 /// ROOT OPERATIONS
 ///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
@@ -31,13 +21,12 @@ namespace Fabrica.Core.Memory;
 ///
 /// VALIDATION (DEBUG ONLY)
 ///   Call <see cref="EnableValidation"/> in tests to activate automatic DAG invariant checking
-///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call. The store
-///   uses its own <typeparamref name="TNodeOps"/> as the enumerator — no separate enumerator needed.
+///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call.
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>GlobalNodeStore</c>),
 ///   <typeparamref name="TNodeOps"/>'s <see cref="INodeVisitor.Visit{T}"/> dispatches
-///   to the correct store using <c>typeof</c> checks (JIT-eliminated dead branches).
+///   to the correct store.
 ///
 /// TWO-PHASE INITIALIZATION
 ///   When <typeparamref name="TNodeOps"/> needs a reference back to this store (for same-type
@@ -53,11 +42,11 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
+public sealed class GlobalNodeStore<TNode, TNodeOps>
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
-    private TNodeOps _nodeOps = nodeOps;
+    private TNodeOps _nodeOps;
 
     /// <summary>
     /// Handles whose refcount reached zero during a decrement cascade, pending processing.
@@ -65,12 +54,7 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// </summary>
     private readonly UnsafeStack<Handle<TNode>> _cascadePending = new();
 
-    /// <summary>
-    /// True while a decrement cascade is being processed. When a <see cref="DecrementRefCount"/>
-    /// call hits zero during an active cascade (e.g., a same-type child decrement, or a cross-store
-    /// A→B→A bounce), the handle is pushed onto <see cref="_cascadePending"/> and the caller returns
-    /// immediately — the outer cascade loop will process it.
-    /// </summary>
+    /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
 
 #if DEBUG
@@ -78,11 +62,24 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     private Action? _runValidation;
 #endif
 
+    /// <summary>
+    /// Creates a store with its own arena and refcount table. Call <see cref="SetNodeOps"/> to
+    /// complete two-phase initialization before using the store.
+    /// </summary>
+    public GlobalNodeStore() : this(new UnsafeSlabArena<TNode>(), new RefCountTable<TNode>(), default) { }
+
+    private GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
+    {
+        this.Arena = arena;
+        this.RefCounts = refCounts;
+        _nodeOps = nodeOps;
+    }
+
     /// <summary>The slab-backed arena storing nodes of type <typeparamref name="TNode"/>.</summary>
-    public UnsafeSlabArena<TNode> Arena { get; } = arena;
+    internal UnsafeSlabArena<TNode> Arena { get; }
 
     /// <summary>Parallel refcount array — index <c>i</c> holds the refcount for the node at arena index <c>i</c>.</summary>
-    public RefCountTable<TNode> RefCounts { get; } = refCounts;
+    internal RefCountTable<TNode> RefCounts { get; }
 
     /// <summary>Debug-only assertion that the caller is on the owner thread. Delegates to the
     /// underlying <see cref="RefCountTable{T}"/> which holds the sole <see cref="Threading.SingleThreadedOwner"/>.</summary>
@@ -92,33 +89,30 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
-    /// needs a reference back to this store (for same-type child decrement during cascade).
+    /// needs a reference back to this store.
     /// </summary>
-    internal void SetNodeOps(TNodeOps ops) => _nodeOps = ops;
+    public void SetNodeOps(TNodeOps ops) => _nodeOps = ops;
 
     // ── Single-handle operations (used by visitor actions) ─────────────
 
-    /// <summary>Increments the refcount for a single handle. Used by <see cref="INodeVisitor"/> implementations
-    /// during child enumeration.</summary>
+    /// <summary>Increments the refcount for a single handle.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void IncrementRefCount(Handle<TNode> handle)
+    public void IncrementRefCount(Handle<TNode> handle)
         => this.RefCounts.Increment(handle);
 
     /// <summary>
-    /// Decrements the refcount for a single handle. If it reaches zero, the handle is pushed onto
-    /// the cascade pending stack. If no cascade is already active, starts the cascade loop which
-    /// reads each freed node, enumerates its children via <typeparamref name="TNodeOps"/>, and frees
-    /// the arena slot.
-    ///
-    /// Re-entrant calls (from within the cascade loop for same-type children, or from cross-store
-    /// A→B→A bounces) push onto the existing pending stack instead of starting a nested loop.
+    /// Decrements the refcount for a single handle. If it reaches zero, cascades to free the node and its children.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void DecrementRefCount(Handle<TNode> handle)
+    public void DecrementRefCount(Handle<TNode> handle)
     {
         if (!this.RefCounts.Decrement(handle))
             return;
 
+        // Refcount hit zero: push onto the cascade pending stack. If no cascade is active, RunCascade
+        // drains the stack. If a cascade is already active (re-entrant same-type child decrement, or
+        // cross-store A→B→A bounce), the handle stays pending and this call returns — the outer loop
+        // processes it; no nested cascade loops.
         _cascadePending.Push(handle);
 
         if (!_cascadeActive)
@@ -133,7 +127,7 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// records the local-to-global mapping in <paramref name="remap"/>. Returns the
     /// <c>(startIndex, count)</c> range of newly merged nodes.
     /// </summary>
-    public (int StartIndex, int Count) DrainBuffers(ThreadLocalBuffer<TNode>[] tlbs, RemapTable remap)
+    public (int StartIndex, int Count) DrainBuffers(ThreadLocalBuffer<TNode>[] threadLocalBuffers, RemapTable remap)
     {
         // Snapshot where the arena was before we started so we can report the range of newly merged
         // nodes to the caller (they need this to know which nodes to fixup and refcount).
@@ -150,23 +144,23 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
         //   3. Record the local→global mapping (thread t, local index i → global batchStart+i) in the
         //      remap table so that RewriteAndIncrementRefCounts can later translate tagged local handles
         //      into their final global indices.
-        for (var t = 0; t < tlbs.Length; t++)
+        for (var threadIndex = 0; threadIndex < threadLocalBuffers.Length; threadIndex++)
         {
-            var tlb = tlbs[t];
-            if (tlb.Count == 0)
+            var threadLocalBuffer = threadLocalBuffers[threadIndex];
+            if (threadLocalBuffer.Count == 0)
                 continue;
 
-            // Reserve tlb.Count contiguous slots starting at batchStart. This is O(1) — just a
+            // Reserve threadLocalBuffer.Count contiguous slots starting at batchStart. This is O(1) — just a
             // high-water bump — and guarantees the slots are contiguous for cache-friendly iteration
             // in later phases.
-            var batchStart = this.Arena.AllocateBatch(tlb.Count);
-            var span = tlb.WrittenSpan;
+            var batchStart = this.Arena.AllocateBatch(threadLocalBuffer.Count);
+            var span = threadLocalBuffer.WrittenSpan;
             for (var i = 0; i < span.Length; i++)
             {
                 // Copy node data into its global slot and record where it landed so the remap table
-                // can translate any local handle pointing to (thread=t, index=i) into batchStart+i.
+                // can translate any local handle pointing to (thread=threadIndex, index=i) into batchStart+i.
                 this.Arena[new Handle<TNode>(batchStart + i)] = span[i];
-                remap.SetMapping(t, i, batchStart + i);
+                remap.SetMapping(threadIndex, i, batchStart + i);
             }
         }
 
@@ -182,12 +176,6 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// Rewrites local (tagged) handles to global indices and then increments child refcounts for all
     /// nodes within the range <c>[startIndex, startIndex + count)</c>.
     ///
-    /// Phase 1 (rewrite): uses <see cref="INodeOps{TNode}.EnumerateRefChildren{TVisitor}"/> with
-    /// <paramref name="remapVisitor"/> to resolve local handles through the remap tables in place.
-    ///
-    /// Phase 2 (refcount): uses <see cref="INodeOps{TNode}.EnumerateChildren{TVisitor}"/> with
-    /// <paramref name="refcountVisitor"/> to increment each child's refcount.
-    ///
     /// BARRIER: all types must finish <see cref="DrainBuffers"/> before any type calls this method,
     /// because cross-type handle rewriting needs the target type's remap table.
     /// </summary>
@@ -198,6 +186,7 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
         where TRemapVisitor : struct, INodeVisitor
         where TRefcountVisitor : struct, INodeVisitor
     {
+        // Phase 1 (rewrite): EnumerateRefChildren with remapVisitor — resolves local handles through remap tables in place.
         // Walk every newly merged node in the arena. At this point the nodes have been copied verbatim
         // from TLBs, so any Handle<T> fields still contain tagged local values (threadId + localIndex).
         // EnumerateRefChildren hands each handle field *by reference* to the visitor, which resolves
@@ -210,6 +199,7 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
             _nodeOps.EnumerateRefChildren(ref node, ref remapVisitor);
         }
 
+        // Phase 2 (refcount): EnumerateChildren with refcountVisitor — increments each child's refcount.
         // Walk every newly merged node again (handles are now global after the rewrite loop above).
         // For each node, EnumerateChildren yields each child handle *by value* to the visitor, which
         // increments that child's refcount in the appropriate RefCountTable. This establishes the
@@ -230,11 +220,10 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// unchanged.
     ///
     /// The caller owns the <see cref="UnsafeList{T}"/> and is responsible for resetting it between
-    /// ticks. In steady state this is zero-allocation: the list's backing array grows to the
-    /// high-water root count and is reused across ticks.
+    /// ticks.
     /// </summary>
     public void CollectAndRemapRoots(
-        ThreadLocalBuffer<TNode>[] tlbs,
+        ThreadLocalBuffer<TNode>[] threadLocalBuffers,
         RemapTable remap,
         UnsafeList<Handle<TNode>> destination)
     {
@@ -243,9 +232,9 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
         // global (referencing a pre-existing node from a prior snapshot that the job decided to re-root).
         // We remap local handles through the same remap table that DrainBuffers built, translating
         // (threadId, localIndex) → globalIndex. Global handles pass through unchanged.
-        foreach (var tlb in tlbs)
+        foreach (var threadLocalBuffer in threadLocalBuffers)
         {
-            foreach (var handle in tlb.RootHandles)
+            foreach (var handle in threadLocalBuffer.RootHandles)
             {
                 var index = handle.Index;
                 if (TaggedHandle.IsLocal(index))
@@ -265,8 +254,8 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     // ── Root operations ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published
-    /// (e.g., enqueued into the PCQ). The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
+    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published.
+    /// The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
     /// for the index range beforehand.
     /// </summary>
     public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
@@ -290,13 +279,16 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
 
     // ── Cascade loop ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Iteratively processes all handles whose refcount reached zero. For each freed handle: reads
-    /// the node from the arena, enumerates children using <typeparamref name="TNodeOps"/> as both
-    /// enumerator and decrement visitor, then frees the arena slot.
-    /// </summary>
     private void RunCascade()
     {
+        // CASCADE-FREE (owned entirely by this class): when a refcount reaches zero, this loop reads the
+        // freed node from the arena, enumerates its children through TNodeOps (as both enumerator and
+        // visitor), and frees the arena slot. Re-entrant decrements (same-type children) push onto
+        // _cascadePending and the outer loop processes them — no nested loops, bounded stack depth.
+        // Cross-type cascades trigger the other store's cascade via INodeVisitor.Visit dispatch.
+        // The visitor pattern eliminates a separate cascade-free handler interface — TNodeOps handles it.
+        // For cross-type DAGs, Visit{T} dispatch to the correct store often uses typeof checks (JIT may
+        // eliminate dead branches).
         if (_cascadePending.Count == 0)
             return;
 
@@ -318,8 +310,7 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
     /// <summary>
     /// Enables automatic DAG invariant checking (debug builds only). After every <see cref="IncrementRoots"/>
     /// and <see cref="DecrementRoots"/>, the store runs <see cref="DagValidator.AssertValid"/> in relaxed
-    /// mode with the current set of tracked roots. Uses the stored <typeparamref name="TNodeOps"/> as
-    /// the enumerator. Compiled out entirely in release builds.
+    /// mode with the current set of tracked roots. Compiled out entirely in release builds.
     /// </summary>
     [Conditional("DEBUG")]
     internal void EnableValidation()
@@ -404,6 +395,17 @@ internal sealed class GlobalNodeStore<TNode, TNodeOps>(UnsafeSlabArena<TNode> ar
 
     internal readonly struct TestAccessor(GlobalNodeStore<TNode, TNodeOps> store)
     {
+        /// <summary>
+        /// Creates a store with caller-provided arena and refcount table so tests can inspect
+        /// internal state. Call <see cref="GlobalNodeStore{TNode,TNodeOps}.SetNodeOps"/> on the
+        /// returned store to complete two-phase initialization.
+        /// </summary>
+        public static GlobalNodeStore<TNode, TNodeOps> Create(
+            UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
+            => new(arena, refCounts, default);
+
+        public UnsafeSlabArena<TNode> Arena => store.Arena;
+        public RefCountTable<TNode> RefCounts => store.RefCounts;
         public TNodeOps NodeOps => store._nodeOps;
         public bool CascadeActive => store._cascadeActive;
     }

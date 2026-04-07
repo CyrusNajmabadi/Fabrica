@@ -18,7 +18,7 @@ namespace Fabrica.Core.Memory;
 /// THREAD MODEL
 ///   Single-threaded. No synchronization is provided.
 /// </summary>
-internal sealed class UnsafeList<T>(int initialCapacity = 16)
+public sealed class UnsafeList<T>(int initialCapacity = 16)
 {
     private T[] _array = new T[initialCapacity];
     private int _count;

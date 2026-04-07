@@ -53,7 +53,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// <summary>
     /// Returns a pooled instance if available, or allocates a new one. The returned job is in a
     /// clean state (reset during the previous return) — the caller must configure
-    /// <see cref="Job.RemainingDependencies"/>, <see cref="Job.Dependents"/>, and subclass-specific fields
+    /// DAG dependencies (via <see cref="Job.AddDependent"/>/<see cref="Job.DependsOn"/>) and subclass-specific fields
     /// before submitting.
     /// </summary>
     public TJob Rent()
@@ -89,8 +89,6 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// </summary>
     public void Return(TJob item)
     {
-        item.RemainingDependencies = 0;
-        item.Dependents = null;
         item.Scheduler = null;
 #if DEBUG
         item.State = default;

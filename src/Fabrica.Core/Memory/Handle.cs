@@ -4,12 +4,18 @@ namespace Fabrica.Core.Memory;
 /// Strongly-typed index wrapper that prevents accidental use of an index from one arena/table
 /// with a different arena/table. <typeparamref name="T"/> is the node struct type this handle
 /// refers to — it is never stored, only used for compile-time discrimination.
+///
+/// The raw index and constructor are internal — external consumers see only <see cref="IsValid"/>,
+/// <see cref="None"/>, and equality operators. Low-level index access is confined to Fabrica.Core
+/// internals (arena, ref-count table, tagged-handle helpers, remap table).
 /// </summary>
-internal readonly struct Handle<T>(int index) : IEquatable<Handle<T>> where T : struct
+public readonly struct Handle<T> : IEquatable<Handle<T>> where T : struct
 {
     public static readonly Handle<T> None = new(-1);
 
-    public int Index { get; } = index;
+    internal Handle(int index) => this.Index = index;
+
+    internal int Index { get; }
 
     public bool IsValid => this.Index >= 0;
 

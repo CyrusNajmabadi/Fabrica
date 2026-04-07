@@ -38,14 +38,14 @@ public class ProducerConsumerQueueSingleThreadStressTests
             var segment = queue.ConsumerAcquire();
             Assert.Equal(batchSize, segment.Count);
 
-            var idx = 0;
+            var offsetInBatch = 0;
             foreach (ref readonly var item in segment)
             {
-                Assert.Equal($"e{totalProduced - batchSize + idx}", item);
-                idx++;
+                Assert.Equal($"e{totalProduced - batchSize + offsetInBatch}", item);
+                offsetInBatch++;
             }
 
-            Assert.Equal(batchSize, idx);
+            Assert.Equal(batchSize, offsetInBatch);
             queue.ConsumerAdvance(segment.Count);
             queue.ProducerCleanup(ref handler);
         }

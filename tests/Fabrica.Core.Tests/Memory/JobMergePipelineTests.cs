@@ -48,8 +48,8 @@ public class JobMergePipelineTests : IDisposable
 
         readonly void INodeOps<ParentNode>.EnumerateRefChildren<TVisitor>(ref ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent.Index != -1) visitor.VisitRef(ref node.LeftParent);
-            if (node.ChildRef.Index != -1) visitor.VisitRef(ref node.ChildRef);
+            if (node.LeftParent != Handle<ParentNode>.None) visitor.VisitRef(ref node.LeftParent);
+            if (node.ChildRef != Handle<ChildNode>.None) visitor.VisitRef(ref node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateRefChildren<TVisitor>(ref ChildNode node, ref TVisitor visitor)
@@ -149,11 +149,11 @@ public class JobMergePipelineTests : IDisposable
     {
         var childArena = new UnsafeSlabArena<ChildNode>();
         var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = new GlobalNodeStore<ChildNode, TestNodeOps>(childArena, childRefCounts, default);
+        var childStore = GlobalNodeStore<ChildNode, TestNodeOps>.TestAccessor.Create(childArena, childRefCounts);
 
         var parentArena = new UnsafeSlabArena<ParentNode>();
         var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = new GlobalNodeStore<ParentNode, TestNodeOps>(parentArena, parentRefCounts, default);
+        var parentStore = GlobalNodeStore<ParentNode, TestNodeOps>.TestAccessor.Create(parentArena, parentRefCounts);
 
         var ops = new TestNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
@@ -172,26 +172,27 @@ public class JobMergePipelineTests : IDisposable
     /// </summary>
     private sealed class CreateChildNodesJob : Job
     {
-        internal ThreadLocalBuffer<ChildNode>[] ChildTlbs = null!;
+        internal ThreadLocalBuffer<ChildNode>[] ChildThreadLocalBuffers = null!;
         internal int ChildCount;
         internal int ValueStart;
         internal Handle<ChildNode>[] AllocatedHandles = null!;
 
-        internal override void Execute(WorkerContext context)
+        protected internal override void Execute(JobContext context)
         {
-            var tlb = ChildTlbs[context.WorkerIndex];
+            var threadLocalBuffer = ChildThreadLocalBuffers[context.WorkerIndex];
             AllocatedHandles = new Handle<ChildNode>[ChildCount];
             for (var i = 0; i < ChildCount; i++)
             {
-                var handle = tlb.Allocate();
-                tlb[TaggedHandle.DecodeLocalIndex(handle.Index)] = new ChildNode { Value = ValueStart + i };
+                var handle = threadLocalBuffer.Allocate();
+                threadLocalBuffer[TaggedHandle.DecodeLocalIndex(handle.Index)] = new ChildNode { Value = ValueStart + i };
                 AllocatedHandles[i] = handle;
             }
         }
 
-        internal override void Reset()
+        protected internal override void Reset()
         {
-            ChildTlbs = null!;
+            base.Reset();
+            ChildThreadLocalBuffers = null!;
             AllocatedHandles = null!;
         }
     }
@@ -204,12 +205,12 @@ public class JobMergePipelineTests : IDisposable
     /// </summary>
     private sealed class CreateParentNodesJob : Job
     {
-        internal ThreadLocalBuffer<ParentNode>[] ParentTlbs = null!;
+        internal ThreadLocalBuffer<ParentNode>[] ParentThreadLocalBuffers = null!;
         internal CreateChildNodesJob[] ChildSources = null!;
 
-        internal override void Execute(WorkerContext context)
+        protected internal override void Execute(JobContext context)
         {
-            var tlb = ParentTlbs[context.WorkerIndex];
+            var threadLocalBuffer = ParentThreadLocalBuffers[context.WorkerIndex];
 
             var allChildHandles = new List<Handle<ChildNode>>();
             foreach (var source in ChildSources)
@@ -219,8 +220,8 @@ public class JobMergePipelineTests : IDisposable
             Handle<ParentNode> lastHandle = default;
             for (var i = 0; i < allChildHandles.Count; i++)
             {
-                lastHandle = tlb.Allocate();
-                tlb[TaggedHandle.DecodeLocalIndex(lastHandle.Index)] = new ParentNode
+                lastHandle = threadLocalBuffer.Allocate();
+                threadLocalBuffer[TaggedHandle.DecodeLocalIndex(lastHandle.Index)] = new ParentNode
                 {
                     LeftParent = previousParent,
                     ChildRef = allChildHandles[i],
@@ -229,12 +230,13 @@ public class JobMergePipelineTests : IDisposable
             }
 
             if (allChildHandles.Count > 0)
-                tlb.MarkRoot(lastHandle);
+                threadLocalBuffer.MarkRoot(lastHandle);
         }
 
-        internal override void Reset()
+        protected internal override void Reset()
         {
-            ParentTlbs = null!;
+            base.Reset();
+            ParentThreadLocalBuffers = null!;
             ChildSources = null!;
         }
     }
@@ -253,39 +255,37 @@ public class JobMergePipelineTests : IDisposable
         var (parentStore, childStore) = CreateStores();
         const int WorkerCount = 4;
 
-        var childTlbs = new ThreadLocalBuffer<ChildNode>[WorkerCount];
-        var parentTlbs = new ThreadLocalBuffer<ParentNode>[WorkerCount];
-        for (var w = 0; w < WorkerCount; w++)
+        var childThreadLocalBuffers = new ThreadLocalBuffer<ChildNode>[WorkerCount];
+        var parentThreadLocalBuffers = new ThreadLocalBuffer<ParentNode>[WorkerCount];
+        for (var workerIndex = 0; workerIndex < WorkerCount; workerIndex++)
         {
-            childTlbs[w] = new ThreadLocalBuffer<ChildNode>(w);
-            parentTlbs[w] = new ThreadLocalBuffer<ParentNode>(w);
+            childThreadLocalBuffers[workerIndex] = new ThreadLocalBuffer<ChildNode>(workerIndex);
+            parentThreadLocalBuffers[workerIndex] = new ThreadLocalBuffer<ParentNode>(workerIndex);
         }
 
         // Build job DAG: childJob0 and childJob1 must both complete before parentJob runs.
         var childJob0 = new CreateChildNodesJob
         {
-            ChildTlbs = childTlbs,
+            ChildThreadLocalBuffers = childThreadLocalBuffers,
             ChildCount = 2,
             ValueStart = 10,
         };
 
         var childJob1 = new CreateChildNodesJob
         {
-            ChildTlbs = childTlbs,
+            ChildThreadLocalBuffers = childThreadLocalBuffers,
             ChildCount = 1,
             ValueStart = 30,
         };
 
         var parentJob = new CreateParentNodesJob
         {
-            ParentTlbs = parentTlbs,
+            ParentThreadLocalBuffers = parentThreadLocalBuffers,
             ChildSources = [childJob0, childJob1],
-            RemainingDependencies = 2,
-            Dependents = null,
         };
 
-        childJob0.Dependents = [parentJob];
-        childJob1.Dependents = [parentJob];
+        childJob0.AddDependent(parentJob);
+        childJob1.AddDependent(parentJob);
 
         var scheduler = new JobScheduler(_pool);
         var testAccessor = scheduler.GetTestAccessor();
@@ -295,8 +295,8 @@ public class JobMergePipelineTests : IDisposable
         Assert.True(completed, "Job DAG did not complete within timeout");
 
         // Verify jobs produced data
-        var totalChildren = childTlbs.Sum(t => t.Count);
-        var totalParents = parentTlbs.Sum(t => t.Count);
+        var totalChildren = childThreadLocalBuffers.Sum(buffer => buffer.Count);
+        var totalParents = parentThreadLocalBuffers.Sum(buffer => buffer.Count);
         Assert.Equal(3, totalChildren);
         Assert.Equal(3, totalParents);
 
@@ -305,8 +305,8 @@ public class JobMergePipelineTests : IDisposable
         var childRemap = new RemapTable(WorkerCount);
         var parentRemap = new RemapTable(WorkerCount);
 
-        var (childStart, childCount) = childStore.DrainBuffers(childTlbs, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentTlbs, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
 
         Assert.Equal(3, childCount);
         Assert.Equal(3, parentCount);
@@ -320,17 +320,17 @@ public class JobMergePipelineTests : IDisposable
         // All parent handles should now be global
         for (var i = parentStart; i < parentStart + parentCount; i++)
         {
-            ref readonly var p = ref parentStore.Arena[new Handle<ParentNode>(i)];
-            if (p.ChildRef.IsValid)
-                Assert.True(TaggedHandle.IsGlobal(p.ChildRef.Index), $"Parent[{i}].ChildRef is not global");
-            if (p.LeftParent.IsValid)
-                Assert.True(TaggedHandle.IsGlobal(p.LeftParent.Index), $"Parent[{i}].LeftParent is not global");
+            ref readonly var parentNode = ref parentStore.Arena[new Handle<ParentNode>(i)];
+            if (parentNode.ChildRef.IsValid)
+                Assert.True(TaggedHandle.IsGlobal(parentNode.ChildRef.Index), $"Parent[{i}].ChildRef is not global");
+            if (parentNode.LeftParent.IsValid)
+                Assert.True(TaggedHandle.IsGlobal(parentNode.LeftParent.Index), $"Parent[{i}].LeftParent is not global");
         }
 
         // ── Root collection ──────────────────────────────────────────────
 
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentTlbs, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
         var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");
 
@@ -362,9 +362,9 @@ public class JobMergePipelineTests : IDisposable
         var (_, childStore) = CreateStores();
         const int WorkerCount = 4;
 
-        var childTlbs = new ThreadLocalBuffer<ChildNode>[WorkerCount];
-        for (var w = 0; w < WorkerCount; w++)
-            childTlbs[w] = new ThreadLocalBuffer<ChildNode>(w);
+        var childThreadLocalBuffers = new ThreadLocalBuffer<ChildNode>[WorkerCount];
+        for (var workerIndex = 0; workerIndex < WorkerCount; workerIndex++)
+            childThreadLocalBuffers[workerIndex] = new ThreadLocalBuffer<ChildNode>(workerIndex);
 
         // Submit many small jobs to encourage work-stealing
         var jobs = new CreateChildNodesJob[8];
@@ -372,7 +372,7 @@ public class JobMergePipelineTests : IDisposable
         {
             jobs[i] = new CreateChildNodesJob
             {
-                ChildTlbs = childTlbs,
+                ChildThreadLocalBuffers = childThreadLocalBuffers,
                 ChildCount = 4,
                 ValueStart = i * 100,
             };
@@ -386,12 +386,12 @@ public class JobMergePipelineTests : IDisposable
         var completed = testAccessor.WaitForCompletion(millisecondsTimeout: 5000);
         Assert.True(completed, "Jobs did not complete within timeout");
 
-        var totalAllocated = childTlbs.Sum(t => t.Count);
+        var totalAllocated = childThreadLocalBuffers.Sum(buffer => buffer.Count);
         Assert.Equal(32, totalAllocated);
 
         // Merge and verify all handles resolve correctly
         var remap = new RemapTable(WorkerCount);
-        var (start, count) = childStore.DrainBuffers(childTlbs, remap);
+        var (start, count) = childStore.DrainBuffers(childThreadLocalBuffers, remap);
         Assert.Equal(32, count);
 
         // Every node should be accessible via the arena

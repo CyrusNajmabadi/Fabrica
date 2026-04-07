@@ -213,9 +213,9 @@ public class UnsafeListTests
         var list = new UnsafeList<Point>();
         list.Add(new Point { X = 1, Y = 2 });
 
-        ref var p = ref list[0];
-        p.X = 10;
-        p.Y = 20;
+        ref var point = ref list[0];
+        point.X = 10;
+        point.Y = 20;
 
         Assert.Equal(10, list[0].X);
         Assert.Equal(20, list[0].Y);

@@ -11,11 +11,6 @@ namespace Fabrica.Core.Memory;
 ///   <see cref="Handle{T}"/> with the thread ID baked in via <see cref="TaggedHandle.EncodeLocal"/>.
 ///   The caller writes the node data through the returned handle's index into <see cref="this[int]"/>.
 ///
-/// COORDINATOR ACCESS
-///   After the join barrier, the coordinator reads <see cref="WrittenSpan"/> to drain all
-///   newly-created nodes, builds a remap table (local index -> global index), and copies
-///   node data into the global <see cref="UnsafeSlabArena{T}"/>.
-///
 /// REUSE
 ///   <see cref="Reset"/> sets the count to zero without releasing the backing array, so
 ///   steady-state usage incurs no allocation after warmup.
@@ -24,7 +19,7 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded during the work phase (the owning worker). Single-threaded during
 ///   the merge phase (the coordinator or a merge-worker for this type). No synchronization.
 /// </summary>
-internal sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
+public sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
 {
     private readonly UnsafeList<T> _list = new(initialCapacity);
     private readonly UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
@@ -75,14 +70,20 @@ internal sealed class ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1
     }
 
     /// <summary>
-    /// Returns a reference to the node at the given local index (not the encoded handle — use
-    /// <see cref="TaggedHandle.DecodeLocalIndex"/> first). Used by the owning worker to fill in
-    /// node data after <see cref="Allocate"/>, and by the coordinator to read during merge.
+    /// Returns a reference to the node for the given handle (which must be a local handle
+    /// belonging to this buffer). Decodes the local index internally.
     /// </summary>
-    public ref T this[int localIndex]
+    public ref T this[Handle<T> handle]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[localIndex];
+        get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
+    }
+
+    /// <summary>Returns a reference to the node at the given raw local index.</summary>
+    internal ref T this[int localIndex]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _list[localIndex]; // Coordinator merge path: read by ordinal while iterating WrittenSpan.
     }
 
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>

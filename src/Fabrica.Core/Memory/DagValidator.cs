@@ -99,14 +99,14 @@ internal static class DagValidator
         var color = new int[typeCount][];  // 0=white, 1=gray, 2=black
         var isChildOfSomeNode = strict ? new bool[typeCount][] : null;
 
-        for (var t = 0; t < typeCount; t++)
+        for (var typeIndex = 0; typeIndex < typeCount; typeIndex++)
         {
-            var hw = accessor.HighWater(t);
-            expectedRefCount[t] = new int[hw];
-            color[t] = new int[hw];
+            var hw = accessor.HighWater(typeIndex);
+            expectedRefCount[typeIndex] = new int[hw];
+            color[typeIndex] = new int[hw];
 #pragma warning disable IDE0031 // Roslyn suggests null-conditional assignment, which requires preview lang version
             if (isChildOfSomeNode != null)
-                isChildOfSomeNode[t] = new bool[hw];
+                isChildOfSomeNode[typeIndex] = new bool[hw];
 #pragma warning restore IDE0031
         }
 
@@ -162,9 +162,9 @@ internal static class DagValidator
                 childBuffer.Clear();
                 accessor.GetChildren(node.TypeId, node.Index, childBuffer);
 
-                for (var c = 0; c < childBuffer.Count; c++)
+                for (var childIndex = 0; childIndex < childBuffer.Count; childIndex++)
                 {
-                    var child = childBuffer[c];
+                    var child = childBuffer[childIndex];
                     if (!IsInRange(child, expectedRefCount))
                     {
                         issues.Add($"Node (type={node.TypeId}, index={node.Index}) has out-of-range child (type={child.TypeId}, index={child.Index}).");
@@ -191,25 +191,25 @@ internal static class DagValidator
         }
 
         // Compare expected vs actual refcounts
-        for (var t = 0; t < typeCount; t++)
+        for (var typeIndex = 0; typeIndex < typeCount; typeIndex++)
         {
-            for (var i = 0; i < expectedRefCount[t].Length; i++)
+            for (var i = 0; i < expectedRefCount[typeIndex].Length; i++)
             {
-                var actual = accessor.GetRefCount(t, i);
-                var expected = expectedRefCount[t][i];
-                var reachable = color[t][i] == 2;
+                var actual = accessor.GetRefCount(typeIndex, i);
+                var expected = expectedRefCount[typeIndex][i];
+                var reachable = color[typeIndex][i] == 2;
 
                 if (strict)
                 {
                     if (actual != expected)
                         issues.Add(
-                            $"Node (type={t}, index={i}): expected refcount {expected}, actual {actual} (reachable={reachable}).");
+                            $"Node (type={typeIndex}, index={i}): expected refcount {expected}, actual {actual} (reachable={reachable}).");
                 }
                 else
                 {
                     if (reachable && actual < expected)
                         issues.Add(
-                            $"Node (type={t}, index={i}): refcount too low — expected at least {expected}, actual {actual}.");
+                            $"Node (type={typeIndex}, index={i}): refcount too low — expected at least {expected}, actual {actual}.");
                 }
             }
         }

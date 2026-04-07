@@ -17,7 +17,7 @@ namespace Fabrica.Engine.World;
 /// Future: will hold belt state, machine state, etc. backed by a persistent tree structure so that consecutive ticks share
 /// unchanged subtrees, keeping memory use proportional to the number of changes per tick rather than total world size.
 /// </summary>
-internal sealed class WorldImage
+public sealed class WorldImage
 {
     // TODO: belt state, machine state, etc.
 

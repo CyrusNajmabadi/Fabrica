@@ -4,12 +4,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<InternalsVisibleTo Include="Fabrica.Pipeline" />
-		<InternalsVisibleTo Include="Fabrica.Engine" />
 		<InternalsVisibleTo Include="Fabrica.Core.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Pipeline.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Engine.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Core.Benchmarks" />
+		<InternalsVisibleTo Include="Fabrica.Game.Tests" />
 		<InternalsVisibleTo Include="Fabrica.JitBaseline" />
 	</ItemGroup>
 </Project>

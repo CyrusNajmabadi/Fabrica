@@ -39,7 +39,7 @@ public class DagValidatorTests
     {
         var arena = new UnsafeSlabArena<TreeNode>();
         var refCounts = new RefCountTable<TreeNode>();
-        var store = new GlobalNodeStore<TreeNode, TreeNodeOps>(arena, refCounts, default);
+        var store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(arena, refCounts);
         store.SetNodeOps(new TreeNodeOps { Store = store });
         return store;
     }

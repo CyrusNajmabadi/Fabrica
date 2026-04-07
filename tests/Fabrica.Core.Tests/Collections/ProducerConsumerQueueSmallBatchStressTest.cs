@@ -45,8 +45,8 @@ public class ProducerConsumerQueueSmallBatchStressTest
 
         var consumerThread = new Thread(() =>
         {
-            var idx = 0L;
-            while (idx < TotalEntries)
+            var consumedCount = 0L;
+            while (consumedCount < TotalEntries)
             {
                 var segment = queue.ConsumerAcquire();
                 if (segment.IsEmpty)
@@ -57,8 +57,8 @@ public class ProducerConsumerQueueSmallBatchStressTest
 
                 foreach (ref readonly var item in segment)
                 {
-                    consumed[idx] = item;
-                    idx++;
+                    consumed[consumedCount] = item;
+                    consumedCount++;
                 }
 
                 queue.ConsumerAdvance(segment.Count);

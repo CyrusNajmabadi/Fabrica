@@ -16,10 +16,8 @@ namespace Fabrica.Core.Jobs;
 /// ONE DAG AT A TIME
 ///   <see cref="Submit"/> blocks until the DAG completes, so only one DAG is in flight at a time.
 /// </summary>
-internal sealed class JobScheduler
+public sealed class JobScheduler(WorkerPool pool)
 {
-    private readonly WorkerPool _pool;
-
     /// <summary>
     /// Number of jobs that have been enqueued but not yet completed. Incremented on every enqueue
     /// (submit, sub-job enqueue, dependency propagation); decremented after each execution
@@ -28,39 +26,29 @@ internal sealed class JobScheduler
     private int _outstandingJobs;
 
     /// <summary>
-    /// Signaled by the worker that decrements <see cref="_outstandingJobs"/> to zero, unparking
-    /// the coordinator in <see cref="Submit"/>. Reset at the start of each wait cycle.
+    /// Unparks the coordinator in <see cref="Submit"/> when outstanding work reaches zero.
     /// </summary>
     private readonly ManualResetEventSlim _completionSignal = new(false);
-
-    internal JobScheduler(WorkerPool pool) => _pool = pool;
 
     // ── Coordinator API ─────────────────────────────────────────────────────
 
     /// <summary>
     /// Submits a root job and blocks until the entire DAG (including sub-jobs and dependents)
-    /// completes. Returns <c>true</c> if completed, <c>false</c> if the timeout expired. Pass
-    /// <c>-1</c> for no timeout.
+    /// completes.
     /// </summary>
-    internal bool Submit(Job job, int millisecondsTimeout = -1)
+    public void Submit(Job job)
     {
         this.InjectJob(job);
-        return this.WaitForCompletion(millisecondsTimeout);
+        this.WaitForCompletion(millisecondsTimeout: -1);
     }
 
     // ── Called by WorkerPool execution infrastructure ────────────────────────
 
-    /// <summary>
-    /// Atomically increments the outstanding job count. Called by <see cref="WorkerPool"/> when a
-    /// sub-job is enqueued or a dependent becomes ready.
-    /// </summary>
+    // Called by WorkerPool when a sub-job is enqueued or a dependent becomes ready.
     internal void IncrementOutstanding() => Interlocked.Increment(ref _outstandingJobs);
 
-    /// <summary>
-    /// Atomically decrements the outstanding job count. If it reaches zero, signals
-    /// <see cref="_completionSignal"/> to unpark the coordinator. Called by <see cref="WorkerPool"/>
-    /// after a job finishes execution.
-    /// </summary>
+    // Atomically decrements outstanding count; signals _completionSignal when it reaches zero. Called by WorkerPool
+    // after a job finishes execution.
     internal void DecrementOutstanding()
     {
         if (Interlocked.Decrement(ref _outstandingJobs) == 0)
@@ -77,7 +65,7 @@ internal sealed class JobScheduler
 #endif
         job.Scheduler = this;
         Interlocked.Increment(ref _outstandingJobs);
-        _pool.Inject(job);
+        pool.Inject(job);
     }
 
     private bool WaitForCompletion(int millisecondsTimeout)
@@ -85,6 +73,7 @@ internal sealed class JobScheduler
         if (Volatile.Read(ref _outstandingJobs) == 0)
             return true;
 
+        // Reset at the start of each wait cycle.
         _completionSignal.Reset();
 
         if (Volatile.Read(ref _outstandingJobs) == 0)
@@ -104,6 +93,16 @@ internal sealed class JobScheduler
     internal readonly struct TestAccessor(JobScheduler scheduler)
     {
         public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
+
+        /// <summary>
+        /// Submits a root job and blocks until the entire DAG completes or the timeout expires.
+        /// Returns <c>true</c> if completed, <c>false</c> on timeout.
+        /// </summary>
+        public bool Submit(Job job, int millisecondsTimeout = 5000)
+        {
+            scheduler.InjectJob(job);
+            return scheduler.WaitForCompletion(millisecondsTimeout);
+        }
 
         /// <summary>
         /// Injects a job without waiting for completion. Allows tests to submit multiple

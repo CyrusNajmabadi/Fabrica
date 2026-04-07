@@ -4,29 +4,20 @@ using System.Runtime.CompilerServices;
 namespace Fabrica.Core.Memory;
 
 /// <summary>
-/// Maps local buffer indices to global arena indices for a single node type during the coordinator
-/// merge. Each worker thread has its own mapping array; local index <c>i</c> on thread <c>t</c>
-/// maps to global index <c>Resolve(t, i)</c>.
-///
-/// STORAGE
-///   <see cref="UnsafeList{T}"/>[] indexed by thread ID. The outer array is fixed-size (worker
-///   count, known at construction). Each inner list grows as mappings are added and retains its
-///   backing array across <see cref="Reset"/> calls for zero steady-state allocation.
-///
-/// NON-GENERIC
-///   The mapping is purely <c>(threadId, localIndex) -> globalIndex</c>, independent of node type.
-///   This allows a single pool of <see cref="RemapTable"/> instances shared across all types and
-///   ticks. The coordinator assigns one instance per node type during each merge pass.
+/// Maps <c>(threadId, localIndex)</c> to a global arena index during merge. Each worker thread has
+/// its own mapping sequence; local index <c>i</c> on thread <c>t</c> maps to global index
+/// <c>Resolve(t, i)</c>.
 ///
 /// THREAD MODEL
 ///   Single-threaded. Built by the coordinator (or a per-type merge worker) during Phase 1, read
 ///   during Phase 2a. No synchronization.
 /// </summary>
-internal sealed class RemapTable
+public sealed class RemapTable
 {
+    // Outer array: fixed size (thread count). Each inner list grows with mappings and retains backing across Reset.
     private readonly UnsafeList<int>[] _remap;
 
-    internal RemapTable(int threadCount)
+    public RemapTable(int threadCount)
     {
         Debug.Assert(threadCount > 0, $"RemapTable requires at least 1 thread, got {threadCount}.");
         _remap = new UnsafeList<int>[threadCount];
@@ -62,7 +53,24 @@ internal sealed class RemapTable
     /// Returns the global index for the given <paramref name="threadId"/> and <paramref name="localIndex"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Resolve(int threadId, int localIndex) => _remap[threadId][localIndex];
+    internal int Resolve(int threadId, int localIndex) => _remap[threadId][localIndex];
+
+    /// <summary>
+    /// If <paramref name="handle"/> is a local (tagged) handle, rewrites it to the corresponding
+    /// global handle using the stored mappings. Global and <see cref="Handle{T}.None"/> handles
+    /// are returned unchanged.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Handle<T> Remap<T>(Handle<T> handle) where T : struct
+    {
+        var index = handle.Index;
+        if (!TaggedHandle.IsLocal(index))
+            return handle;
+
+        var threadId = TaggedHandle.DecodeThreadId(index);
+        var localIndex = TaggedHandle.DecodeLocalIndex(index);
+        return new Handle<T>(this.Resolve(threadId, localIndex));
+    }
 
     /// <summary>
     /// Resets all per-thread mapping lists to empty. The backing arrays are retained so the next
