@@ -13,8 +13,19 @@ namespace Fabrica.Game.Jobs;
 internal sealed class BuildBeltChainJob : Job
 {
     internal ThreadLocalBuffer<BeltSegmentNode>[]? BeltTlbs;
-    internal SpawnItemsJob? SpawnJob;
     internal int ChainLength;
+
+    private SpawnItemsJob? _spawnJob;
+
+    internal SpawnItemsJob? SpawnJob
+    {
+        get => _spawnJob;
+        set
+        {
+            _spawnJob = value;
+            if (value != null) this.DependsOn(value);
+        }
+    }
 
     internal Handle<BeltSegmentNode> ChainHead;
     internal Handle<BeltSegmentNode> ChainTail;
@@ -22,7 +33,7 @@ internal sealed class BuildBeltChainJob : Job
     protected override void Execute(WorkerContext context)
     {
         var tlb = BeltTlbs![context.WorkerIndex];
-        var items = SpawnJob!.AllocatedItems!;
+        var items = _spawnJob!.AllocatedItems!;
 
         var next = Handle<BeltSegmentNode>.None;
 
@@ -42,8 +53,9 @@ internal sealed class BuildBeltChainJob : Job
 
     protected override void Reset()
     {
+        base.Reset();
         BeltTlbs = null;
-        SpawnJob = null;
+        _spawnJob = null;
         ChainHead = default;
         ChainTail = default;
     }

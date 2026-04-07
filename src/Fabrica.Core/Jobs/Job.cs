@@ -18,22 +18,22 @@ internal enum JobState : byte
 /// LIFECYCLE
 ///   1. <b>Rent</b> — The coordinator (or a parent job) rents a job from its type-specific
 ///      <see cref="JobPool{TJob}"/>. If the pool is empty, a new instance is allocated.
-///   2. <b>Configure</b> — The caller sets <see cref="RemainingDependencies"/>,
-///      <see cref="Dependents"/>, and subclass-specific input fields.
+///   2. <b>Configure</b> — The caller sets subclass-specific input fields and wires DAG
+///      dependencies via <see cref="AddDependent"/> or <see cref="DependsOn"/>.
 ///   3. <b>Submit</b> — The job is pushed onto a <see cref="Collections.WorkStealingDeque{T}"/>
 ///      via <see cref="JobScheduler.Submit"/> or <see cref="WorkerContext.Enqueue"/>.
 ///   4. <b>Execute</b> — A worker thread pops or steals the job. The scheduler passes the
 ///      executing thread's <see cref="WorkerContext"/> to <see cref="Execute"/>, giving the job
 ///      access to the thread's deque for enqueuing sub-jobs. After execution, the scheduler
-///      decrements all <see cref="Dependents"/>' dependency counts, enqueuing any that hit zero.
+///      decrements all dependents' dependency counts, enqueuing any that hit zero.
 ///   5. <b>Sweep</b> — After the scheduler's outstanding job count reaches zero, the coordinator
 ///      walks the DAG and calls <see cref="Reset"/> on each job, then returns it to its pool.
 ///
 /// DAG DEPENDENCIES
-///   <see cref="RemainingDependencies"/> gates execution: the scheduler enqueues this job only
-///   when the count reaches zero (via atomic decrement from completed prerequisites).
-///   <see cref="Dependents"/> lists the downstream jobs whose counts this job decrements upon
-///   completion.
+///   Managed through <see cref="AddDependent"/> and <see cref="DependsOn"/>. Internally, each
+///   job tracks its downstream dependents and a remaining-dependency count that gates execution.
+///   The scheduler atomically decrements the count when prerequisites complete; the thread that
+///   brings it to zero enqueues the job.
 ///
 /// POOLING
 ///   <see cref="PoolNext"/> is the intrusive linked-list pointer used by
@@ -56,18 +56,20 @@ public abstract class Job
 {
     /// <summary>
     /// Number of prerequisite jobs that must complete before this job is eligible to run.
-    /// Set during DAG construction. The scheduler atomically decrements this when a prerequisite
-    /// completes; the thread that brings it to zero enqueues the job. For root jobs (no
-    /// dependencies), leave at default (0).
+    /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; decremented atomically
+    /// by the scheduler when a prerequisite completes. Zero means ready to execute.
     /// </summary>
-    public int RemainingDependencies;
+    internal int RemainingDependencies;
 
     /// <summary>
     /// Downstream jobs whose dependency counts should be decremented when this job completes.
-    /// The scheduler iterates this array after <see cref="Execute"/> returns. May be null if
-    /// this job has no dependents (leaf of the DAG).
+    /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; iterated by the scheduler
+    /// after <see cref="Execute"/> returns.
     /// </summary>
-    public Job[]? Dependents;
+    internal Job[]? Dependents;
+
+    /// <summary>Number of valid entries in <see cref="Dependents"/>.</summary>
+    internal int DependentCount;
 
     /// <summary>
     /// The <see cref="JobScheduler"/> that owns this job's DAG. Set by <see cref="JobScheduler.Submit"/>
@@ -87,6 +89,39 @@ public abstract class Job
     internal JobState State;
 #endif
 
+    // ── Dependency wiring ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Registers <paramref name="dependent"/> to run after this job completes. Increments the
+    /// dependent's remaining-dependency count so the scheduler knows to wait. Call from within
+    /// a derived class: <c>this.AddDependent(downstream)</c>.
+    /// </summary>
+    protected void AddDependent(Job dependent)
+    {
+        Dependents ??= new Job[4];
+        if (DependentCount >= Dependents.Length)
+            Array.Resize(ref Dependents, Dependents.Length * 2);
+        Dependents[DependentCount++] = dependent;
+        dependent.RemainingDependencies++;
+    }
+
+    /// <summary>
+    /// Declares that this job depends on <paramref name="prerequisite"/>: this job will not
+    /// execute until <paramref name="prerequisite"/> completes. Adds this job to the prerequisite's
+    /// dependents list and increments this job's remaining-dependency count. Call from within
+    /// a derived class: <c>this.DependsOn(upstream)</c>.
+    /// </summary>
+    protected void DependsOn(Job prerequisite)
+    {
+        prerequisite.Dependents ??= new Job[4];
+        if (prerequisite.DependentCount >= prerequisite.Dependents.Length)
+            Array.Resize(ref prerequisite.Dependents, prerequisite.Dependents.Length * 2);
+        prerequisite.Dependents[prerequisite.DependentCount++] = this;
+        RemainingDependencies++;
+    }
+
+    // ── Execution ───────────────────────────────────────────────────────
+
     /// <summary>
     /// Performs the job's work. Called by a worker thread. The <paramref name="context"/> provides
     /// access to the executing thread's deque (for enqueuing sub-jobs via
@@ -96,8 +131,14 @@ public abstract class Job
 
     /// <summary>
     /// Resets this job's state for pool reuse. Called by the coordinator during the DAG sweep
-    /// after the scheduler's outstanding count reaches zero. Subclasses must clear all
-    /// input/output buffer references and any other mutable state.
+    /// after the scheduler's outstanding count reaches zero. Subclasses must call
+    /// <c>base.Reset()</c> and clear all input/output buffer references and any other mutable state.
     /// </summary>
-    protected internal abstract void Reset();
+    protected internal virtual void Reset()
+    {
+        if (Dependents != null)
+            Array.Clear(Dependents, 0, DependentCount);
+        DependentCount = 0;
+        RemainingDependencies = 0;
+    }
 }

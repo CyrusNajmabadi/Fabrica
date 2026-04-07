@@ -177,6 +177,8 @@ public class JobMergePipelineTests : IDisposable
         internal int ValueStart;
         internal Handle<ChildNode>[] AllocatedHandles = null!;
 
+        internal void AddDep(Job dependent) => this.AddDependent(dependent);
+
         protected internal override void Execute(WorkerContext context)
         {
             var tlb = ChildTlbs[context.WorkerIndex];
@@ -191,6 +193,7 @@ public class JobMergePipelineTests : IDisposable
 
         protected internal override void Reset()
         {
+            base.Reset();
             ChildTlbs = null!;
             AllocatedHandles = null!;
         }
@@ -234,6 +237,7 @@ public class JobMergePipelineTests : IDisposable
 
         protected internal override void Reset()
         {
+            base.Reset();
             ParentTlbs = null!;
             ChildSources = null!;
         }
@@ -280,12 +284,10 @@ public class JobMergePipelineTests : IDisposable
         {
             ParentTlbs = parentTlbs,
             ChildSources = [childJob0, childJob1],
-            RemainingDependencies = 2,
-            Dependents = null,
         };
 
-        childJob0.Dependents = [parentJob];
-        childJob1.Dependents = [parentJob];
+        childJob0.AddDep(parentJob);
+        childJob1.AddDep(parentJob);
 
         var scheduler = new JobScheduler(_pool);
         var testAccessor = scheduler.GetTestAccessor();

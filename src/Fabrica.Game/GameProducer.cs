@@ -47,14 +47,10 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         ts.ItemRemap.Reset();
 
         // ── 2. Build the job DAG ────────────────────────────────────────
+        // Dependencies are wired automatically by property setters (DependsOn).
         var spawnJob = new SpawnItemsJob { ItemTlbs = ts.ItemTlbs, Count = 4 };
         var beltJob = new BuildBeltChainJob { BeltTlbs = ts.BeltTlbs, SpawnJob = spawnJob, ChainLength = 4 };
-        var machineJob = new PlaceMachinesJob { MachineTlbs = ts.MachineTlbs, BeltJob = beltJob };
-
-        beltJob.RemainingDependencies = 1;
-        machineJob.RemainingDependencies = 1;
-        spawnJob.Dependents = [beltJob];
-        beltJob.Dependents = [machineJob];
+        _ = new PlaceMachinesJob { MachineTlbs = ts.MachineTlbs, BeltJob = beltJob };
 
         // ── 3. Execute ──────────────────────────────────────────────────
         _scheduler.Submit(spawnJob);

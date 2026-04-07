@@ -30,6 +30,7 @@ internal sealed class SpawnItemsJob : Job
 
     protected override void Reset()
     {
+        base.Reset();
         ItemTlbs = null;
         AllocatedItems = null;
     }

@@ -120,14 +120,10 @@ public class GamePipelineTests : IDisposable
         var itemRemap = new RemapTable(WorkerCount);
 
         // ── Build and execute the job DAG ────────────────────────────────
+        // Dependencies wired automatically via DependsOn in property setters.
         var spawnJob = new SpawnItemsJob { ItemTlbs = itemTlbs, Count = ItemCount };
         var beltJob = new BuildBeltChainJob { BeltTlbs = beltTlbs, SpawnJob = spawnJob, ChainLength = ChainLength };
-        var machineJob = new PlaceMachinesJob { MachineTlbs = machineTlbs, BeltJob = beltJob };
-
-        beltJob.RemainingDependencies = 1;
-        machineJob.RemainingDependencies = 1;
-        spawnJob.Dependents = [beltJob];
-        beltJob.Dependents = [machineJob];
+        _ = new PlaceMachinesJob { MachineTlbs = machineTlbs, BeltJob = beltJob };
 
         scheduler.Submit(spawnJob);
 

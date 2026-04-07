@@ -12,11 +12,14 @@ public class JobPoolTests
         public int Value { get; set; }
         public bool Executed { get; set; }
 
+        internal void AddDep(Job dependent) => this.AddDependent(dependent);
+
         protected internal override void Execute(WorkerContext context)
             => this.Executed = true;
 
         protected internal override void Reset()
         {
+            base.Reset();
             this.Value = 0;
             this.Executed = false;
         }
@@ -122,15 +125,14 @@ public class JobPoolTests
         var job = pool.Rent();
 
         var otherJob = pool.Rent();
-        job.RemainingDependencies = 3;
-        job.Dependents = [otherJob];
+        job.AddDep(otherJob);
 
         pool.Return(job);
         var reused = pool.Rent();
 
         Assert.Same(job, reused);
         Assert.Equal(0, reused.RemainingDependencies);
-        Assert.Null(reused.Dependents);
+        Assert.Equal(0, reused.DependentCount);
         Assert.Null(reused.PoolNext);
     }
 

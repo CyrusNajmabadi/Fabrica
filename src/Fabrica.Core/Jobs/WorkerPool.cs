@@ -217,13 +217,14 @@ public sealed class WorkerPool : IDisposable
 
     private void PropagateCompletion(Job job, WorkerContext context)
     {
-        if (job.Dependents is not { } dependents)
+        if (job.Dependents is not { } dependents || job.DependentCount == 0)
             return;
 
         var scheduler = context.CurrentScheduler!;
 
-        foreach (var dependent in dependents)
+        for (var i = 0; i < job.DependentCount; i++)
         {
+            var dependent = dependents[i];
             var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
             Debug.Assert(remaining >= 0);
             if (remaining != 0)
