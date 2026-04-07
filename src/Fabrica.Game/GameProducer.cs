@@ -8,11 +8,11 @@ namespace Fabrica.Game;
 
 /// <summary>
 /// Produces one <see cref="GameWorldImage"/> per tick. Each tick:
-///   1. Resets per-worker TLBs and remap tables.
-///   2. Builds the 3-job DAG (SpawnItems -> BuildBelts -> PlaceMachines).
-///   3. Submits via <see cref="JobScheduler"/> (blocks until the DAG completes).
-///   4. Runs the merge pipeline: drain -> rewrite + refcount -> collect roots.
-///   5. Builds <see cref="SnapshotSlice{TNode,TNodeOps}"/> instances and increments root refcounts.
+///   1. Builds the 3-job DAG (SpawnItems -> BuildBelts -> PlaceMachines).
+///   2. Submits via <see cref="JobScheduler"/> (blocks until the DAG completes).
+///   3. Runs the merge pipeline: drain -> rewrite + refcount -> collect roots.
+///   4. Builds <see cref="SnapshotSlice{TNode,TNodeOps}"/> instances and increments root refcounts.
+///   5. Resets per-worker buffers and remap tables so they are clean for the next tick.
 /// </summary>
 public readonly struct GameProducer : IProducer<GameWorldImage>
 {
@@ -36,15 +36,7 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         var image = _imagePool.Rent();
         var tickState = _tickState;
 
-        // ── 1. Reset buffers from the prior tick ────────────────────────
-        foreach (var threadLocalBuffer in tickState.MachineThreadLocalBuffers) threadLocalBuffer.Reset();
-        foreach (var threadLocalBuffer in tickState.BeltThreadLocalBuffers) threadLocalBuffer.Reset();
-        foreach (var threadLocalBuffer in tickState.ItemThreadLocalBuffers) threadLocalBuffer.Reset();
-        tickState.MachineRemap.Reset();
-        tickState.BeltRemap.Reset();
-        tickState.ItemRemap.Reset();
-
-        // ── 2. Build the job DAG ────────────────────────────────────────
+        // ── 1. Build the job DAG ─────────────────────────────────────────
         // Dependencies are wired automatically by property setters (DependsOn).
         var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = tickState.ItemThreadLocalBuffers, Count = 4 };
         var beltJob = new BuildBeltChainJob
@@ -55,10 +47,10 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         };
         _ = new PlaceMachinesJob { MachineThreadLocalBuffers = tickState.MachineThreadLocalBuffers, BeltJob = beltJob };
 
-        // ── 3. Execute ──────────────────────────────────────────────────
+        // ── 2. Execute ──────────────────────────────────────────────────
         _scheduler.Submit(spawnJob);
 
-        // ── 4. Merge pipeline ───────────────────────────────────────────
+        // ── 3. Merge pipeline ───────────────────────────────────────────
 
         // Phase 1: drain all TLBs into global arenas and build remap tables.
         var (itemStart, itemCount) = tickState.ItemStore.DrainBuffers(tickState.ItemThreadLocalBuffers, tickState.ItemRemap);
@@ -85,17 +77,25 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         tickState.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref remapVisitor, ref refcountVisitor);
 
         // Phase 3: collect and remap root handles (only machines are roots).
-        tickState.MachineRoots.Reset();
         tickState.MachineStore.CollectAndRemapRoots(
             tickState.MachineThreadLocalBuffers, tickState.MachineRemap, tickState.MachineRoots);
 
-        // ── 5. Build snapshot slices ────────────────────────────────────
+        // ── 4. Build snapshot slices ────────────────────────────────────
         var machineRootList = new UnsafeList<Handle<MachineNode>>();
         foreach (var root in tickState.MachineRoots.WrittenSpan)
             machineRootList.Add(root);
 
         image.MachineSlice = new SnapshotSlice<MachineNode, GameNodeOps>(tickState.MachineStore, machineRootList);
         image.MachineSlice.IncrementRootRefCounts();
+
+        // ── 5. Reset buffers for the next tick ──────────────────────────
+        foreach (var threadLocalBuffer in tickState.MachineThreadLocalBuffers) threadLocalBuffer.Reset();
+        foreach (var threadLocalBuffer in tickState.BeltThreadLocalBuffers) threadLocalBuffer.Reset();
+        foreach (var threadLocalBuffer in tickState.ItemThreadLocalBuffers) threadLocalBuffer.Reset();
+        tickState.MachineRemap.Reset();
+        tickState.BeltRemap.Reset();
+        tickState.ItemRemap.Reset();
+        tickState.MachineRoots.Reset();
 
         return image;
     }
