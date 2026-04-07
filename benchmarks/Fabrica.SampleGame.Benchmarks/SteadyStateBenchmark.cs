@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
-using Fabrica.SampleGame.Jobs;
 
 namespace Fabrica.SampleGame.Benchmarks;
 
@@ -54,16 +53,21 @@ public class SteadyStateBenchmark
         var image = _imagePool.Rent();
         var tickState = _tickState;
 
-        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = tickState.ItemStore.ThreadLocalBuffers, Count = 4 };
-        var beltJob = new BuildBeltChainJob
-        {
-            BeltThreadLocalBuffers = tickState.BeltStore.ThreadLocalBuffers,
-            SpawnJob = spawnJob,
-            ChainLength = 4,
-        };
-        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = tickState.MachineStore.ThreadLocalBuffers, BeltJob = beltJob };
+        tickState.SpawnJob.Reset();
+        tickState.BeltJob.Reset();
+        tickState.MachineJob.Reset();
 
-        _scheduler.Submit(spawnJob);
+        tickState.SpawnJob.ItemThreadLocalBuffers = tickState.ItemStore.ThreadLocalBuffers;
+        tickState.SpawnJob.Count = 4;
+
+        tickState.BeltJob.BeltThreadLocalBuffers = tickState.BeltStore.ThreadLocalBuffers;
+        tickState.BeltJob.SpawnJob = tickState.SpawnJob;
+        tickState.BeltJob.ChainLength = 4;
+
+        tickState.MachineJob.MachineThreadLocalBuffers = tickState.MachineStore.ThreadLocalBuffers;
+        tickState.MachineJob.BeltJob = tickState.BeltJob;
+
+        _scheduler.Submit(tickState.SpawnJob);
 
         using (var merge = tickState.Coordinator.MergeAll())
         {

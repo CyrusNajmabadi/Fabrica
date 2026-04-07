@@ -78,11 +78,11 @@ public abstract class Job
     protected internal abstract void Execute(JobContext context);
 
     /// <summary>
-    /// Resets all base-class and subclass state for pool reuse. Base-class cleanup (dependency
-    /// wiring, scheduling state) runs first, then delegates to <see cref="ResetState"/> for
-    /// subclass-specific fields.
+    /// Resets all base-class and subclass state so the job can be re-wired and resubmitted.
+    /// Base-class cleanup (dependency wiring, scheduling state) runs first, then delegates to
+    /// <see cref="ResetState"/> for subclass-specific fields.
     /// </summary>
-    internal void Reset()
+    public void Reset()
     {
         // Called by the coordinator during the DAG sweep after the scheduler's outstanding job count reaches zero.
         // Dependents was lazily allocated: Reset clears the count but retains the backing array for reuse across
