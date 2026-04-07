@@ -65,9 +65,13 @@ public abstract class Job
 
     /// <summary>
     /// Downstream jobs whose dependency counts should be decremented when this job completes.
-    /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; iterated by the scheduler
-    /// after <see cref="Execute"/> returns. Lazily allocated on first <see cref="AddDependent"/>
-    /// call and reused across pool cycles via <see cref="UnsafeList{T}.Reset"/>.
+    /// Managed by <see cref="AddDependent"/>/<see cref="DependsOn"/>; iterated by
+    /// <see cref="WorkerPool"/> after <see cref="Execute"/> returns.
+    ///
+    /// LIFETIME: Lazily allocated on the first <see cref="AddDependent"/> or
+    /// <see cref="DependsOn"/> call. Owned by this <see cref="Job"/> instance for its entire
+    /// lifetime — <see cref="Reset"/> clears the count but retains the backing array so it is
+    /// reused across <see cref="JobPool{TJob}"/> cycles without further allocation.
     /// </summary>
     internal UnsafeList<Job>? Dependents;
 
