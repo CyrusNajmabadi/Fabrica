@@ -4,7 +4,7 @@ using Fabrica.Core.Threading.Queues;
 using Fabrica.Pipeline;
 using Fabrica.Pipeline.Hosting;
 
-namespace Fabrica.Game;
+namespace Fabrica.SampleGame;
 
 /// <summary>
 /// Factory for the game pipeline. Creates all shared infrastructure and returns a fully

@@ -58,6 +58,10 @@ public readonly struct SnapshotSlice<TNode, TNodeOps>
         get => _rootHandles.WrittenSpan;
     }
 
-    /// <summary>Clears the root list so the slice cannot be double-released.</summary>
-    internal void Clear() => _rootHandles.Reset();
+    /// <summary>Resets the root list and returns it so the caller can recycle the backing storage.</summary>
+    internal UnsafeList<Handle<TNode>> DetachRoots()
+    {
+        _rootHandles.Reset();
+        return _rootHandles;
+    }
 }

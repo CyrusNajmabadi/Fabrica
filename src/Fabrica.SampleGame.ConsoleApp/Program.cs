@@ -1,7 +1,7 @@
 using Fabrica.Core.Threading;
 using Fabrica.Core.Threading.Queues;
-using Fabrica.Game;
 using Fabrica.Pipeline;
+using Fabrica.SampleGame;
 
 using var cancellationSource = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) =>

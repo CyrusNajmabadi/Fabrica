@@ -93,6 +93,11 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
 
+    /// <summary>Pool of <see cref="UnsafeList{T}"/> instances for root handle collection during
+    /// <see cref="BuildSnapshotSlice"/>. Instances are returned by <see cref="ReleaseSnapshotSlice"/>,
+    /// so backing arrays are retained across ticks for zero steady-state allocation.</summary>
+    private readonly UnsafeStack<UnsafeList<Handle<TNode>>> _rootListPool = new();
+
     /// <summary>Per-worker append buffers for nodes created during the parallel work phase.
     /// Empty array when the store has no merge infrastructure (test-only parameterless constructor).</summary>
     private readonly ThreadLocalBuffer<TNode>[] _threadLocalBuffers;
@@ -293,7 +298,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
         this.AssertMergeActive();
-        var roots = new UnsafeList<Handle<TNode>>();
+        var roots = _rootListPool.TryPop(out var pooled) ? pooled : new UnsafeList<Handle<TNode>>();
+        roots.Reset();
         this.CollectAndRemapRoots(roots);
         this.IncrementRoots(roots.WrittenSpan);
         return new SnapshotSlice<TNode, TNodeOps>(this, roots);
@@ -339,7 +345,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     public void ReleaseSnapshotSlice(SnapshotSlice<TNode, TNodeOps> slice)
     {
         this.DecrementRoots(slice.Roots);
-        slice.Clear();
+        _rootListPool.Push(slice.DetachRoots());
     }
 
     private void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)

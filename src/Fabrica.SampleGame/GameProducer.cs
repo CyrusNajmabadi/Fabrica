@@ -1,9 +1,8 @@
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
-using Fabrica.Game.Jobs;
 using Fabrica.Pipeline;
 
-namespace Fabrica.Game;
+namespace Fabrica.SampleGame;
 
 /// <summary>
 /// Produces one <see cref="GameWorldImage"/> per tick by building and executing a job DAG,
@@ -28,27 +27,26 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
 
     public GameWorldImage Produce(GameWorldImage current, CancellationToken cancellationToken)
     {
-        // Each tick:
-        //   1. Build the 3-job DAG (SpawnItems → BuildBelts → PlaceMachines).
-        //   2. Submit via JobScheduler (blocks until the DAG completes).
-        //   3. Merge: drain all → rewrite + refcount → build snapshot slices.
-        //   4. Reset per-worker buffers and remap tables for the next tick.
-
         var image = _imagePool.Rent();
         var tickState = _tickState;
 
-        // ── 1. Build the job DAG ─────────────────────────────────────────
-        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = tickState.ItemStore.ThreadLocalBuffers, Count = 4 };
-        var beltJob = new BuildBeltChainJob
-        {
-            BeltThreadLocalBuffers = tickState.BeltStore.ThreadLocalBuffers,
-            SpawnJob = spawnJob,
-            ChainLength = 4,
-        };
-        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = tickState.MachineStore.ThreadLocalBuffers, BeltJob = beltJob };
+        // ── 1. Wire the pre-allocated job DAG ─────────────────────────────
+        tickState.SpawnJob.Reset();
+        tickState.BeltJob.Reset();
+        tickState.MachineJob.Reset();
+
+        tickState.SpawnJob.ItemThreadLocalBuffers = tickState.ItemStore.ThreadLocalBuffers;
+        tickState.SpawnJob.Count = 4;
+
+        tickState.BeltJob.BeltThreadLocalBuffers = tickState.BeltStore.ThreadLocalBuffers;
+        tickState.BeltJob.SpawnJob = tickState.SpawnJob;
+        tickState.BeltJob.ChainLength = 4;
+
+        tickState.MachineJob.MachineThreadLocalBuffers = tickState.MachineStore.ThreadLocalBuffers;
+        tickState.MachineJob.BeltJob = tickState.BeltJob;
 
         // ── 2. Execute ──────────────────────────────────────────────────
-        _scheduler.Submit(spawnJob);
+        _scheduler.Submit(tickState.SpawnJob);
 
         // ── 3. Merge pipeline ───────────────────────────────────────────
 

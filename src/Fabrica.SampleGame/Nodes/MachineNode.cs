@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 
-namespace Fabrica.Game.Nodes;
+namespace Fabrica.SampleGame.Nodes;
 
 /// <summary>
 /// A processing machine with input and output belts. References <see cref="BeltSegmentNode"/>

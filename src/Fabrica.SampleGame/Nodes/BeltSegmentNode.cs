@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
 
-namespace Fabrica.Game.Nodes;
+namespace Fabrica.SampleGame.Nodes;
 
 /// <summary>
 /// One segment of a transport belt. Forms a singly-linked chain via <see cref="Next"/> (same-type)
