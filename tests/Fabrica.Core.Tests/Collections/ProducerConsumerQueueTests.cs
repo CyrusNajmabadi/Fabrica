@@ -1,3 +1,4 @@
+using Fabrica.Core.Memory;
 using Fabrica.Core.Threading.Queues;
 using Xunit;
 
@@ -135,7 +136,7 @@ public class ProducerConsumerQueueTests
     {
         var queue = new ProducerConsumerQueue<string>();
         var accessor = queue.GetTestAccessor();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
 
         for (var i = 0; i < slabLength + 1; i++)
             queue.ProducerAppend($"tick-{i}");
@@ -148,7 +149,7 @@ public class ProducerConsumerQueueTests
     public void ConsumerAcquiresItems_AcrossSlabBoundary()
     {
         var queue = new ProducerConsumerQueue<string>();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
         var totalItems = slabLength + 10;
 
         for (var i = 0; i < totalItems; i++)
@@ -165,7 +166,7 @@ public class ProducerConsumerQueueTests
     public void Enumerator_CrossesSlabBoundary()
     {
         var queue = new ProducerConsumerQueue<string>();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
         var totalItems = slabLength + 10;
 
         for (var i = 0; i < totalItems; i++)
@@ -185,7 +186,7 @@ public class ProducerConsumerQueueTests
     public void ConsumerAdvance_AtExactSlabBoundary_ThenAcquireMore()
     {
         var queue = new ProducerConsumerQueue<string>();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
 
         for (var i = 0; i < slabLength; i++)
             queue.ProducerAppend($"tick-{i}");
@@ -280,7 +281,7 @@ public class ProducerConsumerQueueTests
     {
         var queue = new ProducerConsumerQueue<string>();
         var accessor = queue.GetTestAccessor();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
 
         for (var i = 0; i < slabLength + 1; i++)
             queue.ProducerAppend($"tick-{i}");
@@ -301,7 +302,7 @@ public class ProducerConsumerQueueTests
     {
         var queue = new ProducerConsumerQueue<string>();
         var accessor = queue.GetTestAccessor();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
 
         for (var i = 0; i < slabLength + 1; i++)
             queue.ProducerAppend($"round1-{i}");
@@ -363,7 +364,7 @@ public class ProducerConsumerQueueTests
     public void Segment_Indexer_RandomAccess_AcrossSlabBoundary()
     {
         var queue = new ProducerConsumerQueue<string>();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
 
         for (var i = 0; i < slabLength + 5; i++)
             queue.ProducerAppend($"tick-{i}");
@@ -382,7 +383,7 @@ public class ProducerConsumerQueueTests
     public void LargeVolume_ManySlabs_NoDataLoss()
     {
         var queue = new ProducerConsumerQueue<string>();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
         var totalItems = (slabLength * 3) + 42;
 
         for (var i = 0; i < totalItems; i++)
@@ -406,7 +407,7 @@ public class ProducerConsumerQueueTests
     {
         var queue = new ProducerConsumerQueue<string>();
         var accessor = queue.GetTestAccessor();
-        var slabLength = ProducerConsumerQueue<string>.SlabSizeHelper.SlabLength;
+        var slabLength = SlabSizeHelper<string>.SlabLength;
         var handler = new TrackingCleanupHandler();
         var totalCleaned = 0;
 

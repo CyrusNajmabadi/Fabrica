@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Fabrica.Core.Collections.Unsafe;
+using Fabrica.Core.Memory;
 
 namespace Fabrica.Core.Threading.Queues;
 
@@ -44,7 +45,7 @@ public sealed partial class ProducerConsumerQueue<T>
 {
     // ═══════════════════════════ FIELDS ══════════════════════════════════════
 
-    /// <summary>Number of items per slab. Defaults to <see cref="SlabSizeHelper.SlabLength"/> (LOH-aware power-of-2 sizing).
+    /// <summary>Number of items per slab. Defaults to <see cref="SlabSizeHelper{T}.SlabLength"/> (LOH-aware power-of-2 sizing).
     /// Tests may provide a smaller value via the internal constructor to make multi-slab scenarios easy to exercise without
     /// producing thousands of items.</summary>
     private readonly int _slabLength;
@@ -86,7 +87,7 @@ public sealed partial class ProducerConsumerQueue<T>
     // ═══════════════════════════ CONSTRUCTORS ════════════════════════════════
 
     /// <summary>Creates a <see cref="ProducerConsumerQueue{T}"/> with the default LOH-aware slab length.</summary>
-    public ProducerConsumerQueue() : this(SlabSizeHelper.SlabLength)
+    public ProducerConsumerQueue() : this(SlabSizeHelper<T>.SlabLength)
     {
     }
 

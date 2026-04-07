@@ -717,19 +717,6 @@ public class SlabSizeHelperTests
         Assert.Equal(0, SlabSizeHelper<OversizedPayload>.OffsetMask);
     }
 
-    [Fact]
-    public void SharedHelper_MatchesPcqHelper()
-    {
-        Assert.Equal(
-            SlabSizeHelper<int>.SlabLength,
-            Fabrica.Core.Threading.Queues.ProducerConsumerQueue<int>.SlabSizeHelper.SlabLength);
-        Assert.Equal(
-            SlabSizeHelper<int>.SlabShift,
-            Fabrica.Core.Threading.Queues.ProducerConsumerQueue<int>.SlabSizeHelper.SlabShift);
-        Assert.Equal(
-            SlabSizeHelper<int>.OffsetMask,
-            Fabrica.Core.Threading.Queues.ProducerConsumerQueue<int>.SlabSizeHelper.OffsetMask);
-    }
 
     [StructLayout(LayoutKind.Sequential, Size = 4096)]
     private struct LargePayload;
