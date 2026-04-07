@@ -1,0 +1,65 @@
+---
+description: API surface and visibility principles for the Fabrica codebase
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# API Surface & Visibility
+
+## Visibility Should Be As Narrow As Possible
+
+- **private**: default. If only the declaring type uses it, it stays private.
+- **private + TestAccessor**: if only tests need access, keep it private and expose
+  through a nested `TestAccessor` struct. Never use `internal` just for test access —
+  that leaks it to all production code in the assembly.
+- **internal**: only when other production types in the same assembly need it.
+- **public**: only when downstream assemblies genuinely need it.
+
+Audit: for every `public` or `internal` member, ask "who actually calls this in
+production code?" If only tests — make it private + TestAccessor.
+
+## Don't Expose Internal Types Through Public APIs
+
+Types that are implementation details (`RemapTable`, `TaggedHandle`, etc.) should be
+`internal`. If downstream code needs behavior they provide, add a wrapper method on
+the owning public type instead of exposing the internal type.
+
+## Don't Expose Mutable Collections
+
+Never return a mutable collection (e.g., `UnsafeList<T>`) through a public property.
+Expose `ReadOnlySpan<T>` or a read-only wrapper instead. If callers only need to
+iterate, a span is sufficient.
+
+## Ownership and Lifecycle Belong to the Owner
+
+If type A creates type B, then A owns B's lifecycle. Put `BuildB()` / `ReleaseB()` on
+A — not `Release()` on B. The token is a pure data holder with no lifecycle methods.
+
+Side effects (like incrementing refcounts) belong in the owner that manages the
+resource, not in constructors of data tokens.
+
+## Constructors Should Match Usage
+
+- If only the owning type creates instances in production, the constructor should be
+  `internal` (same assembly) or `private` (same type). Downstream gets instances
+  through factory methods on the owner.
+- If a type is constructed with all its data, it should not have mutation methods.
+  Make it immutable after construction.
+
+## Prefer Value Types When Appropriate
+
+If a type is a small data holder with reference-type fields and no identity semantics,
+prefer `readonly struct` over `class`. This eliminates unnecessary heap allocations.
+
+## Use Project Collection Types
+
+Prefer `UnsafeStack<T>` / `UnsafeList<T>` over BCL `Stack<T>` / `List<T>` in
+single-threaded, performance-sensitive code. Remove redundant wrappers that just
+delegate to existing types.
+
+## Defensive Design
+
+- Clear state after release to prevent double-use (e.g., clear root list after
+  decrementing refcounts).
+- Add `Debug.Assert` for invariants that should never be violated.
+- Validate constructor arguments — don't silently clamp.

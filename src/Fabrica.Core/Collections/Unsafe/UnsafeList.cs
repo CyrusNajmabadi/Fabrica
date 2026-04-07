@@ -8,7 +8,7 @@ namespace Fabrica.Core.Collections.Unsafe;
 
 /// <summary>
 /// Growable array-backed list with O(1) indexed access. In release builds, indexing uses
-/// <see cref="Unsafe"/> to bypass bounds checking for maximum throughput. In debug builds,
+/// <see cref="System.Runtime.CompilerServices.Unsafe"/> to bypass bounds checking for maximum throughput. In debug builds,
 /// standard array access is used so the CLR performs real bounds checking.
 ///
 /// GROWTH
@@ -38,7 +38,7 @@ public sealed class UnsafeList<T>(int initialCapacity = 16)
 #if DEBUG
             return ref _array[index];
 #else
-            return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_array), index);
+            return ref System.Runtime.CompilerServices.Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_array), index);
 #endif
         }
     }
@@ -55,7 +55,7 @@ public sealed class UnsafeList<T>(int initialCapacity = 16)
 #if DEBUG
         array[count] = item;
 #else
-        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), count) = item;
+        System.Runtime.CompilerServices.Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), count) = item;
 #endif
         _count = count + 1;
     }
