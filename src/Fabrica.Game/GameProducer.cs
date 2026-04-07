@@ -41,14 +41,14 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
 
         // ── 1. Build the job DAG ─────────────────────────────────────────
         // Dependencies are wired automatically by property setters (DependsOn).
-        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = tickState.ItemThreadLocalBuffers, Count = 4 };
+        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = tickState.ItemStore.ThreadLocalBuffers, Count = 4 };
         var beltJob = new BuildBeltChainJob
         {
-            BeltThreadLocalBuffers = tickState.BeltThreadLocalBuffers,
+            BeltThreadLocalBuffers = tickState.BeltStore.ThreadLocalBuffers,
             SpawnJob = spawnJob,
             ChainLength = 4,
         };
-        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = tickState.MachineThreadLocalBuffers, BeltJob = beltJob };
+        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = tickState.MachineStore.ThreadLocalBuffers, BeltJob = beltJob };
 
         // ── 2. Execute ──────────────────────────────────────────────────
         _scheduler.Submit(spawnJob);
@@ -56,18 +56,11 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         // ── 3. Merge pipeline ───────────────────────────────────────────
 
         // Phase 1: drain all TLBs into global arenas and build remap tables.
-        var (itemStart, itemCount) = tickState.ItemStore.DrainBuffers(tickState.ItemThreadLocalBuffers, tickState.ItemRemap);
-        var (beltStart, beltCount) = tickState.BeltStore.DrainBuffers(tickState.BeltThreadLocalBuffers, tickState.BeltRemap);
-        var (machineStart, machineCount) =
-            tickState.MachineStore.DrainBuffers(tickState.MachineThreadLocalBuffers, tickState.MachineRemap);
+        var (itemStart, itemCount) = tickState.ItemStore.DrainBuffers();
+        var (beltStart, beltCount) = tickState.BeltStore.DrainBuffers();
+        var (machineStart, machineCount) = tickState.MachineStore.DrainBuffers();
 
         // Phase 2: rewrite local handles to global and increment child refcounts.
-        var remapVisitor = new GameRemapVisitor
-        {
-            MachineRemap = tickState.MachineRemap,
-            BeltRemap = tickState.BeltRemap,
-            ItemRemap = tickState.ItemRemap,
-        };
         var refcountVisitor = new GameRefcountVisitor
         {
             MachineStore = tickState.MachineStore,
@@ -75,17 +68,14 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
             ItemStore = tickState.ItemStore,
         };
 
-        tickState.ItemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref remapVisitor, ref refcountVisitor);
-        tickState.BeltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref remapVisitor, ref refcountVisitor);
-        tickState.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref remapVisitor, ref refcountVisitor);
+        tickState.ItemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref refcountVisitor);
+        tickState.BeltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref refcountVisitor);
+        tickState.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref refcountVisitor);
 
         // Phase 3: collect and remap root handles for all types.
-        tickState.MachineStore.CollectAndRemapRoots(
-            tickState.MachineThreadLocalBuffers, tickState.MachineRemap, tickState.MachineRoots);
-        tickState.BeltStore.CollectAndRemapRoots(
-            tickState.BeltThreadLocalBuffers, tickState.BeltRemap, tickState.BeltRoots);
-        tickState.ItemStore.CollectAndRemapRoots(
-            tickState.ItemThreadLocalBuffers, tickState.ItemRemap, tickState.ItemRoots);
+        tickState.MachineStore.CollectAndRemapRoots(tickState.MachineRoots);
+        tickState.BeltStore.CollectAndRemapRoots(tickState.BeltRoots);
+        tickState.ItemStore.CollectAndRemapRoots(tickState.ItemRoots);
 
         // ── 4. Build snapshot slices ────────────────────────────────────
         var machineRootList = new UnsafeList<Handle<MachineNode>>();

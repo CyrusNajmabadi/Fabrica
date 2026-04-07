@@ -31,9 +31,9 @@ public class GamePipelineTests : IDisposable
         GlobalNodeStore<ItemNode, GameNodeOps> ItemStore)
         CreateStores()
     {
-        var machineStore = new GlobalNodeStore<MachineNode, GameNodeOps>();
-        var beltStore = new GlobalNodeStore<BeltSegmentNode, GameNodeOps>();
-        var itemStore = new GlobalNodeStore<ItemNode, GameNodeOps>();
+        var machineStore = new GlobalNodeStore<MachineNode, GameNodeOps>(WorkerCount);
+        var beltStore = new GlobalNodeStore<BeltSegmentNode, GameNodeOps>(WorkerCount);
+        var itemStore = new GlobalNodeStore<ItemNode, GameNodeOps>(WorkerCount);
 
         var ops = new GameNodeOps
         {
@@ -46,14 +46,6 @@ public class GamePipelineTests : IDisposable
         itemStore.SetNodeOps(ops);
 
         return (machineStore, beltStore, itemStore);
-    }
-
-    private static ThreadLocalBuffer<T>[] CreateTlbs<T>(int count) where T : struct
-    {
-        var threadLocalBuffers = new ThreadLocalBuffer<T>[count];
-        for (var i = 0; i < count; i++)
-            threadLocalBuffers[i] = new ThreadLocalBuffer<T>(i);
-        return threadLocalBuffers;
     }
 
     // ── DagValidator accessor ────────────────────────────────────────────
@@ -112,45 +104,31 @@ public class GamePipelineTests : IDisposable
         var scheduler = new JobScheduler(_pool);
         var schedulerAccessor = scheduler.GetTestAccessor();
 
-        var machineThreadLocalBuffers = CreateTlbs<MachineNode>(WorkerCount);
-        var beltThreadLocalBuffers = CreateTlbs<BeltSegmentNode>(WorkerCount);
-        var itemThreadLocalBuffers = CreateTlbs<ItemNode>(WorkerCount);
-
-        var machineRemap = new RemapTable(WorkerCount);
-        var beltRemap = new RemapTable(WorkerCount);
-        var itemRemap = new RemapTable(WorkerCount);
-
         // ── Build and execute the job DAG ────────────────────────────────
         // Dependencies wired automatically via DependsOn in property setters.
-        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = itemThreadLocalBuffers, Count = ItemCount };
+        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = itemStore.ThreadLocalBuffers, Count = ItemCount };
         var beltJob = new BuildBeltChainJob
         {
-            BeltThreadLocalBuffers = beltThreadLocalBuffers,
+            BeltThreadLocalBuffers = beltStore.ThreadLocalBuffers,
             SpawnJob = spawnJob,
             ChainLength = ChainLength,
         };
-        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = machineThreadLocalBuffers, BeltJob = beltJob };
+        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = machineStore.ThreadLocalBuffers, BeltJob = beltJob };
 
         schedulerAccessor.Submit(spawnJob);
 
         // ── Merge pipeline ───────────────────────────────────────────────
 
         // Phase 1: drain TLBs.
-        var (itemStart, itemCount) = itemStore.DrainBuffers(itemThreadLocalBuffers, itemRemap);
-        var (beltStart, beltCount) = beltStore.DrainBuffers(beltThreadLocalBuffers, beltRemap);
-        var (machineStart, machineCount) = machineStore.DrainBuffers(machineThreadLocalBuffers, machineRemap);
+        var (itemStart, itemCount) = itemStore.DrainBuffers();
+        var (beltStart, beltCount) = beltStore.DrainBuffers();
+        var (machineStart, machineCount) = machineStore.DrainBuffers();
 
         Assert.Equal(ItemCount, itemCount);
         Assert.Equal(ChainLength, beltCount);
         Assert.Equal(1, machineCount);
 
         // Phase 2: rewrite handles and increment child refcounts.
-        var remapVisitor = new GameRemapVisitor
-        {
-            MachineRemap = machineRemap,
-            BeltRemap = beltRemap,
-            ItemRemap = itemRemap,
-        };
         var refcountVisitor = new GameRefcountVisitor
         {
             MachineStore = machineStore,
@@ -158,13 +136,13 @@ public class GamePipelineTests : IDisposable
             ItemStore = itemStore,
         };
 
-        itemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref remapVisitor, ref refcountVisitor);
-        beltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref remapVisitor, ref refcountVisitor);
-        machineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref remapVisitor, ref refcountVisitor);
+        itemStore.RewriteAndIncrementRefCounts(itemStart, itemCount, ref refcountVisitor);
+        beltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref refcountVisitor);
+        machineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref refcountVisitor);
 
         // Phase 3: collect and remap roots.
         var machineRoots = new UnsafeList<Handle<MachineNode>>();
-        machineStore.CollectAndRemapRoots(machineThreadLocalBuffers, machineRemap, machineRoots);
+        machineStore.CollectAndRemapRoots(machineRoots);
         Assert.Equal(1, machineRoots.Count);
 
         // Increment root refcounts.

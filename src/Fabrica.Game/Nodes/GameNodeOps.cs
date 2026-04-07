@@ -53,6 +53,18 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
     {
     }
 
+    // ── Handle remapping (used during merge phase 2a) ──────────────────
+
+    public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
+    {
+        if (typeof(T) == typeof(MachineNode))
+            handle = MachineStore.Remap.Remap(handle);
+        else if (typeof(T) == typeof(BeltSegmentNode))
+            handle = BeltStore.Remap.Remap(handle);
+        else if (typeof(T) == typeof(ItemNode))
+            handle = ItemStore.Remap.Remap(handle);
+    }
+
     // ── Cascade dispatch ────────────────────────────────────────────────
 
     public readonly void Visit<T>(Handle<T> handle) where T : struct
