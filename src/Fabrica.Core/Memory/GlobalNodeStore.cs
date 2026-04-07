@@ -106,12 +106,10 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Default (no-op) when the store has no merge infrastructure.</summary>
     private readonly RemapTable _remap;
 
-    /// <summary>Starting global index of the most recent <see cref="DrainBuffers"/> batch.
-    /// Read by <see cref="RewriteAndIncrementRefCounts"/> to iterate the newly drained range.</summary>
-    private int _lastDrainStart;
-
-    /// <summary>Number of nodes in the most recent <see cref="DrainBuffers"/> batch.</summary>
-    private int _lastDrainCount;
+    /// <summary>Handles allocated during the most recent <see cref="Drain"/>. Reset each tick by
+    /// <see cref="ResetMergeState"/>, retaining backing memory for zero steady-state allocation.
+    /// Used by <see cref="RewriteAndIncrementRefCounts"/> to iterate the newly drained nodes.</summary>
+    private readonly UnsafeList<Handle<TNode>> _drainedHandles = new();
 
 #if DEBUG
     /// <summary>Running root-handle reference counts for debug validation. Each
@@ -232,38 +230,36 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         // the originating TLB. We need to move them into the single shared arena so that every handle
         // in the system can be resolved to a global arena slot.
         //
-        // For each thread's TLB:
-        //   1. Reserve a contiguous block of global slots in the arena sized to fit this TLB's output.
-        //   2. Copy the raw node data from the TLB into those slots.
-        //   3. Record the local→global mapping (thread t, local index i → global batchStart+i) in the
-        //      remap table so that RewriteAndIncrementRefCounts can later translate tagged local handles
-        //      into their final global indices.
+        // Allocate per-node (not batch) so the arena's free-list is consumed first. Freed slots from
+        // previous cascade decrements are recycled, keeping the arena at a stable high-water mark in
+        // steady state. Each node gets a potentially non-contiguous global index; the remap table
+        // records the mapping regardless.
+        _drainedHandles.Reset();
         for (var threadIndex = 0; threadIndex < _threadLocalBuffers.Length; threadIndex++)
         {
             var threadLocalBuffer = _threadLocalBuffers[threadIndex];
             if (threadLocalBuffer.Count == 0)
                 continue;
 
-            var batchStart = this.Arena.AllocateBatch(threadLocalBuffer.Count);
             var span = threadLocalBuffer.WrittenSpan;
             for (var i = 0; i < span.Length; i++)
             {
-                this.Arena[new Handle<TNode>(batchStart + i)] = span[i];
-                _remap.SetMapping(threadIndex, i, batchStart + i);
+                var handle = this.Arena.Allocate();
+                this.Arena[handle] = span[i];
+                _remap.SetMapping(threadIndex, i, handle.Index);
+                _drainedHandles.Add(handle);
             }
         }
 
-        var count = this.Arena.HighWater - startIndex;
         this.RefCounts.EnsureCapacity(this.Arena.HighWater);
-        _lastDrainStart = startIndex;
-        _lastDrainCount = count;
 
+        var count = this.Arena.HighWater - startIndex;
         return (startIndex, count);
     }
 
     /// <summary>
     /// Rewrites local (tagged) handles to global indices and then increments child refcounts for
-    /// the range produced by the most recent <see cref="DrainBuffers"/> call. Handle remapping uses
+    /// the nodes drained by the most recent <see cref="DrainBuffers"/> call. Handle remapping uses
     /// this store's <typeparamref name="TNodeOps"/> (which implements <see cref="INodeVisitor.VisitRef{T}"/>
     /// to dispatch through each store's remap table). Child refcount incrementing uses
     /// <see cref="INodeOps{TNode}.IncrementChildRefCounts"/> on the same ops struct.
@@ -274,19 +270,18 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     internal override void RewriteAndIncrementRefCounts()
     {
         this.AssertMergeActive();
-        var startIndex = _lastDrainStart;
-        var count = _lastDrainCount;
+        var handles = _drainedHandles.WrittenSpan;
 
         var ops = _nodeOps;
-        for (var i = 0; i < count; i++)
+        for (var i = 0; i < handles.Length; i++)
         {
-            ref var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
+            ref var node = ref this.Arena[handles[i]];
             ops.EnumerateRefChildren(ref node, ref ops);
         }
 
-        for (var i = 0; i < count; i++)
+        for (var i = 0; i < handles.Length; i++)
         {
-            ref readonly var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
+            ref readonly var node = ref this.Arena[handles[i]];
             _nodeOps.IncrementChildRefCounts(in node);
         }
     }
