@@ -10,7 +10,7 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 public readonly struct MergeCoordinator(GlobalNodeStore[] stores)
 {
-    private readonly GlobalNodeStore[] _stores = (GlobalNodeStore[])stores.Clone();
+    private readonly GlobalNodeStore[] _stores = stores;
 
     /// <summary>
     /// Drains all stores' thread-local buffers into their arenas (merge phase 1). All drains
