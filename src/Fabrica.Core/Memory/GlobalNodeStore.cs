@@ -8,13 +8,14 @@ namespace Fabrica.Core.Memory;
 
 /// <summary>
 /// Non-generic base for <see cref="GlobalNodeStore{TNode,TNodeOps}"/>. Lets
-/// <see cref="MergeCoordinator"/> orchestrate drain and reset across stores
-/// without knowing the concrete node types.
+/// <see cref="MergeCoordinator"/> orchestrate drain, rewrite, refcount, and reset across
+/// stores without knowing the concrete node types.
 /// </summary>
 public abstract class GlobalNodeStore
 {
     internal abstract void Drain();
-    public abstract void ResetMergeState();
+    internal abstract void RewriteAndIncrementRefCounts();
+    internal abstract void ResetMergeState();
 }
 
 /// <summary>
@@ -235,22 +236,20 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     }
 
     /// <summary>
-    /// Rewrites local (tagged) handles to global indices and then increments child refcounts for all
-    /// nodes within the range <c>[startIndex, startIndex + count)</c>. Handle remapping uses this
-    /// store's <typeparamref name="TNodeOps"/> (which must implement <see cref="INodeVisitor.VisitRef{T}"/>
-    /// to dispatch through each store's <see cref="Remap"/> table).
+    /// Rewrites local (tagged) handles to global indices and then increments child refcounts for
+    /// the range produced by the most recent <see cref="DrainBuffers"/> call. Handle remapping uses
+    /// this store's <typeparamref name="TNodeOps"/> (which implements <see cref="INodeVisitor.VisitRef{T}"/>
+    /// to dispatch through each store's remap table). Child refcount incrementing uses
+    /// <see cref="INodeOps{TNode}.IncrementChildRefCounts"/> on the same ops struct.
     ///
     /// BARRIER: all types must finish <see cref="DrainBuffers"/> before any type calls this method,
     /// because cross-type handle rewriting needs the target type's remap table.
     /// </summary>
-    public void RewriteAndIncrementRefCounts<TRefcountVisitor>(
-        int startIndex, int count,
-        ref TRefcountVisitor refcountVisitor)
-        where TRefcountVisitor : struct, INodeVisitor
+    internal override void RewriteAndIncrementRefCounts()
     {
-        // Phase 1 (rewrite): EnumerateRefChildren with _nodeOps as the visitor — resolves local
-        // handles through remap tables in place. _nodeOps implements VisitRef<T> which dispatches
-        // to the correct store's remap table per child type.
+        var startIndex = _lastDrainStart;
+        var count = _lastDrainCount;
+
         for (var i = 0; i < count; i++)
         {
             ref var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
@@ -258,22 +257,35 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
             ops.EnumerateRefChildren(ref node, ref ops);
         }
 
-        // Phase 2 (refcount): EnumerateChildren with refcountVisitor — increments each child's
-        // refcount. After the rewrite loop above, all handles are global.
+        for (var i = 0; i < count; i++)
+        {
+            ref readonly var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
+            _nodeOps.IncrementChildRefCounts(in node);
+        }
+    }
+
+    /// <summary>
+    /// Test-only: rewrites and increments refcounts using an explicit range and visitor. Used by
+    /// tests that need to verify merge phases with custom ranges or alternative visitors.
+    /// </summary>
+    private void RewriteAndIncrementRefCounts<TRefcountVisitor>(
+        int startIndex, int count,
+        ref TRefcountVisitor refcountVisitor)
+        where TRefcountVisitor : struct, INodeVisitor
+    {
+        for (var i = 0; i < count; i++)
+        {
+            ref var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
+            var ops = _nodeOps;
+            ops.EnumerateRefChildren(ref node, ref ops);
+        }
+
         for (var i = 0; i < count; i++)
         {
             ref readonly var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
             _nodeOps.EnumerateChildren(in node, ref refcountVisitor);
         }
     }
-
-    /// <summary>
-    /// Rewrites and increments refcounts for the range produced by the most recent
-    /// <see cref="DrainBuffers"/> call.
-    /// </summary>
-    public void RewriteAndIncrementRefCounts<TRefcountVisitor>(ref TRefcountVisitor refcountVisitor)
-        where TRefcountVisitor : struct, INodeVisitor
-        => this.RewriteAndIncrementRefCounts(_lastDrainStart, _lastDrainCount, ref refcountVisitor);
 
     /// <summary>
     /// Collects roots from thread-local buffers, increments their refcounts (the snapshot now owns them),
@@ -306,7 +318,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Resets all per-tick merge scratch state (thread-local buffers and remap table) so they
     /// are clean for the next tick. Backing arrays are retained for zero steady-state allocation.
     /// </summary>
-    public override void ResetMergeState()
+    internal override void ResetMergeState()
     {
         foreach (var threadLocalBuffer in _threadLocalBuffers)
             threadLocalBuffer.Reset();
@@ -478,6 +490,12 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
         public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.IncrementRoots(roots);
         public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
+
+        public void RewriteAndIncrementRefCounts<TRefcountVisitor>(
+            int startIndex, int count,
+            ref TRefcountVisitor refcountVisitor)
+            where TRefcountVisitor : struct, INodeVisitor
+            => store.RewriteAndIncrementRefCounts(startIndex, count, ref refcountVisitor);
 
         public void CollectAndRemapRoots(UnsafeList<Handle<TNode>> destination) => store.CollectAndRemapRoots(destination);
         public RemapTable Remap => store._remap;

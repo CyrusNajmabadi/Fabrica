@@ -28,4 +28,13 @@ public interface INodeOps<TNode> : INodeVisitor where TNode : struct
     void EnumerateRefChildren<TVisitor>(ref TNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
         => throw new NotImplementedException();
+
+    /// <summary>
+    /// Increments the refcount for each valid child of <paramref name="node"/> in the appropriate
+    /// store. Called during merge phase 2b after handles have been rewritten to global indices.
+    /// Implementations dispatch to the correct <see cref="GlobalNodeStore{TNode,TNodeOps}"/> per
+    /// child type — the same cross-type knowledge used by <see cref="EnumerateChildren{TVisitor}"/>.
+    /// </summary>
+    void IncrementChildRefCounts(in TNode node)
+        => throw new NotImplementedException();
 }

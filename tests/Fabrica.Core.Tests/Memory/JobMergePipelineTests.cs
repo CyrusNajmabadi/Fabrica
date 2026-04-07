@@ -58,6 +58,16 @@ public class JobMergePipelineTests : IDisposable
         {
         }
 
+        readonly void INodeOps<ParentNode>.IncrementChildRefCounts(in ParentNode node)
+        {
+            if (node.LeftParent.IsValid) ParentStore.IncrementRefCount(node.LeftParent);
+            if (node.ChildRef.IsValid) ChildStore.IncrementRefCount(node.ChildRef);
+        }
+
+        readonly void INodeOps<ChildNode>.IncrementChildRefCounts(in ChildNode node)
+        {
+        }
+
         public readonly void Visit<T>(Handle<T> handle) where T : struct
         {
             if (typeof(T) == typeof(ParentNode))
@@ -283,8 +293,8 @@ public class JobMergePipelineTests : IDisposable
 
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
-        childStore.RewriteAndIncrementRefCounts(childStart, childCount, ref refcountVisitor);
+        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
+        childStore.GetTestAccessor().RewriteAndIncrementRefCounts(childStart, childCount, ref refcountVisitor);
 
         // All parent handles should now be global
         for (var i = parentStart; i < parentStart + parentCount; i++)
