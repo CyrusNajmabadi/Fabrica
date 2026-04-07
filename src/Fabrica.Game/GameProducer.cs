@@ -72,26 +72,38 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
         tickState.BeltStore.RewriteAndIncrementRefCounts(beltStart, beltCount, ref remapVisitor, ref refcountVisitor);
         tickState.MachineStore.RewriteAndIncrementRefCounts(machineStart, machineCount, ref remapVisitor, ref refcountVisitor);
 
-        // Phase 3: collect and remap root handles (only machines are roots).
+        // Phase 3: collect and remap root handles for all types.
         tickState.MachineStore.CollectAndRemapRoots(
             tickState.MachineThreadLocalBuffers, tickState.MachineRemap, tickState.MachineRoots);
+        tickState.BeltStore.CollectAndRemapRoots(
+            tickState.BeltThreadLocalBuffers, tickState.BeltRemap, tickState.BeltRoots);
+        tickState.ItemStore.CollectAndRemapRoots(
+            tickState.ItemThreadLocalBuffers, tickState.ItemRemap, tickState.ItemRoots);
 
         // ── 4. Build snapshot slices ────────────────────────────────────
         var machineRootList = new UnsafeList<Handle<MachineNode>>();
         foreach (var root in tickState.MachineRoots.WrittenSpan)
             machineRootList.Add(root);
 
+        var beltRootList = new UnsafeList<Handle<BeltSegmentNode>>();
+        foreach (var root in tickState.BeltRoots.WrittenSpan)
+            beltRootList.Add(root);
+
+        var itemRootList = new UnsafeList<Handle<ItemNode>>();
+        foreach (var root in tickState.ItemRoots.WrittenSpan)
+            itemRootList.Add(root);
+
         image.MachineSlice = new SnapshotSlice<MachineNode, GameNodeOps>(tickState.MachineStore, machineRootList);
         image.MachineSlice.IncrementRootRefCounts();
 
+        image.BeltSlice = new SnapshotSlice<BeltSegmentNode, GameNodeOps>(tickState.BeltStore, beltRootList);
+        image.BeltSlice.IncrementRootRefCounts();
+
+        image.ItemSlice = new SnapshotSlice<ItemNode, GameNodeOps>(tickState.ItemStore, itemRootList);
+        image.ItemSlice.IncrementRootRefCounts();
+
         // ── 5. Reset buffers for the next tick ──────────────────────────
-        foreach (var threadLocalBuffer in tickState.MachineThreadLocalBuffers) threadLocalBuffer.Reset();
-        foreach (var threadLocalBuffer in tickState.BeltThreadLocalBuffers) threadLocalBuffer.Reset();
-        foreach (var threadLocalBuffer in tickState.ItemThreadLocalBuffers) threadLocalBuffer.Reset();
-        tickState.MachineRemap.Reset();
-        tickState.BeltRemap.Reset();
-        tickState.ItemRemap.Reset();
-        tickState.MachineRoots.Reset();
+        tickState.Reset();
 
         return image;
     }
@@ -99,6 +111,8 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
     public void ReleaseResources(GameWorldImage payload)
     {
         _tickState.MachineStore.DecrementRoots(payload.MachineSlice.Roots);
+        _tickState.BeltStore.DecrementRoots(payload.BeltSlice.Roots);
+        _tickState.ItemStore.DecrementRoots(payload.ItemSlice.Roots);
         _imagePool.Return(payload);
     }
 }
