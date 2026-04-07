@@ -15,9 +15,8 @@ public class JobPoolTests
         protected internal override void Execute(JobContext context)
             => this.Executed = true;
 
-        protected internal override void Reset()
+        protected override void ResetState()
         {
-            base.Reset();
             this.Value = 0;
             this.Executed = false;
         }
@@ -123,7 +122,7 @@ public class JobPoolTests
         var job = pool.Rent();
 
         var otherJob = pool.Rent();
-        job.AddDependent(otherJob);
+        otherJob.DependsOn(job);
 
         pool.Return(job);
         var reused = pool.Rent();

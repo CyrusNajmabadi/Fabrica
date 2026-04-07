@@ -63,28 +63,21 @@ public class CoordinatorMergeTests
             else if (typeof(T) == typeof(ChildNode))
                 ChildStore.DecrementRefCount(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
         }
-    }
-
-    // ── Phase 2a visitor: rewrite local handles to global ────────────────
-
-    private struct RemapVisitor : INodeVisitor
-    {
-        internal RemapTable ParentRemap;
-        internal RemapTable ChildRemap;
 
         public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
         {
-            var index = handle.Index;
-            if (!TaggedHandle.IsLocal(index))
-                return;
-
-            var threadId = TaggedHandle.DecodeThreadId(index);
-            var localIndex = TaggedHandle.DecodeLocalIndex(index);
-
             if (typeof(T) == typeof(ParentNode))
-                handle = new Handle<T>(ParentRemap.Resolve(threadId, localIndex));
+            {
+                var parentHandle = Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle);
+                parentHandle = ParentStore.Remap.Remap(parentHandle);
+                handle = Unsafe.As<Handle<ParentNode>, Handle<T>>(ref parentHandle);
+            }
             else if (typeof(T) == typeof(ChildNode))
-                handle = new Handle<T>(ChildRemap.Resolve(threadId, localIndex));
+            {
+                var childHandle = Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle);
+                childHandle = ChildStore.Remap.Remap(childHandle);
+                handle = Unsafe.As<Handle<ChildNode>, Handle<T>>(ref childHandle);
+            }
         }
     }
 
@@ -143,15 +136,10 @@ public class CoordinatorMergeTests
     // ── Store creation ───────────────────────────────────────────────────
 
     private static (GlobalNodeStore<ParentNode, MergeNodeOps> ParentStore, GlobalNodeStore<ChildNode, MergeNodeOps> ChildStore)
-        CreateStores()
+        CreateStores(int workerCount = 1)
     {
-        var childArena = new UnsafeSlabArena<ChildNode>();
-        var childRefCounts = new RefCountTable<ChildNode>();
-        var childStore = GlobalNodeStore<ChildNode, MergeNodeOps>.TestAccessor.Create(childArena, childRefCounts);
-
-        var parentArena = new UnsafeSlabArena<ParentNode>();
-        var parentRefCounts = new RefCountTable<ParentNode>();
-        var parentStore = GlobalNodeStore<ParentNode, MergeNodeOps>.TestAccessor.Create(parentArena, parentRefCounts);
+        var childStore = new GlobalNodeStore<ChildNode, MergeNodeOps>(workerCount);
+        var parentStore = new GlobalNodeStore<ParentNode, MergeNodeOps>(workerCount);
 
         var ops = new MergeNodeOps { ParentStore = parentStore, ChildStore = childStore };
         childStore.SetNodeOps(ops);
@@ -165,12 +153,9 @@ public class CoordinatorMergeTests
     [Fact]
     public void Phase1_CopiesData_BuildsRemap()
     {
-        var (_, childStore) = CreateStores();
-        const int ThreadCount = 2;
+        var (_, childStore) = CreateStores(2);
 
-        var threadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        threadLocalBuffers[0] = new ThreadLocalBuffer<ChildNode>(0);
-        threadLocalBuffers[1] = new ThreadLocalBuffer<ChildNode>(1);
+        var threadLocalBuffers = childStore.ThreadLocalBuffers;
 
         var c0 = threadLocalBuffers[0].Allocate();
         threadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(c0.Index)] = new ChildNode { Value = 10 };
@@ -181,8 +166,7 @@ public class CoordinatorMergeTests
         var c2 = threadLocalBuffers[1].Allocate();
         threadLocalBuffers[1][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
 
-        var remap = new RemapTable(ThreadCount);
-        var (start, count) = childStore.DrainBuffers(threadLocalBuffers, remap);
+        var (start, count) = childStore.DrainBuffers();
 
         Assert.Equal(0, start);
         Assert.Equal(3, count);
@@ -191,23 +175,17 @@ public class CoordinatorMergeTests
         Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
         Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(2)].Value);
 
-        Assert.Equal(0, remap.Resolve(0, 0));
-        Assert.Equal(1, remap.Resolve(1, 0));
-        Assert.Equal(2, remap.Resolve(1, 1));
+        Assert.Equal(0, childStore.Remap.Resolve(0, 0));
+        Assert.Equal(1, childStore.Remap.Resolve(1, 0));
+        Assert.Equal(2, childStore.Remap.Resolve(1, 1));
     }
 
     [Fact]
     public void Phase1_EmptyTlb_IsNoOp()
     {
-        var (_, childStore) = CreateStores();
-        const int ThreadCount = 2;
+        var (_, childStore) = CreateStores(2);
 
-        var threadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        threadLocalBuffers[0] = new ThreadLocalBuffer<ChildNode>(0);
-        threadLocalBuffers[1] = new ThreadLocalBuffer<ChildNode>(1);
-
-        var remap = new RemapTable(ThreadCount);
-        var (start, count) = childStore.DrainBuffers(threadLocalBuffers, remap);
+        var (start, count) = childStore.DrainBuffers();
 
         Assert.Equal(0, start);
         Assert.Equal(0, count);
@@ -217,13 +195,9 @@ public class CoordinatorMergeTests
     [Fact]
     public void Phase1_PartiallyEmptyTlbs_OnlyPopulatedThreadsContribute()
     {
-        var (_, childStore) = CreateStores();
-        const int ThreadCount = 3;
+        var (_, childStore) = CreateStores(3);
 
-        var threadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        threadLocalBuffers[0] = new ThreadLocalBuffer<ChildNode>(0);
-        threadLocalBuffers[1] = new ThreadLocalBuffer<ChildNode>(1);
-        threadLocalBuffers[2] = new ThreadLocalBuffer<ChildNode>(2);
+        var threadLocalBuffers = childStore.ThreadLocalBuffers;
 
         var c0 = threadLocalBuffers[0].Allocate();
         threadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(c0.Index)] = new ChildNode { Value = 10 };
@@ -233,8 +207,7 @@ public class CoordinatorMergeTests
         var c2 = threadLocalBuffers[2].Allocate();
         threadLocalBuffers[2][TaggedHandle.DecodeLocalIndex(c2.Index)] = new ChildNode { Value = 30 };
 
-        var remap = new RemapTable(ThreadCount);
-        var (start, count) = childStore.DrainBuffers(threadLocalBuffers, remap);
+        var (start, count) = childStore.DrainBuffers();
 
         Assert.Equal(0, start);
         Assert.Equal(2, count);
@@ -242,9 +215,9 @@ public class CoordinatorMergeTests
         Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
         Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(1)].Value);
 
-        Assert.Equal(0, remap.Resolve(0, 0));
-        Assert.Equal(0, remap.Count(1));
-        Assert.Equal(1, remap.Resolve(2, 0));
+        Assert.Equal(0, childStore.Remap.Resolve(0, 0));
+        Assert.Equal(0, childStore.Remap.Count(1));
+        Assert.Equal(1, childStore.Remap.Resolve(2, 0));
     }
 
     // ═══════════════════════════ Phase 2a tests ══════════════════════════
@@ -252,10 +225,10 @@ public class CoordinatorMergeTests
     [Fact]
     public void Phase2a_RemapsLocalHandlesToGlobal()
     {
-        var (parentStore, childStore) = CreateStores();
+        var (parentStore, childStore) = CreateStores(1);
 
-        var childThreadLocalBuffers = new[] { new ThreadLocalBuffer<ChildNode>(0) };
-        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var childThreadLocalBuffers = childStore.ThreadLocalBuffers;
+        var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
         var childHandle = childThreadLocalBuffers[0].Allocate();
         childThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(childHandle.Index)] = new ChildNode { Value = 42 };
@@ -267,16 +240,12 @@ public class CoordinatorMergeTests
             ChildRef = childHandle,
         };
 
-        var childRemap = new RemapTable(1);
-        var parentRemap = new RemapTable(1);
+        childStore.DrainBuffers();
+        var (parentStart, parentCount) = parentStore.DrainBuffers();
 
-        childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
-
-        var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
         Assert.Equal(Handle<ParentNode>.None, parent.LeftParent);
@@ -287,14 +256,14 @@ public class CoordinatorMergeTests
     [Fact]
     public void Phase2a_GlobalHandles_Untouched()
     {
-        var (parentStore, childStore) = CreateStores();
+        var (parentStore, childStore) = CreateStores(1);
 
         // Pre-existing global child at index 0
         var globalChild = childStore.Arena.Allocate();
         childStore.Arena[globalChild] = new ChildNode { Value = 99 };
         childStore.RefCounts.EnsureCapacity(1);
 
-        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
         var parentHandle = parentThreadLocalBuffers[0].Allocate();
         parentThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(parentHandle.Index)] = new ParentNode
         {
@@ -302,14 +271,11 @@ public class CoordinatorMergeTests
             ChildRef = globalChild,
         };
 
-        var childRemap = new RemapTable(1);
-        var parentRemap = new RemapTable(1);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
+        var (parentStart, parentCount) = parentStore.DrainBuffers();
 
-        var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
         Assert.Equal(globalChild, parent.ChildRef);
@@ -328,16 +294,11 @@ public class CoordinatorMergeTests
     [Fact]
     public void EndToEnd_TwoTypes_TwoThreads()
     {
-        var (parentStore, childStore) = CreateStores();
         const int ThreadCount = 2;
+        var (parentStore, childStore) = CreateStores(ThreadCount);
 
-        var childThreadLocalBuffers = new ThreadLocalBuffer<ChildNode>[ThreadCount];
-        var parentThreadLocalBuffers = new ThreadLocalBuffer<ParentNode>[ThreadCount];
-        for (var threadIndex = 0; threadIndex < ThreadCount; threadIndex++)
-        {
-            childThreadLocalBuffers[threadIndex] = new ThreadLocalBuffer<ChildNode>(threadIndex);
-            parentThreadLocalBuffers[threadIndex] = new ThreadLocalBuffer<ParentNode>(threadIndex);
-        }
+        var childThreadLocalBuffers = childStore.ThreadLocalBuffers;
+        var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
         // ── Simulate production phase ────────────────────────────────────
 
@@ -375,23 +336,20 @@ public class CoordinatorMergeTests
 
         // ── Phase 1: Allocate + Copy + Remap ─────────────────────────────
 
-        var childRemap = new RemapTable(ThreadCount);
-        var parentRemap = new RemapTable(ThreadCount);
-
-        var (childStart, childCount) = childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
+        var (childStart, childCount) = childStore.DrainBuffers();
+        var (parentStart, parentCount) = parentStore.DrainBuffers();
 
         Assert.Equal(0, childStart);
         Assert.Equal(3, childCount);
         Assert.Equal(0, parentStart);
         Assert.Equal(3, parentCount);
 
-        Assert.Equal(0, childRemap.Resolve(0, 0));
-        Assert.Equal(1, childRemap.Resolve(1, 0));
-        Assert.Equal(2, childRemap.Resolve(1, 1));
-        Assert.Equal(0, parentRemap.Resolve(0, 0));
-        Assert.Equal(1, parentRemap.Resolve(1, 0));
-        Assert.Equal(2, parentRemap.Resolve(1, 1));
+        Assert.Equal(0, childStore.Remap.Resolve(0, 0));
+        Assert.Equal(1, childStore.Remap.Resolve(1, 0));
+        Assert.Equal(2, childStore.Remap.Resolve(1, 1));
+        Assert.Equal(0, parentStore.Remap.Resolve(0, 0));
+        Assert.Equal(1, parentStore.Remap.Resolve(1, 0));
+        Assert.Equal(2, parentStore.Remap.Resolve(1, 1));
 
         Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
         Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
@@ -400,11 +358,10 @@ public class CoordinatorMergeTests
         // ── Rewrite + refcount ───────────────────────────────────────────
         // Barrier: all types finished Phase 1 before fixup begins.
 
-        var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
 
-        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
-        childStore.RewriteAndIncrementRefCounts(childStart, childCount, ref remapVisitor, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
+        childStore.RewriteAndIncrementRefCounts(childStart, childCount, ref refcountVisitor);
 
         // Verify all handles are now global
         ref readonly var p0 = ref parentStore.Arena[new Handle<ParentNode>(0)];
@@ -439,7 +396,7 @@ public class CoordinatorMergeTests
         // ── Root collection + remap + increment ──────────────────────────
 
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(rootList);
         var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
@@ -462,11 +419,10 @@ public class CoordinatorMergeTests
     [Fact]
     public void EndToEnd_CascadeFree_AfterMerge()
     {
-        var (parentStore, childStore) = CreateStores();
-        const int ThreadCount = 1;
+        var (parentStore, childStore) = CreateStores(1);
 
-        var childThreadLocalBuffers = new[] { new ThreadLocalBuffer<ChildNode>(0) };
-        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var childThreadLocalBuffers = childStore.ThreadLocalBuffers;
+        var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
         // Single child, single parent referencing it (parent is a root)
         var childHandle = childThreadLocalBuffers[0].Allocate();
@@ -480,18 +436,15 @@ public class CoordinatorMergeTests
         };
 
         // DrainBuffers
-        var childRemap = new RemapTable(ThreadCount);
-        var parentRemap = new RemapTable(ThreadCount);
-        var (childStart, childCount) = childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
+        childStore.DrainBuffers();
+        var (parentStart, parentCount) = parentStore.DrainBuffers();
 
-        var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
 
         // Root collection + remap + increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
@@ -520,11 +473,10 @@ public class CoordinatorMergeTests
     [Fact]
     public void RootInvariant_RootsHaveZeroRC_BeforeIncrement()
     {
-        var (parentStore, childStore) = CreateStores();
-        const int ThreadCount = 1;
+        var (parentStore, childStore) = CreateStores(1);
 
-        var childThreadLocalBuffers = new[] { new ThreadLocalBuffer<ChildNode>(0) };
-        var parentThreadLocalBuffers = new[] { new ThreadLocalBuffer<ParentNode>(0) };
+        var childThreadLocalBuffers = childStore.ThreadLocalBuffers;
+        var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
         var leaf = childThreadLocalBuffers[0].Allocate();
         childThreadLocalBuffers[0][TaggedHandle.DecodeLocalIndex(leaf.Index)] = new ChildNode { Value = 1 };
@@ -544,14 +496,11 @@ public class CoordinatorMergeTests
         };
 
         // Merge: DrainBuffers → RewriteAndIncrementRefCounts
-        var childRemap = new RemapTable(ThreadCount);
-        var parentRemap = new RemapTable(ThreadCount);
-        childStore.DrainBuffers(childThreadLocalBuffers, childRemap);
-        var (parentStart, parentCount) = parentStore.DrainBuffers(parentThreadLocalBuffers, parentRemap);
+        childStore.DrainBuffers();
+        var (parentStart, parentCount) = parentStore.DrainBuffers();
 
-        var remapVisitor = new RemapVisitor { ParentRemap = parentRemap, ChildRemap = childRemap };
         var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref remapVisitor, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
 
         // After structural refcount pass: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
@@ -560,7 +509,7 @@ public class CoordinatorMergeTests
 
         // Collect + remap roots, then increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.CollectAndRemapRoots(parentThreadLocalBuffers, parentRemap, rootList);
+        parentStore.CollectAndRemapRoots(rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);

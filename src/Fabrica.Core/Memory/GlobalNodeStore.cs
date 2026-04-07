@@ -5,6 +5,17 @@ using System.Runtime.InteropServices;
 namespace Fabrica.Core.Memory;
 
 /// <summary>
+/// Non-generic base for <see cref="GlobalNodeStore{TNode,TNodeOps}"/>. Lets
+/// <see cref="MergeCoordinator"/> orchestrate drain and reset across stores
+/// without knowing the concrete node types.
+/// </summary>
+public abstract class GlobalNodeStore
+{
+    internal abstract void Drain();
+    public abstract void ResetMergeState();
+}
+
+/// <summary>
 /// Bundles the three components needed to fully manage a single node type's lifecycle: storage
 /// (<see cref="UnsafeSlabArena{T}"/>), reference counts (<see cref="RefCountTable{T}"/>), and
 /// node operations (<typeparamref name="TNodeOps"/>). One instance per node type, shared
@@ -42,7 +53,7 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-public sealed class GlobalNodeStore<TNode, TNodeOps>
+public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
@@ -57,22 +68,50 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
 
+    private readonly ThreadLocalBuffer<TNode>[] _threadLocalBuffers;
+    private readonly RemapTable _remap;
+    private int _lastDrainStart;
+    private int _lastDrainCount;
+
 #if DEBUG
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
     private Action? _runValidation;
 #endif
 
     /// <summary>
-    /// Creates a store with its own arena and refcount table. Call <see cref="SetNodeOps"/> to
-    /// complete two-phase initialization before using the store.
+    /// Creates a store with per-worker merge infrastructure (thread-local buffers and remap table).
+    /// Call <see cref="SetNodeOps"/> to complete two-phase initialization before using the store.
     /// </summary>
-    public GlobalNodeStore() : this(new UnsafeSlabArena<TNode>(), new RefCountTable<TNode>(), default) { }
+    public GlobalNodeStore(int workerCount) : this()
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
+        _threadLocalBuffers = new ThreadLocalBuffer<TNode>[workerCount];
+        for (var i = 0; i < workerCount; i++)
+            _threadLocalBuffers[i] = new ThreadLocalBuffer<TNode>(i);
+        _remap = new RemapTable(workerCount);
+    }
 
-    private GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts, TNodeOps nodeOps)
+    /// <summary>
+    /// Creates a store without merge infrastructure. Suitable for tests that manipulate the arena
+    /// and refcounts directly without running the merge pipeline.
+    /// </summary>
+    public GlobalNodeStore()
+    {
+        this.Arena = new UnsafeSlabArena<TNode>();
+        this.RefCounts = new RefCountTable<TNode>();
+        _nodeOps = default;
+        _threadLocalBuffers = [];
+        _remap = default;
+    }
+
+    /// <summary>Test-only: creates a store with caller-provided arena and refcount table.</summary>
+    private GlobalNodeStore(UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
     {
         this.Arena = arena;
         this.RefCounts = refCounts;
-        _nodeOps = nodeOps;
+        _nodeOps = default;
+        _threadLocalBuffers = [];
+        _remap = default;
     }
 
     /// <summary>The slab-backed arena storing nodes of type <typeparamref name="TNode"/>.</summary>
@@ -86,6 +125,16 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     [Conditional("DEBUG")]
     internal void AssertOwnerThread()
         => this.RefCounts.AssertOwnerThread();
+
+    /// <summary>Per-worker thread-local buffers for this node type.</summary>
+    public ThreadLocalBuffer<TNode>[] ThreadLocalBuffers => _threadLocalBuffers;
+
+    /// <summary>
+    /// The remap table mapping local (thread-local buffer) indices to global arena indices.
+    /// Populated by <see cref="DrainBuffers"/> and consumed by <see cref="RewriteAndIncrementRefCounts"/>
+    /// and <see cref="CollectAndRemapRoots"/>.
+    /// </summary>
+    public RemapTable Remap => _remap;
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
@@ -122,15 +171,11 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     // ── Merge pipeline ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Drains all <see cref="ThreadLocalBuffer{TNode}"/> instances into this store's arena.
-    /// For each non-empty TLB: batch-allocates a contiguous range, copies the node data, and
-    /// records the local-to-global mapping in <paramref name="remap"/>. Returns the
-    /// <c>(startIndex, count)</c> range of newly merged nodes.
+    /// Drains all thread-local buffers into this store's arena, building the remap table.
+    /// Returns the <c>(startIndex, count)</c> range of newly merged nodes.
     /// </summary>
-    public (int StartIndex, int Count) DrainBuffers(ThreadLocalBuffer<TNode>[] threadLocalBuffers, RemapTable remap)
+    public (int StartIndex, int Count) DrainBuffers()
     {
-        // Snapshot where the arena was before we started so we can report the range of newly merged
-        // nodes to the caller (they need this to know which nodes to fixup and refcount).
         var startIndex = this.Arena.HighWater;
 
         // Each worker thread wrote nodes into its own TLB during the parallel work phase. Those nodes
@@ -144,68 +189,55 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
         //   3. Record the local→global mapping (thread t, local index i → global batchStart+i) in the
         //      remap table so that RewriteAndIncrementRefCounts can later translate tagged local handles
         //      into their final global indices.
-        for (var threadIndex = 0; threadIndex < threadLocalBuffers.Length; threadIndex++)
+        for (var threadIndex = 0; threadIndex < _threadLocalBuffers.Length; threadIndex++)
         {
-            var threadLocalBuffer = threadLocalBuffers[threadIndex];
+            var threadLocalBuffer = _threadLocalBuffers[threadIndex];
             if (threadLocalBuffer.Count == 0)
                 continue;
 
-            // Reserve threadLocalBuffer.Count contiguous slots starting at batchStart. This is O(1) — just a
-            // high-water bump — and guarantees the slots are contiguous for cache-friendly iteration
-            // in later phases.
             var batchStart = this.Arena.AllocateBatch(threadLocalBuffer.Count);
             var span = threadLocalBuffer.WrittenSpan;
             for (var i = 0; i < span.Length; i++)
             {
-                // Copy node data into its global slot and record where it landed so the remap table
-                // can translate any local handle pointing to (thread=threadIndex, index=i) into batchStart+i.
                 this.Arena[new Handle<TNode>(batchStart + i)] = span[i];
-                remap.SetMapping(threadIndex, i, batchStart + i);
+                _remap.SetMapping(threadIndex, i, batchStart + i);
             }
         }
 
-        // The refcount table must be large enough to cover all the new global indices we just created,
-        // otherwise RewriteAndIncrementRefCounts would write out of bounds.
         var count = this.Arena.HighWater - startIndex;
         this.RefCounts.EnsureCapacity(this.Arena.HighWater);
+        _lastDrainStart = startIndex;
+        _lastDrainCount = count;
 
         return (startIndex, count);
     }
 
     /// <summary>
     /// Rewrites local (tagged) handles to global indices and then increments child refcounts for all
-    /// nodes within the range <c>[startIndex, startIndex + count)</c>.
+    /// nodes within the range <c>[startIndex, startIndex + count)</c>. Handle remapping uses this
+    /// store's <typeparamref name="TNodeOps"/> (which must implement <see cref="INodeVisitor.VisitRef{T}"/>
+    /// to dispatch through each store's <see cref="Remap"/> table).
     ///
     /// BARRIER: all types must finish <see cref="DrainBuffers"/> before any type calls this method,
     /// because cross-type handle rewriting needs the target type's remap table.
     /// </summary>
-    public void RewriteAndIncrementRefCounts<TRemapVisitor, TRefcountVisitor>(
+    public void RewriteAndIncrementRefCounts<TRefcountVisitor>(
         int startIndex, int count,
-        ref TRemapVisitor remapVisitor,
         ref TRefcountVisitor refcountVisitor)
-        where TRemapVisitor : struct, INodeVisitor
         where TRefcountVisitor : struct, INodeVisitor
     {
-        // Phase 1 (rewrite): EnumerateRefChildren with remapVisitor — resolves local handles through remap tables in place.
-        // Walk every newly merged node in the arena. At this point the nodes have been copied verbatim
-        // from TLBs, so any Handle<T> fields still contain tagged local values (threadId + localIndex).
-        // EnumerateRefChildren hands each handle field *by reference* to the visitor, which resolves
-        // the local handle through the appropriate remap table and overwrites it in place with the
-        // global arena index. After this loop every handle field in the merged range points to a valid
-        // global slot.
+        // Phase 1 (rewrite): EnumerateRefChildren with _nodeOps as the visitor — resolves local
+        // handles through remap tables in place. _nodeOps implements VisitRef<T> which dispatches
+        // to the correct store's remap table per child type.
         for (var i = 0; i < count; i++)
         {
             ref var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
-            _nodeOps.EnumerateRefChildren(ref node, ref remapVisitor);
+            var ops = _nodeOps;
+            ops.EnumerateRefChildren(ref node, ref ops);
         }
 
-        // Phase 2 (refcount): EnumerateChildren with refcountVisitor — increments each child's refcount.
-        // Walk every newly merged node again (handles are now global after the rewrite loop above).
-        // For each node, EnumerateChildren yields each child handle *by value* to the visitor, which
-        // increments that child's refcount in the appropriate RefCountTable. This establishes the
-        // structural refcount invariant: every node's RC equals the number of parent fields pointing
-        // to it. Root nodes are not yet counted — they get their +1 from IncrementRoots after
-        // CollectAndRemapRoots.
+        // Phase 2 (refcount): EnumerateChildren with refcountVisitor — increments each child's
+        // refcount. After the rewrite loop above, all handles are global.
         for (var i = 0; i < count; i++)
         {
             ref readonly var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
@@ -214,41 +246,50 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     }
 
     /// <summary>
-    /// Collects root handles from all TLBs into the caller-provided <paramref name="destination"/>
-    /// list, remapping local handles to global indices via <paramref name="remap"/>. Handles that
-    /// are already global (e.g., references to pre-existing nodes from a prior snapshot) pass through
-    /// unchanged.
-    ///
-    /// The caller owns the <see cref="UnsafeList{T}"/> and is responsible for resetting it between
-    /// ticks.
+    /// Rewrites and increments refcounts for the range produced by the most recent
+    /// <see cref="DrainBuffers"/> call.
     /// </summary>
-    public void CollectAndRemapRoots(
-        ThreadLocalBuffer<TNode>[] threadLocalBuffers,
-        RemapTable remap,
-        UnsafeList<Handle<TNode>> destination)
+    public void RewriteAndIncrementRefCounts<TRefcountVisitor>(ref TRefcountVisitor refcountVisitor)
+        where TRefcountVisitor : struct, INodeVisitor
+        => this.RewriteAndIncrementRefCounts(_lastDrainStart, _lastDrainCount, ref refcountVisitor);
+
+    /// <summary>
+    /// Collects roots from thread-local buffers, builds a <see cref="SnapshotSlice{TNode, TNodeOps}"/>,
+    /// and increments root refcounts. Combines phases 3 and 4 of the merge pipeline into one call.
+    /// </summary>
+    public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
-        // Workers marked certain nodes as roots during the parallel phase (via Allocate(isRoot: true)
-        // or MarkRoot). Those root handles may be local (pointing into the originating TLB) or already
-        // global (referencing a pre-existing node from a prior snapshot that the job decided to re-root).
-        // We remap local handles through the same remap table that DrainBuffers built, translating
-        // (threadId, localIndex) → globalIndex. Global handles pass through unchanged.
-        foreach (var threadLocalBuffer in threadLocalBuffers)
+        var roots = new UnsafeList<Handle<TNode>>();
+        this.CollectAndRemapRoots(roots);
+        var slice = new SnapshotSlice<TNode, TNodeOps>(this, roots);
+        slice.IncrementRootRefCounts();
+        return slice;
+    }
+
+    /// <summary>
+    /// Collects root handles from all thread-local buffers into <paramref name="destination"/>,
+    /// remapping local handles to global indices. Global handles pass through unchanged.
+    /// </summary>
+    public void CollectAndRemapRoots(UnsafeList<Handle<TNode>> destination)
+    {
+        foreach (var threadLocalBuffer in _threadLocalBuffers)
         {
             foreach (var handle in threadLocalBuffer.RootHandles)
-            {
-                var index = handle.Index;
-                if (TaggedHandle.IsLocal(index))
-                {
-                    var threadId = TaggedHandle.DecodeThreadId(index);
-                    var localIndex = TaggedHandle.DecodeLocalIndex(index);
-                    destination.Add(new Handle<TNode>(remap.Resolve(threadId, localIndex)));
-                }
-                else
-                {
-                    destination.Add(handle);
-                }
-            }
+                destination.Add(_remap.Remap(handle));
         }
+    }
+
+    internal override void Drain() => this.DrainBuffers();
+
+    /// <summary>
+    /// Resets all per-tick merge scratch state (thread-local buffers and remap table) so they
+    /// are clean for the next tick. Backing arrays are retained for zero steady-state allocation.
+    /// </summary>
+    public override void ResetMergeState()
+    {
+        foreach (var threadLocalBuffer in _threadLocalBuffers)
+            threadLocalBuffer.Reset();
+        _remap.Reset();
     }
 
     // ── Root operations ──────────────────────────────────────────────────
@@ -402,7 +443,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
         /// </summary>
         public static GlobalNodeStore<TNode, TNodeOps> Create(
             UnsafeSlabArena<TNode> arena, RefCountTable<TNode> refCounts)
-            => new(arena, refCounts, default);
+            => new(arena, refCounts);
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;

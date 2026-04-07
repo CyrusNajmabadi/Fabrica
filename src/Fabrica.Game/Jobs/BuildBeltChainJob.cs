@@ -50,9 +50,8 @@ internal sealed class BuildBeltChainJob : Job
         ChainHead = next;
     }
 
-    protected override void Reset()
+    protected override void ResetState()
     {
-        base.Reset();
         BeltThreadLocalBuffers = null;
         _spawnJob = null;
         ChainHead = default;

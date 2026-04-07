@@ -39,7 +39,7 @@ public sealed class JobScheduler(WorkerPool pool)
     public void Submit(Job job)
     {
         this.InjectJob(job);
-        this.WaitForCompletion(millisecondsTimeout: -1);
+        this.WaitForCompletion();
     }
 
     // ── Called by WorkerPool execution infrastructure ────────────────────────
@@ -68,22 +68,18 @@ public sealed class JobScheduler(WorkerPool pool)
         pool.Inject(job);
     }
 
-    private bool WaitForCompletion(int millisecondsTimeout)
+    private void WaitForCompletion()
     {
         if (Volatile.Read(ref _outstandingJobs) == 0)
-            return true;
+            return;
 
         // Reset at the start of each wait cycle.
         _completionSignal.Reset();
 
         if (Volatile.Read(ref _outstandingJobs) == 0)
-            return true;
-
-        if (millisecondsTimeout >= 0)
-            return _completionSignal.Wait(millisecondsTimeout);
+            return;
 
         _completionSignal.Wait();
-        return true;
     }
 
     // ── Test accessor ───────────────────────────────────────────────────────
@@ -95,13 +91,12 @@ public sealed class JobScheduler(WorkerPool pool)
         public int OutstandingJobs => Volatile.Read(ref scheduler._outstandingJobs);
 
         /// <summary>
-        /// Submits a root job and blocks until the entire DAG completes or the timeout expires.
-        /// Returns <c>true</c> if completed, <c>false</c> on timeout.
+        /// Submits a root job and blocks until the entire DAG completes.
         /// </summary>
-        public bool Submit(Job job, int millisecondsTimeout = 5000)
+        public void Submit(Job job)
         {
             scheduler.InjectJob(job);
-            return scheduler.WaitForCompletion(millisecondsTimeout);
+            scheduler.WaitForCompletion();
         }
 
         /// <summary>
@@ -110,7 +105,7 @@ public sealed class JobScheduler(WorkerPool pool)
         /// </summary>
         public void Inject(Job job) => scheduler.InjectJob(job);
 
-        public bool WaitForCompletion(int millisecondsTimeout = -1) =>
-            scheduler.WaitForCompletion(millisecondsTimeout);
+        public void WaitForCompletion() =>
+            scheduler.WaitForCompletion();
     }
 }

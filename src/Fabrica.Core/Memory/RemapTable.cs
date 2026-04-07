@@ -12,29 +12,28 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded. Built by the coordinator (or a per-type merge worker) during Phase 1, read
 ///   during Phase 2a. No synchronization.
 /// </summary>
-public sealed class RemapTable
+public readonly struct RemapTable
 {
-    // Outer array: fixed size (thread count). Each inner list grows with mappings and retains backing across Reset.
-    private readonly UnsafeList<int>[] _remap;
+    private readonly UnsafeList<int>[] _perThreadMappings;
 
     public RemapTable(int threadCount)
     {
         Debug.Assert(threadCount > 0, $"RemapTable requires at least 1 thread, got {threadCount}.");
-        _remap = new UnsafeList<int>[threadCount];
+        _perThreadMappings = new UnsafeList<int>[threadCount];
         for (var i = 0; i < threadCount; i++)
-            _remap[i] = new UnsafeList<int>();
+            _perThreadMappings[i] = new UnsafeList<int>();
     }
 
     /// <summary>Number of threads this remap table supports.</summary>
     public int ThreadCount
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _remap.Length;
+        get => _perThreadMappings.Length;
     }
 
     /// <summary>Number of mappings recorded for the given thread.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int Count(int threadId) => _remap[threadId].Count;
+    public int Count(int threadId) => _perThreadMappings[threadId].Count;
 
     /// <summary>
     /// Records that local index <paramref name="localIndex"/> on thread <paramref name="threadId"/>
@@ -44,16 +43,16 @@ public sealed class RemapTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SetMapping(int threadId, int localIndex, int globalIndex)
     {
-        Debug.Assert(localIndex == _remap[threadId].Count,
-            $"SetMapping out of order: expected localIndex {_remap[threadId].Count}, got {localIndex}.");
-        _remap[threadId].Add(globalIndex);
+        Debug.Assert(localIndex == _perThreadMappings[threadId].Count,
+            $"SetMapping out of order: expected localIndex {_perThreadMappings[threadId].Count}, got {localIndex}.");
+        _perThreadMappings[threadId].Add(globalIndex);
     }
 
     /// <summary>
     /// Returns the global index for the given <paramref name="threadId"/> and <paramref name="localIndex"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int Resolve(int threadId, int localIndex) => _remap[threadId][localIndex];
+    internal int Resolve(int threadId, int localIndex) => _perThreadMappings[threadId][localIndex];
 
     /// <summary>
     /// If <paramref name="handle"/> is a local (tagged) handle, rewrites it to the corresponding
@@ -78,7 +77,7 @@ public sealed class RemapTable
     /// </summary>
     public void Reset()
     {
-        for (var i = 0; i < _remap.Length; i++)
-            _remap[i].Reset();
+        for (var i = 0; i < _perThreadMappings.Length; i++)
+            _perThreadMappings[i].Reset();
     }
 }

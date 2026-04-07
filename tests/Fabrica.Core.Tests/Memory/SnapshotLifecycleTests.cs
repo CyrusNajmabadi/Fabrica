@@ -115,7 +115,7 @@ public class SnapshotLifecycleTests
         // Release FIFO (oldest first)
         for (var i = 0; i < snapshotCount; i++)
         {
-            _store.DecrementRoots(slices[i].Roots);
+            slices[i].Release();
 
             // The latest snapshot's root should still be alive
             if (i < snapshotCount - 1)
@@ -153,7 +153,7 @@ public class SnapshotLifecycleTests
         // Release LIFO (newest first)
         for (var i = snapshotCount - 1; i >= 0; i--)
         {
-            _store.DecrementRoots(slices[i].Roots);
+            slices[i].Release();
 
             if (i > 0)
                 this.AssertNodeAlive(slices[0].Roots[0]);
@@ -182,7 +182,7 @@ public class SnapshotLifecycleTests
             newSlice.AddRoot(newRoot);
             newSlice.IncrementRootRefCounts();
 
-            _store.DecrementRoots(prevSlice.Roots);
+            prevSlice.Release();
 
             this.AssertNodeAlive(newRoot);
             root = newRoot;
@@ -195,7 +195,7 @@ public class SnapshotLifecycleTests
         Assert.True(finalAllocCount <= initialAllocCount + 10,
             $"Expected steady-state allocation count near {initialAllocCount}, got {finalAllocCount}.");
 
-        _store.DecrementRoots(prevSlice.Roots);
+        prevSlice.Release();
         this.AssertNodeDead(root);
     }
 
@@ -219,7 +219,7 @@ public class SnapshotLifecycleTests
         this.AssertNodeAlive(root2);
         this.AssertNodeAlive(root3);
 
-        _store.DecrementRoots(slice.Roots);
+        slice.Release();
 
         this.AssertNodeDead(root1);
         this.AssertNodeDead(root2);
@@ -241,7 +241,7 @@ public class SnapshotLifecycleTests
 
         Assert.Equal(2, _store.RefCounts.GetCount(shared));
 
-        _store.DecrementRoots(slice.Roots);
+        slice.Release();
 
         this.AssertNodeDead(root1);
         this.AssertNodeDead(root2);
@@ -276,7 +276,7 @@ public class SnapshotLifecycleTests
             while (queue.Count > windowSize)
             {
                 var oldSlice = queue.Dequeue();
-                _store.DecrementRoots(oldSlice.Roots);
+                oldSlice.Release();
             }
         }
 
@@ -284,7 +284,7 @@ public class SnapshotLifecycleTests
         while (queue.Count > 0)
         {
             var oldSlice = queue.Dequeue();
-            _store.DecrementRoots(oldSlice.Roots);
+            oldSlice.Release();
         }
 
         this.AssertNodeDead(root);
@@ -327,7 +327,7 @@ public class SnapshotLifecycleTests
         Assert.Equal(2, _store.RefCounts.GetCount(b)); // A.Left + snap2 root pin
 
         // Release snapshot 1 — A freed, B survives via snap2 pin
-        _store.DecrementRoots(snap1.Roots);
+        snap1.Release();
 
         this.AssertNodeDead(a);
         Assert.Equal(1, _store.RefCounts.GetCount(b)); // snap2 root pin only
@@ -335,7 +335,7 @@ public class SnapshotLifecycleTests
         this.AssertNodeAlive(d);
 
         // Release snapshot 2 — B/C/D all freed
-        _store.DecrementRoots(snap2.Roots);
+        snap2.Release();
 
         this.AssertNodeDead(b);
         this.AssertNodeDead(c);
@@ -370,14 +370,14 @@ public class SnapshotLifecycleTests
         Assert.Equal(b, snap2.Roots[0]);
 
         // Release snap2 first: B loses snap2 pin (B: 2→1, still held by A.Left)
-        _store.DecrementRoots(snap2.Roots);
+        snap2.Release();
 
         this.AssertNodeAlive(a); // snap1 still pins A
         this.AssertNodeAlive(b); // still referenced by A.Left
         this.AssertNodeAlive(c); // still referenced by B.Left
 
         // Release snap1: A freed, cascades to B (1→0), cascades to C (1→0)
-        _store.DecrementRoots(snap1.Roots);
+        snap1.Release();
 
         this.AssertNodeDead(a);
         this.AssertNodeDead(b);
@@ -417,18 +417,18 @@ public class SnapshotLifecycleTests
         Assert.Equal(2, _store.RefCounts.GetCount(c));
 
         // Release snap1: A freed, B: 2→1
-        _store.DecrementRoots(snap1.Roots);
+        snap1.Release();
         this.AssertNodeDead(a);
         Assert.Equal(1, _store.RefCounts.GetCount(b));
         Assert.Equal(2, _store.RefCounts.GetCount(c));
 
         // Release snap2: B freed, C: 2→1
-        _store.DecrementRoots(snap2.Roots);
+        snap2.Release();
         this.AssertNodeDead(b);
         Assert.Equal(1, _store.RefCounts.GetCount(c));
 
         // Release snap3: C freed
-        _store.DecrementRoots(snap3.Roots);
+        snap3.Release();
         this.AssertNodeDead(c);
     }
 
@@ -463,7 +463,7 @@ public class SnapshotLifecycleTests
             }
 
             foreach (var idx in perm)
-                store.DecrementRoots(slices[idx].Roots);
+                slices[idx].Release();
 
             Assert.Equal(0, store.RefCounts.GetCount(slices[3].Roots[0]));
         }
