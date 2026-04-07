@@ -85,22 +85,6 @@ public class JobMergePipelineTests : IDisposable
         }
     }
 
-    // ── Refcount visitor (merge phase 2b) ────────────────────────────────
-
-    private struct RefcountVisitor : INodeVisitor
-    {
-        internal GlobalNodeStore<ParentNode, TestNodeOps> ParentStore;
-        internal GlobalNodeStore<ChildNode, TestNodeOps> ChildStore;
-
-        public readonly void Visit<T>(Handle<T> handle) where T : struct
-        {
-            if (typeof(T) == typeof(ParentNode))
-                ParentStore.IncrementRefCount(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
-            else if (typeof(T) == typeof(ChildNode))
-                ChildStore.IncrementRefCount(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
-        }
-    }
-
     // ── DagValidator accessor ────────────────────────────────────────────
 
     private const int ParentTypeId = 0;
@@ -285,16 +269,14 @@ public class JobMergePipelineTests : IDisposable
 
         // ── Merge pipeline ───────────────────────────────────────────────
 
-        var (childStart, childCount) = childStore.DrainBuffers();
+        var (_, childCount) = childStore.DrainBuffers();
         var (parentStart, parentCount) = parentStore.DrainBuffers();
 
         Assert.Equal(3, childCount);
         Assert.Equal(3, parentCount);
 
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-
-        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
-        childStore.GetTestAccessor().RewriteAndIncrementRefCounts(childStart, childCount, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts();
+        childStore.RewriteAndIncrementRefCounts();
 
         // All parent handles should now be global
         for (var i = parentStart; i < parentStart + parentCount; i++)

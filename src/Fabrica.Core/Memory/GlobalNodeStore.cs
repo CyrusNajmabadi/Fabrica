@@ -80,8 +80,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     private readonly RemapTable _remap;
 
     /// <summary>Starting global index of the most recent <see cref="DrainBuffers"/> batch.
-    /// Read by the parameterless <see cref="RewriteAndIncrementRefCounts{TRefcountVisitor}"/>
-    /// overload to iterate the newly drained range.</summary>
+    /// Read by <see cref="RewriteAndIncrementRefCounts"/> to iterate the newly drained range.</summary>
     private int _lastDrainStart;
 
     /// <summary>Number of nodes in the most recent <see cref="DrainBuffers"/> batch.</summary>
@@ -261,29 +260,6 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         {
             ref readonly var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
             _nodeOps.IncrementChildRefCounts(in node);
-        }
-    }
-
-    /// <summary>
-    /// Test-only: rewrites and increments refcounts using an explicit range and visitor. Used by
-    /// tests that need to verify merge phases with custom ranges or alternative visitors.
-    /// </summary>
-    private void RewriteAndIncrementRefCounts<TRefcountVisitor>(
-        int startIndex, int count,
-        ref TRefcountVisitor refcountVisitor)
-        where TRefcountVisitor : struct, INodeVisitor
-    {
-        for (var i = 0; i < count; i++)
-        {
-            ref var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
-            var ops = _nodeOps;
-            ops.EnumerateRefChildren(ref node, ref ops);
-        }
-
-        for (var i = 0; i < count; i++)
-        {
-            ref readonly var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
-            _nodeOps.EnumerateChildren(in node, ref refcountVisitor);
         }
     }
 
@@ -490,12 +466,6 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
         public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.IncrementRoots(roots);
         public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
-
-        public void RewriteAndIncrementRefCounts<TRefcountVisitor>(
-            int startIndex, int count,
-            ref TRefcountVisitor refcountVisitor)
-            where TRefcountVisitor : struct, INodeVisitor
-            => store.RewriteAndIncrementRefCounts(startIndex, count, ref refcountVisitor);
 
         public void CollectAndRemapRoots(UnsafeList<Handle<TNode>> destination) => store.CollectAndRemapRoots(destination);
         public RemapTable Remap => store._remap;

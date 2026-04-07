@@ -93,22 +93,6 @@ public class CoordinatorMergeTests
         }
     }
 
-    // ── Phase 2b visitor: increment refcounts for children ───────────────
-
-    private struct RefcountVisitor : INodeVisitor
-    {
-        internal GlobalNodeStore<ParentNode, MergeNodeOps> ParentStore;
-        internal GlobalNodeStore<ChildNode, MergeNodeOps> ChildStore;
-
-        public readonly void Visit<T>(Handle<T> handle) where T : struct
-        {
-            if (typeof(T) == typeof(ParentNode))
-                ParentStore.IncrementRefCount(Unsafe.As<Handle<T>, Handle<ParentNode>>(ref handle));
-            else if (typeof(T) == typeof(ChildNode))
-                ChildStore.IncrementRefCount(Unsafe.As<Handle<T>, Handle<ChildNode>>(ref handle));
-        }
-    }
-
     // ── DagValidator accessor ────────────────────────────────────────────
 
     private const int ParentTypeId = 0;
@@ -253,11 +237,9 @@ public class CoordinatorMergeTests
         };
 
         childStore.DrainBuffers();
-        var (parentStart, parentCount) = parentStore.DrainBuffers();
+        parentStore.DrainBuffers();
 
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-
-        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts();
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
         Assert.Equal(Handle<ParentNode>.None, parent.LeftParent);
@@ -283,11 +265,9 @@ public class CoordinatorMergeTests
             ChildRef = globalChild,
         };
 
-        var (parentStart, parentCount) = parentStore.DrainBuffers();
+        parentStore.DrainBuffers();
 
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-
-        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts();
 
         ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
         Assert.Equal(globalChild, parent.ChildRef);
@@ -370,10 +350,8 @@ public class CoordinatorMergeTests
         // ── Rewrite + refcount ───────────────────────────────────────────
         // Barrier: all types finished Phase 1 before fixup begins.
 
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-
-        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
-        childStore.GetTestAccessor().RewriteAndIncrementRefCounts(childStart, childCount, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts();
+        childStore.RewriteAndIncrementRefCounts();
 
         // Verify all handles are now global
         ref readonly var p0 = ref parentStore.Arena[new Handle<ParentNode>(0)];
@@ -449,10 +427,9 @@ public class CoordinatorMergeTests
 
         // DrainBuffers
         childStore.DrainBuffers();
-        var (parentStart, parentCount) = parentStore.DrainBuffers();
+        parentStore.DrainBuffers();
 
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts();
 
         // Root collection + remap + increment
         var rootList = new UnsafeList<Handle<ParentNode>>();
@@ -509,10 +486,9 @@ public class CoordinatorMergeTests
 
         // Merge: DrainBuffers → RewriteAndIncrementRefCounts
         childStore.DrainBuffers();
-        var (parentStart, parentCount) = parentStore.DrainBuffers();
+        parentStore.DrainBuffers();
 
-        var refcountVisitor = new RefcountVisitor { ParentStore = parentStore, ChildStore = childStore };
-        parentStore.GetTestAccessor().RewriteAndIncrementRefCounts(parentStart, parentCount, ref refcountVisitor);
+        parentStore.RewriteAndIncrementRefCounts();
 
         // After structural refcount pass: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
