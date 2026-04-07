@@ -20,7 +20,7 @@ namespace Fabrica.Engine.Rendering;
 ///   immediately afterward and the simulation may then reclaim the snapshots.
 ///
 /// THREAD PINNING
-///   Each worker attempts to pin itself to a specific logical core at thread startup via <see cref="ThreadPinningNative"/>. This
+///   Each worker attempts to pin itself to a specific logical core at thread startup via thread pinning. This
 ///   is best-effort and purely a cache-affinity optimisation.
 /// </summary>
 internal sealed partial class RenderCoordinator(int workerCount)

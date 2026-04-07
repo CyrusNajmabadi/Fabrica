@@ -4,8 +4,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<InternalsVisibleTo Include="Fabrica.Pipeline" />
-		<InternalsVisibleTo Include="Fabrica.Engine" />
 		<InternalsVisibleTo Include="Fabrica.Core.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Pipeline.Tests" />
 		<InternalsVisibleTo Include="Fabrica.Engine.Tests" />
