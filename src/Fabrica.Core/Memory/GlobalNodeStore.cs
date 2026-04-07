@@ -16,6 +16,28 @@ public abstract class GlobalNodeStore
     internal abstract void Drain();
     internal abstract void RewriteAndIncrementRefCounts();
     internal abstract void ResetMergeState();
+
+#if DEBUG
+    private bool _isMergeActive;
+#endif
+
+    [Conditional("DEBUG")]
+    internal void SetMergeActive(bool value)
+    {
+#if DEBUG
+        Debug.Assert(_isMergeActive != value, $"Expected IsMergeActive to be {!value} but was {value}.");
+        _isMergeActive = value;
+#endif
+    }
+
+    [Conditional("DEBUG")]
+    internal void AssertMergeActive(
+        [CallerMemberName] string caller = "")
+    {
+#if DEBUG
+        Debug.Assert(_isMergeActive, $"{caller} must be called within a MergeTransaction scope.");
+#endif
+    }
 }
 
 /// <summary>
@@ -246,6 +268,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     internal override void RewriteAndIncrementRefCounts()
     {
+        this.AssertMergeActive();
         var startIndex = _lastDrainStart;
         var count = _lastDrainCount;
 
@@ -269,6 +292,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
+        this.AssertMergeActive();
         var roots = new UnsafeList<Handle<TNode>>();
         this.CollectAndRemapRoots(roots);
         this.IncrementRoots(roots.WrittenSpan);
@@ -288,7 +312,11 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         }
     }
 
-    internal override void Drain() => this.DrainBuffers();
+    internal override void Drain()
+    {
+        this.AssertMergeActive();
+        this.DrainBuffers();
+    }
 
     /// <summary>
     /// Resets all per-tick merge scratch state (thread-local buffers and remap table) so they
@@ -296,6 +324,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     internal override void ResetMergeState()
     {
+        this.AssertMergeActive();
         foreach (var threadLocalBuffer in _threadLocalBuffers)
             threadLocalBuffer.Reset();
         _remap.Reset();

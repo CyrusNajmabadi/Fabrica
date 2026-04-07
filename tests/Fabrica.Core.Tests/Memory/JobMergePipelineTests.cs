@@ -275,6 +275,8 @@ public class JobMergePipelineTests : IDisposable
         Assert.Equal(3, childCount);
         Assert.Equal(3, parentCount);
 
+        parentStore.SetMergeActive(true);
+        childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
         childStore.RewriteAndIncrementRefCounts();
 

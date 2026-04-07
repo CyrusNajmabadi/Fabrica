@@ -70,6 +70,12 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   `DecrementRefCount` across stores by type — this needs a clean injection mechanism so the game layer doesn't
   directly call into store refcount internals
 
+- [ ] **Pass `INodeOps`/`INodeVisitor` by `in` instead of `ref`** — the ops/visitor structs are immutable context
+  (store references for remapping/refcounting) and should never be mutated. `EnumerateRefChildren`,
+  `EnumerateChildren`, and all `INodeVisitor` methods currently take the visitor as `ref TVisitor`; changing to
+  `in TVisitor` expresses the correct intent and prevents accidental mutation. Requires updating `INodeOps`,
+  `INodeVisitor`, and all implementations
+
 ## Engine / Architecture — Coordinator Merge Optimizations
 
 - [ ] **Fine-grained merge overlap with production jobs** — the baseline coordinator merge waits for the entire production
