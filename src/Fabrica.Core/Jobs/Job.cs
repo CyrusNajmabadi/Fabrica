@@ -26,7 +26,7 @@ public abstract class Job
     /// <summary>
     /// Prerequisite count for DAG readiness: zero means this job is eligible to run.
     /// </summary>
-    internal int RemainingDependencies; // AddDependent/DependsOn; scheduler decrements atomically when a prerequisite completes.
+    internal int RemainingDependencies; // DependsOn increments; scheduler decrements atomically when a prerequisite completes.
 
     /// <summary>
     /// Downstream jobs notified on completion.
@@ -51,27 +51,14 @@ public abstract class Job
     // ── Dependency wiring ───────────────────────────────────────────────
 
     /// <summary>
-    /// Registers <paramref name="dependent"/> to run after this job completes. Increments the
-    /// dependent's remaining-dependency count so the scheduler knows to wait.
-    /// </summary>
-    protected internal void AddDependent(Job dependent)
-    {
-        // Each job tracks downstream dependents; RemainingDependencies gates execution. The scheduler decrements
-        // counts when prerequisites complete; the thread that brings a dependent to zero enqueues it.
-        Dependents ??= new UnsafeList<Job>(4);
-        Dependents.Add(dependent);
-        dependent.RemainingDependencies++;
-    }
-
-    /// <summary>
     /// Declares that this job depends on <paramref name="prerequisite"/>: this job will not
-    /// execute until <paramref name="prerequisite"/> completes. Adds this job to the prerequisite's
-    /// dependents list and increments this job's remaining-dependency count.
+    /// execute until <paramref name="prerequisite"/> completes.
     /// </summary>
     protected internal void DependsOn(Job prerequisite)
     {
-        // Mirrors AddDependent: prerequisite lists this as a dependent; this job's RemainingDependencies counts
-        // outstanding prerequisites.
+        // The prerequisite tracks this job as a downstream dependent; RemainingDependencies gates execution.
+        // The scheduler decrements counts when prerequisites complete; the thread that brings a job to zero
+        // enqueues it.
         prerequisite.Dependents ??= new UnsafeList<Job>(4);
         prerequisite.Dependents.Add(this);
         RemainingDependencies++;
@@ -91,17 +78,24 @@ public abstract class Job
     protected internal abstract void Execute(JobContext context);
 
     /// <summary>
-    /// Clears state for pool reuse; subclasses must call <c>base.Reset()</c> and clear all input/output
-    /// buffer references and any other mutable state.
+    /// Resets all base-class and subclass state for pool reuse. Base-class cleanup (dependency
+    /// wiring, scheduling state) runs first, then delegates to <see cref="ResetState"/> for
+    /// subclass-specific fields.
     /// </summary>
-    protected internal virtual void Reset()
+    internal void Reset()
     {
         // Called by the coordinator during the DAG sweep after the scheduler's outstanding job count reaches zero.
         // Dependents was lazily allocated: Reset clears the count but retains the backing array for reuse across
         // JobPool cycles.
         Dependents?.Reset();
         RemainingDependencies = 0;
+        this.ResetState();
     }
+
+    /// <summary>
+    /// Clears subclass-specific state (input/output buffers, handles, etc.) for pool reuse.
+    /// </summary>
+    protected abstract void ResetState();
 
     // FUTURE: sub-job enqueuing from Execute could use a protected helper (e.g. EnqueueChild(Job)) routing through
     // JobContext.WorkerContext without exposing scheduling internals to derived classes.

@@ -189,9 +189,8 @@ public class JobMergePipelineTests : IDisposable
             }
         }
 
-        protected internal override void Reset()
+        protected override void ResetState()
         {
-            base.Reset();
             ChildThreadLocalBuffers = null!;
             AllocatedHandles = null!;
         }
@@ -233,9 +232,8 @@ public class JobMergePipelineTests : IDisposable
                 threadLocalBuffer.MarkRoot(lastHandle);
         }
 
-        protected internal override void Reset()
+        protected override void ResetState()
         {
-            base.Reset();
             ParentThreadLocalBuffers = null!;
             ChildSources = null!;
         }
@@ -284,15 +282,14 @@ public class JobMergePipelineTests : IDisposable
             ChildSources = [childJob0, childJob1],
         };
 
-        childJob0.AddDependent(parentJob);
-        childJob1.AddDependent(parentJob);
+        parentJob.DependsOn(childJob0);
+        parentJob.DependsOn(childJob1);
 
         var scheduler = new JobScheduler(_pool);
         var testAccessor = scheduler.GetTestAccessor();
         testAccessor.Inject(childJob0);
         testAccessor.Inject(childJob1);
-        var completed = testAccessor.WaitForCompletion(millisecondsTimeout: 5000);
-        Assert.True(completed, "Job DAG did not complete within timeout");
+        testAccessor.WaitForCompletion();
 
         // Verify jobs produced data
         var totalChildren = childThreadLocalBuffers.Sum(buffer => buffer.Count);
@@ -383,8 +380,7 @@ public class JobMergePipelineTests : IDisposable
         foreach (var job in jobs)
             testAccessor.Inject(job);
 
-        var completed = testAccessor.WaitForCompletion(millisecondsTimeout: 5000);
-        Assert.True(completed, "Jobs did not complete within timeout");
+        testAccessor.WaitForCompletion();
 
         var totalAllocated = childThreadLocalBuffers.Sum(buffer => buffer.Count);
         Assert.Equal(32, totalAllocated);

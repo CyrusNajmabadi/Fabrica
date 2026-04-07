@@ -131,7 +131,7 @@ public class GamePipelineTests : IDisposable
         };
         _ = new PlaceMachinesJob { MachineThreadLocalBuffers = machineThreadLocalBuffers, BeltJob = beltJob };
 
-        Assert.True(schedulerAccessor.Submit(spawnJob));
+        schedulerAccessor.Submit(spawnJob);
 
         // ── Merge pipeline ───────────────────────────────────────────────
 

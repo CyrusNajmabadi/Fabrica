@@ -10,15 +10,12 @@ public readonly struct JobContext
     /// Zero-based index of the worker thread executing this job. Use this to index into
     /// per-worker arrays (e.g. <c>threadLocalBuffers[context.WorkerIndex]</c>).
     /// </summary>
-    public readonly int WorkerIndex;
+    public int WorkerIndex => WorkerContext.WorkerIndex;
 
     // Holds the full WorkerContext so future protected helpers on Job (e.g. sub-job enqueuing) can route through
     // the scheduler and deque without changing the Job.Execute signature.
     internal readonly WorkerContext WorkerContext;
 
-    internal JobContext(WorkerContext workerContext)
-    {
-        WorkerIndex = workerContext.WorkerIndex;
+    internal JobContext(WorkerContext workerContext) =>
         WorkerContext = workerContext;
-    }
 }

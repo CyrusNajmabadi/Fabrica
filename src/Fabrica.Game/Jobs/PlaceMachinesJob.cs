@@ -38,9 +38,8 @@ internal sealed class PlaceMachinesJob : Job
         };
     }
 
-    protected override void Reset()
+    protected override void ResetState()
     {
-        base.Reset();
         MachineThreadLocalBuffers = null;
         _beltJob = null;
     }

@@ -27,9 +27,8 @@ internal sealed class SpawnItemsJob : Job
         }
     }
 
-    protected override void Reset()
+    protected override void ResetState()
     {
-        base.Reset();
         ItemThreadLocalBuffers = null;
         AllocatedItems = null;
     }
