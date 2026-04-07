@@ -1,3 +1,4 @@
+using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
@@ -27,12 +28,12 @@ public sealed class ObjectPool<T, TAllocator>
     where T : class
     where TAllocator : struct, IAllocator<T>
 {
-    private readonly Stack<T> _items;
+    private readonly UnsafeStack<T> _items;
     private SingleThreadedOwner _owner;
 
     public ObjectPool(int initialCapacity)
     {
-        _items = new Stack<T>(initialCapacity);
+        _items = new UnsafeStack<T>(initialCapacity);
         for (var i = 0; i < initialCapacity; i++)
             _items.Push(default(TAllocator).Allocate());
     }
@@ -43,7 +44,7 @@ public sealed class ObjectPool<T, TAllocator>
     public T Rent()
     {
         _owner.AssertOwnerThread();
-        return _items.Count > 0 ? _items.Pop() : default(TAllocator).Allocate();
+        return _items.TryPop(out var item) ? item : default(TAllocator).Allocate();
     }
 
     /// <summary>

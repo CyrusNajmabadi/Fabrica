@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -302,7 +303,7 @@ public class JobMergePipelineTests : IDisposable
         var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");
 
-        parentStore.IncrementRoots(roots);
+        parentStore.GetTestAccessor().IncrementRoots(roots);
 
         // ── DagValidator ─────────────────────────────────────────────────
 
@@ -313,7 +314,7 @@ public class JobMergePipelineTests : IDisposable
 
         // ── Cascade-free ─────────────────────────────────────────────────
 
-        parentStore.DecrementRoots(roots);
+        parentStore.GetTestAccessor().DecrementRoots(roots);
 
         Assert.Equal(0, parentStore.Arena.GetTestAccessor().Count);
         Assert.Equal(0, childStore.Arena.GetTestAccessor().Count);

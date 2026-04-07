@@ -80,9 +80,9 @@ public readonly struct GameProducer : IProducer<GameWorldImage>
 
     public void ReleaseResources(GameWorldImage payload)
     {
-        payload.MachineSlice.Release();
-        payload.BeltSlice.Release();
-        payload.ItemSlice.Release();
+        _tickState.MachineStore.ReleaseSnapshotSlice(payload.MachineSlice);
+        _tickState.BeltStore.ReleaseSnapshotSlice(payload.BeltSlice);
+        _tickState.ItemStore.ReleaseSnapshotSlice(payload.ItemSlice);
         _imagePool.Return(payload);
     }
 }

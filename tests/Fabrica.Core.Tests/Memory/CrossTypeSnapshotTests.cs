@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -209,16 +210,15 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childRoot);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(parentRoot);
-        parentSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(parentRoot);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         Assert.Equal(1, parentStore.RefCounts.GetCount(parentRoot));
         Assert.Equal(1, childStore.RefCounts.GetCount(childRoot));
         Assert.Equal(1, childStore.RefCounts.GetCount(childA));
         Assert.Equal(1, childStore.RefCounts.GetCount(childB));
 
-        parentSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(parentRoot));
         Assert.Equal(0, childStore.RefCounts.GetCount(childRoot));
@@ -247,20 +247,18 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childLeaf);
 
-        var slice1 = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        slice1.AddRoot(parent1);
-        slice1.IncrementRootRefCounts();
-
-        var slice2 = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        slice2.AddRoot(parent2);
-        slice2.IncrementRootRefCounts();
-
+        var roots1 = new UnsafeList<Handle<ParentNode>>();
+        roots1.Add(parent1);
+        var slice1 = parentStore.GetTestAccessor().BuildSnapshotSlice(roots1);
+        var roots2 = new UnsafeList<Handle<ParentNode>>();
+        roots2.Add(parent2);
+        var slice2 = parentStore.GetTestAccessor().BuildSnapshotSlice(roots2);
         Assert.Equal(2, childStore.RefCounts.GetCount(childLeaf));
 
-        slice1.Release();
+        parentStore.ReleaseSnapshotSlice(slice1);
         Assert.Equal(1, childStore.RefCounts.GetCount(childLeaf));
 
-        slice2.Release();
+        parentStore.ReleaseSnapshotSlice(slice2);
         Assert.Equal(0, childStore.RefCounts.GetCount(childLeaf));
     }
 
@@ -278,21 +276,19 @@ public class CrossTypeSnapshotTests
             childNode);
 
         // Parent holds childNode via cross-type reference
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(parentNode);
-        parentSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(parentNode);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         // Child is ALSO a direct root in a child snapshot
-        var childSlice = new SnapshotSlice<ChildNode, CrossTypeNodeOps>(childStore, new UnsafeList<Handle<ChildNode>>());
-        childSlice.AddRoot(childNode);
-        childSlice.IncrementRootRefCounts();
-
+        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        childRoots.Add(childNode);
+        var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(childNode));
 
-        parentSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
         Assert.Equal(1, childStore.RefCounts.GetCount(childNode));
 
-        childSlice.Release();
+        childStore.ReleaseSnapshotSlice(childSlice);
         Assert.Equal(0, childStore.RefCounts.GetCount(childNode));
     }
 
@@ -314,31 +310,29 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childRoot);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(parentNode);
-        parentSlice.IncrementRootRefCounts();
-
-        var childSlice = new SnapshotSlice<ChildNode, CrossTypeNodeOps>(childStore, new UnsafeList<Handle<ChildNode>>());
-        childSlice.AddRoot(childRoot);
-        childSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(parentNode);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
+        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        childRoots.Add(childRoot);
+        var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(childRoot));
 
         if (releaseParentFirst)
         {
-            parentSlice.Release();
+            parentStore.ReleaseSnapshotSlice(parentSlice);
             Assert.Equal(1, childStore.RefCounts.GetCount(childRoot));
             Assert.Equal(1, childStore.RefCounts.GetCount(childA));
 
-            childSlice.Release();
+            childStore.ReleaseSnapshotSlice(childSlice);
         }
         else
         {
-            childSlice.Release();
+            childStore.ReleaseSnapshotSlice(childSlice);
             Assert.Equal(1, childStore.RefCounts.GetCount(childRoot));
             Assert.Equal(1, childStore.RefCounts.GetCount(childA));
 
-            parentSlice.Release();
+            parentStore.ReleaseSnapshotSlice(parentSlice);
         }
 
         Assert.Equal(0, childStore.RefCounts.GetCount(childRoot));
@@ -372,23 +366,21 @@ public class CrossTypeSnapshotTests
         var cStandalone = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 99);
 
         // Composite snapshot: parent slice has pRoot, child slice has cRoot + cStandalone
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(pRoot);
-        parentSlice.IncrementRootRefCounts();
-
-        var childSlice = new SnapshotSlice<ChildNode, CrossTypeNodeOps>(childStore, new UnsafeList<Handle<ChildNode>>());
-        childSlice.AddRoot(cRoot);
-        childSlice.AddRoot(cStandalone);
-        childSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(pRoot);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
+        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        childRoots.Add(cRoot);
+        childRoots.Add(cStandalone);
+        var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         // cRoot has refcount 2: one from pRoot's ChildRef, one from childSlice root
         Assert.Equal(2, childStore.RefCounts.GetCount(cRoot));
         Assert.Equal(1, childStore.RefCounts.GetCount(cStandalone));
         Assert.Equal(1, parentStore.RefCounts.GetCount(pRoot));
 
         // Release both slices (simulating releasing the composite snapshot)
-        parentSlice.Release();
-        childSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
+        childStore.ReleaseSnapshotSlice(childSlice);
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(pRoot));
         Assert.Equal(0, parentStore.RefCounts.GetCount(pLeaf));
@@ -413,27 +405,25 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             cLeaf);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(pNode);
-        parentSlice.IncrementRootRefCounts();
-
-        var childSlice = new SnapshotSlice<ChildNode, CrossTypeNodeOps>(childStore, new UnsafeList<Handle<ChildNode>>());
-        childSlice.AddRoot(cLeaf);
-        childSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(pNode);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
+        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        childRoots.Add(cLeaf);
+        var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(cLeaf));
 
         if (releaseParentSliceFirst)
         {
-            parentSlice.Release();
+            parentStore.ReleaseSnapshotSlice(parentSlice);
             Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf));
-            childSlice.Release();
+            childStore.ReleaseSnapshotSlice(childSlice);
         }
         else
         {
-            childSlice.Release();
+            childStore.ReleaseSnapshotSlice(childSlice);
             Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf));
-            parentSlice.Release();
+            parentStore.ReleaseSnapshotSlice(parentSlice);
         }
 
         Assert.Equal(0, childStore.RefCounts.GetCount(cLeaf));
@@ -479,19 +469,18 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             exclusive);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(pRoot1);
-        parentSlice.AddRoot(pRoot2);
-        parentSlice.AddRoot(pRoot3);
-        parentSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(pRoot1);
+        parentRoots.Add(pRoot2);
+        parentRoots.Add(pRoot3);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(shared));
         Assert.Equal(1, childStore.RefCounts.GetCount(exclusive));
         Assert.Equal(1, childStore.RefCounts.GetCount(cA));
         Assert.Equal(1, childStore.RefCounts.GetCount(cB));
         Assert.Equal(1, childStore.RefCounts.GetCount(cC));
 
-        parentSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
 
         Assert.Equal(0, childStore.RefCounts.GetCount(shared));
         Assert.Equal(0, childStore.RefCounts.GetCount(exclusive));
@@ -521,28 +510,27 @@ public class CrossTypeSnapshotTests
         var cB = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 2);
         var sharedChild = AllocChild(childStore, cA, cB, 0);
 
-        var parentRoots = new Handle<ParentNode>[3];
+        var parentRootHandles = new Handle<ParentNode>[3];
         var parentSlices = new SnapshotSlice<ParentNode, CrossTypeNodeOps>[3];
         var childSlices = new SnapshotSlice<ChildNode, CrossTypeNodeOps>[3];
 
         for (var i = 0; i < 3; i++)
         {
             // Each snapshot has its own parent root pointing at the shared child
-            parentRoots[i] = AllocParent(
+            parentRootHandles[i] = AllocParent(
                 parentStore,
                 childStore,
                 Handle<ParentNode>.None,
                 Handle<ParentNode>.None,
                 sharedChild);
 
-            parentSlices[i] = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-            parentSlices[i].AddRoot(parentRoots[i]);
-            parentSlices[i].IncrementRootRefCounts();
-
+            var parentList = new UnsafeList<Handle<ParentNode>>();
+            parentList.Add(parentRootHandles[i]);
+            parentSlices[i] = parentStore.GetTestAccessor().BuildSnapshotSlice(parentList);
             // Each snapshot also directly roots the shared child
-            childSlices[i] = new SnapshotSlice<ChildNode, CrossTypeNodeOps>(childStore, new UnsafeList<Handle<ChildNode>>());
-            childSlices[i].AddRoot(sharedChild);
-            childSlices[i].IncrementRootRefCounts();
+            var childList = new UnsafeList<Handle<ChildNode>>();
+            childList.Add(sharedChild);
+            childSlices[i] = childStore.GetTestAccessor().BuildSnapshotSlice(childList);
         }
 
         // sharedChild: 3 from parent ChildRef + 3 from child slice roots = 6
@@ -552,10 +540,10 @@ public class CrossTypeSnapshotTests
         for (var step = 0; step < 3; step++)
         {
             var snapshotIndex = order[step];
-            parentSlices[snapshotIndex].Release();
-            childSlices[snapshotIndex].Release();
+            parentStore.ReleaseSnapshotSlice(parentSlices[snapshotIndex]);
+            childStore.ReleaseSnapshotSlice(childSlices[snapshotIndex]);
 
-            Assert.Equal(0, parentStore.RefCounts.GetCount(parentRoots[snapshotIndex]));
+            Assert.Equal(0, parentStore.RefCounts.GetCount(parentRootHandles[snapshotIndex]));
 
             var remaining = 2 - step;
             // Each remaining snapshot contributes 2 refs to sharedChild (1 parent + 1 child root)
@@ -590,10 +578,9 @@ public class CrossTypeSnapshotTests
         var pMid = AllocParent(parentStore, childStore, pLeaf, Handle<ParentNode>.None, cMid);
         var pRoot = AllocParent(parentStore, childStore, pMid, Handle<ParentNode>.None, cRoot);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(pRoot);
-        parentSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(pRoot);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         // cRoot: 1 (from pRoot.ChildRef)
         // cMid: 1 (child of cRoot) + 1 (from pMid.ChildRef) = 2
         Assert.Equal(1, childStore.RefCounts.GetCount(cRoot));
@@ -602,7 +589,7 @@ public class CrossTypeSnapshotTests
         Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf2));
         Assert.Equal(1, childStore.RefCounts.GetCount(cLeaf3));
 
-        parentSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(pRoot));
         Assert.Equal(0, parentStore.RefCounts.GetCount(pMid));
@@ -633,15 +620,13 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             cMid);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(pRoot);
-        parentSlice.IncrementRootRefCounts();
-
-        var childSlice = new SnapshotSlice<ChildNode, CrossTypeNodeOps>(childStore, new UnsafeList<Handle<ChildNode>>());
-        childSlice.AddRoot(cRoot);
-        childSlice.AddRoot(cLeaf);
-        childSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(pRoot);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
+        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        childRoots.Add(cRoot);
+        childRoots.Add(cLeaf);
+        var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         // cMid: 1 (child of cRoot) + 1 (from pRoot.ChildRef) = 2
         // cLeaf: 1 (child of cMid) + 1 (child slice root) = 2
         Assert.Equal(1, childStore.RefCounts.GetCount(cRoot));
@@ -649,12 +634,12 @@ public class CrossTypeSnapshotTests
         Assert.Equal(2, childStore.RefCounts.GetCount(cLeaf));
 
         // Release parent first — cMid drops to 1, cLeaf stays at 2
-        parentSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
         Assert.Equal(1, childStore.RefCounts.GetCount(cMid));
         Assert.Equal(2, childStore.RefCounts.GetCount(cLeaf));
 
         // Release child slice — everything cascades to 0
-        childSlice.Release();
+        childStore.ReleaseSnapshotSlice(childSlice);
         Assert.Equal(0, childStore.RefCounts.GetCount(cRoot));
         Assert.Equal(0, childStore.RefCounts.GetCount(cMid));
         Assert.Equal(0, childStore.RefCounts.GetCount(cLeaf));
@@ -771,15 +756,14 @@ public class CrossTypeSnapshotTests
         var pRoot = AllocParent(parentStore, childStore,
             Handle<ParentNode>.None, Handle<ParentNode>.None, cLeaf);
 
-        var parentSlice = new SnapshotSlice<ParentNode, CrossTypeNodeOps>(parentStore, new UnsafeList<Handle<ParentNode>>());
-        parentSlice.AddRoot(pRoot);
-        parentSlice.IncrementRootRefCounts();
-
+        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        parentRoots.Add(pRoot);
+        var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         // Valid while alive
         AssertCrossStoreValid(parentStore, childStore, [pRoot], []);
 
         // Release — everything freed
-        parentSlice.Release();
+        parentStore.ReleaseSnapshotSlice(parentSlice);
 
         // Valid after full release (empty world)
         AssertCrossStoreValid(parentStore, childStore, [], []);

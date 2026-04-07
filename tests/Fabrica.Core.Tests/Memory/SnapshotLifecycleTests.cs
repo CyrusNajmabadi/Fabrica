@@ -2,14 +2,16 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
 
 /// <summary>
 /// Simulates the full snapshot lifecycle through a producer-consumer queue: sequential creation with
-/// structural sharing (path-copy), publish (increment roots), and release (decrement roots) in various
-/// orders. Verifies refcount correctness at each step.
+/// structural sharing (path-copy), publish (increment roots via the store test accessor), and release
+/// (<see cref="GlobalNodeStore{TNode,TNodeOps}.ReleaseSnapshotSlice"/>) in various orders. Verifies
+/// refcount correctness at each step.
 /// </summary>
 public class SnapshotLifecycleTests
 {
@@ -100,23 +102,24 @@ public class SnapshotLifecycleTests
         var root = this.BuildPerfectTree(3);
         var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[snapshotCount];
 
-        slices[0] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        slices[0].AddRoot(root);
-        slices[0].IncrementRootRefCounts();
-
+        var roots0 = new UnsafeList<Handle<TreeNode>>();
+        roots0.Add(root);
+        slices[0] = _store.GetTestAccessor().BuildSnapshotSlice(roots0);
         for (var i = 1; i < snapshotCount; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-            slices[i].AddRoot(newRoot);
-            slices[i].IncrementRootRefCounts();
+            var roots = new UnsafeList<Handle<TreeNode>>();
+            roots.Add(newRoot);
+            slices[i] = _store.GetTestAccessor().BuildSnapshotSlice(roots);
             root = newRoot;
         }
+
+        var lastRoot = slices[snapshotCount - 1].Roots[0];
 
         // Release FIFO (oldest first)
         for (var i = 0; i < snapshotCount; i++)
         {
-            slices[i].Release();
+            _store.ReleaseSnapshotSlice(slices[i]);
 
             // The latest snapshot's root should still be alive
             if (i < snapshotCount - 1)
@@ -124,7 +127,7 @@ public class SnapshotLifecycleTests
         }
 
         // After releasing all, the last root should be dead
-        this.AssertNodeDead(slices[snapshotCount - 1].Roots[0]);
+        this.AssertNodeDead(lastRoot);
     }
 
     // ── LIFO release ─────────────────────────────────────────────────────
@@ -138,29 +141,30 @@ public class SnapshotLifecycleTests
         var root = this.BuildPerfectTree(3);
         var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[snapshotCount];
 
-        slices[0] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        slices[0].AddRoot(root);
-        slices[0].IncrementRootRefCounts();
-
+        var roots0 = new UnsafeList<Handle<TreeNode>>();
+        roots0.Add(root);
+        slices[0] = _store.GetTestAccessor().BuildSnapshotSlice(roots0);
         for (var i = 1; i < snapshotCount; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-            slices[i].AddRoot(newRoot);
-            slices[i].IncrementRootRefCounts();
+            var roots = new UnsafeList<Handle<TreeNode>>();
+            roots.Add(newRoot);
+            slices[i] = _store.GetTestAccessor().BuildSnapshotSlice(roots);
             root = newRoot;
         }
+
+        var firstRoot = slices[0].Roots[0];
 
         // Release LIFO (newest first)
         for (var i = snapshotCount - 1; i >= 0; i--)
         {
-            slices[i].Release();
+            _store.ReleaseSnapshotSlice(slices[i]);
 
             if (i > 0)
                 this.AssertNodeAlive(slices[0].Roots[0]);
         }
 
-        this.AssertNodeDead(slices[0].Roots[0]);
+        this.AssertNodeDead(firstRoot);
     }
 
     // ── Interleaved create and release ───────────────────────────────────
@@ -170,20 +174,18 @@ public class SnapshotLifecycleTests
     {
         var root = this.BuildPerfectTree(3);
 
-        var prevSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        prevSlice.AddRoot(root);
-        prevSlice.IncrementRootRefCounts();
-
+        var prevRoots = new UnsafeList<Handle<TreeNode>>();
+        prevRoots.Add(root);
+        var prevSlice = _store.GetTestAccessor().BuildSnapshotSlice(prevRoots);
         var initialAllocCount = _store.Arena.GetTestAccessor().Count;
 
         for (var i = 0; i < 50; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var newSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-            newSlice.AddRoot(newRoot);
-            newSlice.IncrementRootRefCounts();
-
-            prevSlice.Release();
+            var newRoots = new UnsafeList<Handle<TreeNode>>();
+            newRoots.Add(newRoot);
+            var newSlice = _store.GetTestAccessor().BuildSnapshotSlice(newRoots);
+            _store.ReleaseSnapshotSlice(prevSlice);
 
             this.AssertNodeAlive(newRoot);
             root = newRoot;
@@ -196,7 +198,7 @@ public class SnapshotLifecycleTests
         Assert.True(finalAllocCount <= initialAllocCount + 10,
             $"Expected steady-state allocation count near {initialAllocCount}, got {finalAllocCount}.");
 
-        prevSlice.Release();
+        _store.ReleaseSnapshotSlice(prevSlice);
         this.AssertNodeDead(root);
     }
 
@@ -209,18 +211,17 @@ public class SnapshotLifecycleTests
         var root2 = this.BuildPerfectTree(2);
         var root3 = this.BuildPerfectTree(2);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(root1);
-        slice.AddRoot(root2);
-        slice.AddRoot(root3);
-        slice.IncrementRootRefCounts();
-
+        var roots = new UnsafeList<Handle<TreeNode>>();
+        roots.Add(root1);
+        roots.Add(root2);
+        roots.Add(root3);
+        var slice = _store.GetTestAccessor().BuildSnapshotSlice(roots);
         Assert.Equal(3, slice.Count);
         this.AssertNodeAlive(root1);
         this.AssertNodeAlive(root2);
         this.AssertNodeAlive(root3);
 
-        slice.Release();
+        _store.ReleaseSnapshotSlice(slice);
 
         this.AssertNodeDead(root1);
         this.AssertNodeDead(root2);
@@ -235,14 +236,13 @@ public class SnapshotLifecycleTests
         var root1 = this.AllocNode(shared, Handle<TreeNode>.None);
         var root2 = this.AllocNode(Handle<TreeNode>.None, shared);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(root1);
-        slice.AddRoot(root2);
-        slice.IncrementRootRefCounts();
-
+        var roots = new UnsafeList<Handle<TreeNode>>();
+        roots.Add(root1);
+        roots.Add(root2);
+        var slice = _store.GetTestAccessor().BuildSnapshotSlice(roots);
         Assert.Equal(2, _store.RefCounts.GetCount(shared));
 
-        slice.Release();
+        _store.ReleaseSnapshotSlice(slice);
 
         this.AssertNodeDead(root1);
         this.AssertNodeDead(root2);
@@ -260,24 +260,24 @@ public class SnapshotLifecycleTests
         var root = this.BuildPerfectTree(3);
         var queue = new Queue<SnapshotSlice<TreeNode, TreeNodeOps>>();
 
-        var initialSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        initialSlice.AddRoot(root);
-        initialSlice.IncrementRootRefCounts();
+        var initialRoots = new UnsafeList<Handle<TreeNode>>();
+        initialRoots.Add(root);
+        var initialSlice = _store.GetTestAccessor().BuildSnapshotSlice(initialRoots);
         queue.Enqueue(initialSlice);
 
         for (var i = 0; i < 30; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var newSlice = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-            newSlice.AddRoot(newRoot);
-            newSlice.IncrementRootRefCounts();
+            var newRoots = new UnsafeList<Handle<TreeNode>>();
+            newRoots.Add(newRoot);
+            var newSlice = _store.GetTestAccessor().BuildSnapshotSlice(newRoots);
             queue.Enqueue(newSlice);
             root = newRoot;
 
             while (queue.Count > windowSize)
             {
                 var oldSlice = queue.Dequeue();
-                oldSlice.Release();
+                _store.ReleaseSnapshotSlice(oldSlice);
             }
         }
 
@@ -285,7 +285,7 @@ public class SnapshotLifecycleTests
         while (queue.Count > 0)
         {
             var oldSlice = queue.Dequeue();
-            oldSlice.Release();
+            _store.ReleaseSnapshotSlice(oldSlice);
         }
 
         this.AssertNodeDead(root);
@@ -310,25 +310,23 @@ public class SnapshotLifecycleTests
         var a = this.AllocNode(b, Handle<TreeNode>.None);
 
         // Snapshot 1: root = A
-        var snap1 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap1.AddRoot(a);
-        snap1.IncrementRootRefCounts();
-
+        var snap1Roots = new UnsafeList<Handle<TreeNode>>();
+        snap1Roots.Add(a);
+        var snap1 = _store.GetTestAccessor().BuildSnapshotSlice(snap1Roots);
         Assert.Equal(1, _store.RefCounts.GetCount(a)); // root pin
         Assert.Equal(1, _store.RefCounts.GetCount(b)); // from A.Left
         Assert.Equal(1, _store.RefCounts.GetCount(c)); // from B.Left
         Assert.Equal(1, _store.RefCounts.GetCount(d)); // from B.Right
 
         // Snapshot 2: root = B (existing internal node, not A)
-        var snap2 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap2.AddRoot(b);
-        snap2.IncrementRootRefCounts();
-
+        var snap2Roots = new UnsafeList<Handle<TreeNode>>();
+        snap2Roots.Add(b);
+        var snap2 = _store.GetTestAccessor().BuildSnapshotSlice(snap2Roots);
         Assert.Equal(1, _store.RefCounts.GetCount(a)); // unchanged
         Assert.Equal(2, _store.RefCounts.GetCount(b)); // A.Left + snap2 root pin
 
         // Release snapshot 1 — A freed, B survives via snap2 pin
-        snap1.Release();
+        _store.ReleaseSnapshotSlice(snap1);
 
         this.AssertNodeDead(a);
         Assert.Equal(1, _store.RefCounts.GetCount(b)); // snap2 root pin only
@@ -336,7 +334,7 @@ public class SnapshotLifecycleTests
         this.AssertNodeAlive(d);
 
         // Release snapshot 2 — B/C/D all freed
-        snap2.Release();
+        _store.ReleaseSnapshotSlice(snap2);
 
         this.AssertNodeDead(b);
         this.AssertNodeDead(c);
@@ -356,29 +354,27 @@ public class SnapshotLifecycleTests
         var a = this.AllocNode(b, Handle<TreeNode>.None);
 
         // Snapshot 1: root = A (graph: A→B→C)
-        var snap1 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap1.AddRoot(a);
-        snap1.IncrementRootRefCounts();
-
+        var snap1Roots = new UnsafeList<Handle<TreeNode>>();
+        snap1Roots.Add(a);
+        var snap1 = _store.GetTestAccessor().BuildSnapshotSlice(snap1Roots);
         // Snapshot 2: root = B only — does NOT inherit A from snap1
-        var snap2 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap2.AddRoot(b);
-        snap2.IncrementRootRefCounts();
-
+        var snap2Roots = new UnsafeList<Handle<TreeNode>>();
+        snap2Roots.Add(b);
+        var snap2 = _store.GetTestAccessor().BuildSnapshotSlice(snap2Roots);
         Assert.Equal(1, snap1.Count);
         Assert.Equal(1, snap2.Count);
         Assert.Equal(a, snap1.Roots[0]);
         Assert.Equal(b, snap2.Roots[0]);
 
         // Release snap2 first: B loses snap2 pin (B: 2→1, still held by A.Left)
-        snap2.Release();
+        _store.ReleaseSnapshotSlice(snap2);
 
         this.AssertNodeAlive(a); // snap1 still pins A
         this.AssertNodeAlive(b); // still referenced by A.Left
         this.AssertNodeAlive(c); // still referenced by B.Left
 
         // Release snap1: A freed, cascades to B (1→0), cascades to C (1→0)
-        snap1.Release();
+        _store.ReleaseSnapshotSlice(snap1);
 
         this.AssertNodeDead(a);
         this.AssertNodeDead(b);
@@ -398,18 +394,15 @@ public class SnapshotLifecycleTests
         var b = this.AllocNode(c, Handle<TreeNode>.None);
         var a = this.AllocNode(b, Handle<TreeNode>.None);
 
-        var snap1 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap1.AddRoot(a);
-        snap1.IncrementRootRefCounts();
-
-        var snap2 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap2.AddRoot(b);
-        snap2.IncrementRootRefCounts();
-
-        var snap3 = new SnapshotSlice<TreeNode, TreeNodeOps>(_store, new UnsafeList<Handle<TreeNode>>());
-        snap3.AddRoot(c);
-        snap3.IncrementRootRefCounts();
-
+        var snap1Roots = new UnsafeList<Handle<TreeNode>>();
+        snap1Roots.Add(a);
+        var snap1 = _store.GetTestAccessor().BuildSnapshotSlice(snap1Roots);
+        var snap2Roots = new UnsafeList<Handle<TreeNode>>();
+        snap2Roots.Add(b);
+        var snap2 = _store.GetTestAccessor().BuildSnapshotSlice(snap2Roots);
+        var snap3Roots = new UnsafeList<Handle<TreeNode>>();
+        snap3Roots.Add(c);
+        var snap3 = _store.GetTestAccessor().BuildSnapshotSlice(snap3Roots);
         // A: RC=1(snap1), B: RC=3(A.Left + snap2 + ... wait)
         // Actually: B: RC=1(from A.Left) + 1(snap2 root) = 2
         // C: RC=1(from B.Left) + 1(snap3 root) = 2
@@ -418,18 +411,18 @@ public class SnapshotLifecycleTests
         Assert.Equal(2, _store.RefCounts.GetCount(c));
 
         // Release snap1: A freed, B: 2→1
-        snap1.Release();
+        _store.ReleaseSnapshotSlice(snap1);
         this.AssertNodeDead(a);
         Assert.Equal(1, _store.RefCounts.GetCount(b));
         Assert.Equal(2, _store.RefCounts.GetCount(c));
 
         // Release snap2: B freed, C: 2→1
-        snap2.Release();
+        _store.ReleaseSnapshotSlice(snap2);
         this.AssertNodeDead(b);
         Assert.Equal(1, _store.RefCounts.GetCount(c));
 
         // Release snap3: C freed
-        snap3.Release();
+        _store.ReleaseSnapshotSlice(snap3);
         this.AssertNodeDead(c);
     }
 
@@ -458,15 +451,17 @@ public class SnapshotLifecycleTests
                 if (i > 0)
                     currentRoot = PathCopyLeftSpineInStore(store, currentRoot, 3);
 
-                slices[i] = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-                slices[i].AddRoot(currentRoot);
-                slices[i].IncrementRootRefCounts();
+                var roots = new UnsafeList<Handle<TreeNode>>();
+                roots.Add(currentRoot);
+                slices[i] = store.GetTestAccessor().BuildSnapshotSlice(roots);
             }
 
-            foreach (var idx in perm)
-                slices[idx].Release();
+            var newestRoot = slices[3].Roots[0];
 
-            Assert.Equal(0, store.RefCounts.GetCount(slices[3].Roots[0]));
+            foreach (var idx in perm)
+                store.ReleaseSnapshotSlice(slices[idx]);
+
+            Assert.Equal(0, store.RefCounts.GetCount(newestRoot));
         }
     }
 

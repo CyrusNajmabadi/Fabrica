@@ -147,7 +147,7 @@ public class GamePipelineTests : IDisposable
         Assert.Equal(1, machineRoots.Count);
 
         // Increment root refcounts.
-        machineStore.IncrementRoots(machineRoots.WrittenSpan);
+        machineStore.GetTestAccessor().IncrementRoots(machineRoots.WrittenSpan);
 
         // ── Validate the DAG ─────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ public class GamePipelineTests : IDisposable
 
         // ── Cascade-free cleanup ─────────────────────────────────────────
 
-        machineStore.DecrementRoots(machineRoots.WrittenSpan);
+        machineStore.GetTestAccessor().DecrementRoots(machineRoots.WrittenSpan);
 
         // All arenas should be empty (high water stays, but all slots freed).
         // Verify refcounts are zero for all allocated nodes.

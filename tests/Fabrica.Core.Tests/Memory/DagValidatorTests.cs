@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -369,9 +369,7 @@ public class DagValidatorTests
         AssertValid(store, [root, newRoot]);
 
         // Release old root
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(root);
-        slice.Release();
+        store.GetTestAccessor().DecrementRoots([root]);
 
         AssertValid(store, [newRoot]);
     }
@@ -390,9 +388,7 @@ public class DagValidatorTests
             store.RefCounts.Increment(newRoot);
             AssertValid(store, [root, newRoot]);
 
-            var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-            slice.AddRoot(root);
-            slice.Release();
+            store.GetTestAccessor().DecrementRoots([root]);
 
             root = newRoot;
             AssertValid(store, [root]);
@@ -406,9 +402,7 @@ public class DagValidatorTests
         var root = BuildPerfectTree(store, 3);
         store.RefCounts.Increment(root);
 
-        var slice = new SnapshotSlice<TreeNode, TreeNodeOps>(store, new UnsafeList<Handle<TreeNode>>());
-        slice.AddRoot(root);
-        slice.Release();
+        store.GetTestAccessor().DecrementRoots([root]);
 
         AssertValid(store, []);
     }

@@ -89,7 +89,7 @@ public sealed class UnsafeList<T>(int initialCapacity = 16)
     [MethodImpl(MethodImplOptions.NoInlining)]
     private T[] Grow()
     {
-        var newArray = new T[_array.Length * 2];
+        var newArray = new T[Math.Max(_array.Length * 2, 4)];
         Array.Copy(_array, newArray, _array.Length);
         _array = newArray;
         return newArray;

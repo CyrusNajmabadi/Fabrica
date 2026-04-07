@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Memory;
 

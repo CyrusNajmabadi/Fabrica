@@ -1,4 +1,4 @@
-namespace Fabrica.Core.Memory;
+namespace Fabrica.Core.Memory.Nodes;
 
 /// <summary>
 /// Visitor callback invoked by <see cref="INodeOps{TNode}"/> for each child of a node.

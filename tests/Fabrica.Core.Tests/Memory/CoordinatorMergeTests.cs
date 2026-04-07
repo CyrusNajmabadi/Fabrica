@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -404,7 +405,7 @@ public class CoordinatorMergeTests
         Assert.Equal(0, roots[0].Index); // p0T0 → global 0
         Assert.Equal(2, roots[1].Index); // p1T1 → global 2
 
-        parentStore.IncrementRoots(roots);
+        parentStore.GetTestAccessor().IncrementRoots(roots);
 
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
@@ -414,8 +415,8 @@ public class CoordinatorMergeTests
     }
 
     /// <summary>
-    /// Verifies that after a full merge-and-root-increment cycle, <see cref="SnapshotSlice{TNode,TNodeOps}"/>
-    /// can decrement roots and cascade-free the entire graph, leaving all arenas empty.
+    /// Verifies that after a full merge-and-root-increment cycle, <see cref="GlobalNodeStore{TNode,TNodeOps}.ReleaseSnapshotSlice"/>
+    /// cascade-frees the entire graph, leaving all arenas empty.
     /// </summary>
     [Fact]
     public void EndToEnd_CascadeFree_AfterMerge()
@@ -450,13 +451,13 @@ public class CoordinatorMergeTests
         Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
 
-        parentStore.IncrementRoots(roots);
+        parentStore.GetTestAccessor().IncrementRoots(roots);
 
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
         Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
 
-        // Decrement roots — should cascade-free the entire graph
-        parentStore.DecrementRoots(roots);
+        // ReleaseSnapshotSlice — should cascade-free the entire graph
+        parentStore.GetTestAccessor().DecrementRoots(roots);
 
         Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
         Assert.Equal(0, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
@@ -467,7 +468,7 @@ public class CoordinatorMergeTests
     /// <summary>
     /// Verifies the post-Phase2b invariant: root nodes have RC=0 (only structural refcounts from
     /// children have been applied), while non-root nodes referenced by other nodes have RC>0.
-    /// After <see cref="GlobalNodeStore{TNode,TNodeOps}.IncrementRoots"/>, every root gains RC=1.
+    /// After <see cref="GlobalNodeStore{TNode,TNodeOps}.GetTestAccessor"/>.IncrementRoots, every root gains RC=1.
     ///
     /// Graph: root(parent[1]) → inner(parent[0]) → leaf(child[0])
     /// </summary>
@@ -515,7 +516,7 @@ public class CoordinatorMergeTests
         Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);
 
-        parentStore.IncrementRoots(roots);
+        parentStore.GetTestAccessor().IncrementRoots(roots);
 
         // After increment: root(1) now has RC=1, inner and leaf unchanged
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));

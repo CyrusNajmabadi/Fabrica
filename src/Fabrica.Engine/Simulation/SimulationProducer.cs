@@ -44,7 +44,7 @@ internal readonly struct SimulationProducer(
         //   2. Build the tick's job DAG (concrete Job subclasses that allocate nodes in TLBs).
         //   3. _scheduler.Submit(rootJob) — blocks until the entire DAG completes.
         //   4. store.DrainBuffers / store.RewriteAndIncrementRefCounts per type.
-        //   5. store.CollectAndRemapRoots + store.IncrementRoots per type.
+        //   5. store.BuildSnapshotSlice per type (collect/remap roots and pin refcounts).
         //   6. Populate SnapshotSlices on the WorldImage.
         //
         // The integration test in JobMergePipelineTests proves this pipeline end-to-end

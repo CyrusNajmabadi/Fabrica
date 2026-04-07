@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
@@ -72,7 +73,7 @@ public class GlobalNodeStoreTests
         Assert.Equal(0, store.RefCounts.GetCount(b));
         Assert.Equal(0, store.RefCounts.GetCount(c));
 
-        store.IncrementRoots([a, b, c]);
+        store.GetTestAccessor().IncrementRoots([a, b, c]);
 
         Assert.Equal(1, store.RefCounts.GetCount(a));
         Assert.Equal(1, store.RefCounts.GetCount(b));
@@ -85,9 +86,9 @@ public class GlobalNodeStoreTests
         var store = CreateStore();
         var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 0);
 
-        store.IncrementRoots([a]);
-        store.IncrementRoots([a]);
-        store.IncrementRoots([a]);
+        store.GetTestAccessor().IncrementRoots([a]);
+        store.GetTestAccessor().IncrementRoots([a]);
+        store.GetTestAccessor().IncrementRoots([a]);
 
         Assert.Equal(3, store.RefCounts.GetCount(a));
     }
@@ -109,7 +110,7 @@ public class GlobalNodeStoreTests
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
         var root = AllocNode(store, a, b, 0);
 
-        store.IncrementRoots([root]);
+        store.GetTestAccessor().IncrementRoots([root]);
 
         Assert.Equal(1, store.RefCounts.GetCount(root));
         Assert.Equal(1, store.RefCounts.GetCount(a));
@@ -117,7 +118,7 @@ public class GlobalNodeStoreTests
         Assert.Equal(1, store.RefCounts.GetCount(c));
         Assert.Equal(1, store.RefCounts.GetCount(d));
 
-        store.DecrementRoots([root]);
+        store.GetTestAccessor().DecrementRoots([root]);
 
         Assert.Equal(0, store.RefCounts.GetCount(root));
         Assert.Equal(0, store.RefCounts.GetCount(a));
@@ -143,20 +144,20 @@ public class GlobalNodeStoreTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        store.IncrementRoots([root1, root2]);
+        store.GetTestAccessor().IncrementRoots([root1, root2]);
 
         Assert.Equal(2, store.RefCounts.GetCount(a));
         Assert.Equal(1, store.RefCounts.GetCount(b));
         Assert.Equal(1, store.RefCounts.GetCount(c));
 
-        store.DecrementRoots([root1]);
+        store.GetTestAccessor().DecrementRoots([root1]);
 
         Assert.Equal(0, store.RefCounts.GetCount(root1));
         Assert.Equal(1, store.RefCounts.GetCount(a));
         Assert.Equal(1, store.RefCounts.GetCount(b));
         Assert.Equal(1, store.RefCounts.GetCount(c));
 
-        store.DecrementRoots([root2]);
+        store.GetTestAccessor().DecrementRoots([root2]);
 
         Assert.Equal(0, store.RefCounts.GetCount(root2));
         Assert.Equal(0, store.RefCounts.GetCount(a));
@@ -168,13 +169,13 @@ public class GlobalNodeStoreTests
     public void DecrementRoots_EmptySpanIsNoOp()
     {
         var store = CreateStore();
-        store.DecrementRoots([]);
+        store.GetTestAccessor().DecrementRoots([]);
     }
 
     [Fact]
     public void IncrementRoots_EmptySpanIsNoOp()
     {
         var store = CreateStore();
-        store.IncrementRoots([]);
+        store.GetTestAccessor().IncrementRoots([]);
     }
 }

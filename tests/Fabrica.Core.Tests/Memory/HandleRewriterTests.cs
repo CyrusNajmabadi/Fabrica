@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Fabrica.Core.Memory;
+using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;

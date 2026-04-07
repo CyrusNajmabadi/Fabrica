@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Memory;
 
@@ -28,12 +29,12 @@ public abstract class GlobalNodeStore
 ///   and decrement dispatch to the correct store per child type (<see cref="INodeVisitor.Visit{T}"/>).
 ///
 /// ROOT OPERATIONS
-///   <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> provide self-contained batch
-///   refcount updates for snapshot root sets.
+///   <see cref="BuildSnapshotSlice"/> increments root refcounts when creating a snapshot.
+///   <see cref="ReleaseSnapshotSlice"/> decrements root refcounts and cascades freed nodes.
 ///
 /// VALIDATION (DEBUG ONLY)
 ///   Call <see cref="TestAccessor.EnableValidation"/> in tests to activate automatic DAG invariant checking
-///   after every <see cref="IncrementRoots"/> and <see cref="DecrementRoots"/> call.
+///   after every root increment/decrement.
 ///
 /// CROSS-TYPE DAGS
 ///   For nodes that reference children stored in a different arena (a different <c>GlobalNodeStore</c>),
@@ -275,16 +276,15 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         => this.RewriteAndIncrementRefCounts(_lastDrainStart, _lastDrainCount, ref refcountVisitor);
 
     /// <summary>
-    /// Collects roots from thread-local buffers, builds a <see cref="SnapshotSlice{TNode, TNodeOps}"/>,
-    /// and increments root refcounts. Combines phases 3 and 4 of the merge pipeline into one call.
+    /// Collects roots from thread-local buffers, increments their refcounts (the snapshot now owns them),
+    /// and returns a <see cref="SnapshotSlice{TNode, TNodeOps}"/>. Combines phases 3 and 4 of the merge pipeline.
     /// </summary>
     public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
     {
         var roots = new UnsafeList<Handle<TNode>>();
         this.CollectAndRemapRoots(roots);
-        var slice = new SnapshotSlice<TNode, TNodeOps>(this, roots);
-        slice.IncrementRootRefCounts();
-        return slice;
+        this.IncrementRoots(roots.WrittenSpan);
+        return new SnapshotSlice<TNode, TNodeOps>(this, roots);
     }
 
     /// <summary>
@@ -316,21 +316,22 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     // ── Root operations ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Increments the refcount for each root handle. Called when a snapshot holding these roots is published.
-    /// The caller must have called <see cref="RefCountTable{T}.EnsureCapacity"/>
-    /// for the index range beforehand.
+    /// Releases a snapshot slice by decrementing root refcounts and cascading any that hit zero.
+    /// This is the counterpart to <see cref="BuildSnapshotSlice"/>.
     /// </summary>
-    public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
+    public void ReleaseSnapshotSlice(SnapshotSlice<TNode, TNodeOps> slice)
+    {
+        this.DecrementRoots(slice.Roots);
+        slice.Clear();
+    }
+
+    private void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         this.RefCounts.IncrementBatch(roots);
         this.TrackAndValidateAfterIncrement(roots);
     }
 
-    /// <summary>
-    /// Decrements the refcount for each root handle and cascades any that hit zero. Called when a
-    /// snapshot holding these roots is released (e.g., retired by the consumer after processing).
-    /// </summary>
-    public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
+    private void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots)
     {
         this.TrackBeforeDecrement(roots);
         Debug.Assert(!_cascadeActive, "DecrementRoots must not be called during an active cascade.");
@@ -468,6 +469,15 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
         [Conditional("DEBUG")]
         public void EnableValidation() => store.EnableValidation();
+
+        public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice(UnsafeList<Handle<TNode>> roots)
+        {
+            store.IncrementRoots(roots.WrittenSpan);
+            return new SnapshotSlice<TNode, TNodeOps>(store, roots);
+        }
+
+        public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.IncrementRoots(roots);
+        public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;

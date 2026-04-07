@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Collections.Unsafe;
+using Fabrica.Core.Memory.Nodes;
 
 namespace Fabrica.Core.Memory;
 
@@ -9,9 +9,11 @@ namespace Fabrica.Core.Memory;
 /// Holds the <see cref="Handle{T}"/> values that are roots for this node type in this snapshot.
 ///
 /// LIFECYCLE
-///   Build phase: call <see cref="AddRoot"/> for each root handle.
-///   Publish: call <see cref="IncrementRootRefCounts"/> — bumps refcounts so the snapshot "holds" its roots.
-///   Release: call <see cref="Release"/> — decrements root refcounts and cascades freed nodes.
+///   Created by <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/>, which increments
+///   root refcounts before handing off the slice. The slice is an ownership token: its roots are
+///   already pinned at construction time.
+///   Release: call <see cref="GlobalNodeStore{TNode,TNodeOps}.ReleaseSnapshotSlice"/> — decrements
+///   root refcounts and cascades freed nodes.
 ///
 /// ROOT SEMANTICS
 ///   Roots are per-snapshot. Each snapshot must explicitly declare its own root set — roots from prior
@@ -29,19 +31,17 @@ namespace Fabrica.Core.Memory;
 ///   In Rust: a struct holding a reference to the <c>GlobalNodeStore</c> and a <c>Vec&lt;Handle&gt;</c> for root handles.
 ///   In C++: same, with <c>std::vector&lt;Handle&gt;</c>.
 /// </summary>
-public readonly struct SnapshotSlice<TNode, TNodeOps>(GlobalNodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
+public readonly struct SnapshotSlice<TNode, TNodeOps>
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
-    private readonly GlobalNodeStore<TNode, TNodeOps> _store = store;
-    private readonly UnsafeList<Handle<TNode>> _rootHandles = rootHandles;
+    private readonly GlobalNodeStore<TNode, TNodeOps> _store;
+    private readonly UnsafeList<Handle<TNode>> _rootHandles;
 
-    /// <summary>Exposes the underlying list.</summary>
-    // Host may reset and return the list to a pool after release.
-    public UnsafeList<Handle<TNode>> RootHandles
+    internal SnapshotSlice(GlobalNodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _rootHandles;
+        _store = store;
+        _rootHandles = rootHandles;
     }
 
     /// <summary>Number of roots in this slice.</summary>
@@ -51,38 +51,13 @@ public readonly struct SnapshotSlice<TNode, TNodeOps>(GlobalNodeStore<TNode, TNo
         get => _rootHandles.Count;
     }
 
-    /// <summary>Returns a read-only span over the root handles. Valid until the next <see cref="AddRoot"/>.</summary>
+    /// <summary>Returns a read-only span over the root handles.</summary>
     public ReadOnlySpan<Handle<TNode>> Roots
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _rootHandles.WrittenSpan;
     }
 
-    /// <summary>Adds a handle as a root in this snapshot slice.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly void AddRoot(Handle<TNode> handle)
-    {
-        this.AssertOwnerThread();
-        _rootHandles.Add(handle);
-    }
-
-    /// <summary>Debug-only assertion that the caller is on the store's owner thread. Delegates to the
-    /// underlying <see cref="GlobalNodeStore{TNode, TNodeOps}"/> which maintains the thread-ownership tracking.</summary>
-    [Conditional("DEBUG")]
-    private readonly void AssertOwnerThread()
-        => _store.AssertOwnerThread();
-
-    /// <summary>
-    /// Increments the refcount of every root in this slice. Called when the snapshot is published.
-    /// After this call, each root's refcount reflects that this snapshot holds it.
-    /// </summary>
-    public void IncrementRootRefCounts()
-        => _store.IncrementRoots(this.Roots);
-
-    /// <summary>
-    /// Decrements the refcount of every root in this slice and cascades any that hit zero.
-    /// Called when the snapshot holding this slice is released.
-    /// </summary>
-    public void Release()
-        => _store.DecrementRoots(this.Roots);
+    /// <summary>Clears the root list so the slice cannot be double-released.</summary>
+    internal void Clear() => _rootHandles.Reset();
 }

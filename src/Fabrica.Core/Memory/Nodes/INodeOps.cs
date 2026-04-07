@@ -1,4 +1,4 @@
-namespace Fabrica.Core.Memory;
+namespace Fabrica.Core.Memory.Nodes;
 
 /// <summary>
 /// Unified operations interface for a single node type: structural knowledge (which fields are
