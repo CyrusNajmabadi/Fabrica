@@ -249,10 +249,10 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         var startIndex = _lastDrainStart;
         var count = _lastDrainCount;
 
+        var ops = _nodeOps;
         for (var i = 0; i < count; i++)
         {
             ref var node = ref this.Arena[new Handle<TNode>(startIndex + i)];
-            var ops = _nodeOps;
             ops.EnumerateRefChildren(ref node, ref ops);
         }
 
@@ -345,10 +345,10 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
         _cascadeActive = true;
 
+        var ops = _nodeOps;
         while (_cascadePending.TryPop(out var current))
         {
             ref readonly var node = ref this.Arena[current];
-            var ops = _nodeOps;
             ops.EnumerateChildren(in node, ref ops);
             this.Arena.Free(current);
         }
