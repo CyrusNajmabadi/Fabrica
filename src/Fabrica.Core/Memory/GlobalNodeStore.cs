@@ -18,8 +18,10 @@ public abstract class GlobalNodeStore
     internal abstract void ResetMergeState();
 
     /// <summary>
-    /// Set by <see cref="MergeCoordinator.MergeAll"/> after drain+rewrite completes, cleared by
-    /// <see cref="MergeCoordinator.MergeTransaction.Dispose"/>. Guards <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/>.
+    /// Set by <see cref="MergeCoordinator.MergeAll"/> before drain begins, cleared by
+    /// <see cref="MergeCoordinator.MergeTransaction.Dispose"/> after reset completes. Guards
+    /// <see cref="Drain"/>, <see cref="RewriteAndIncrementRefCounts"/>, <see cref="ResetMergeState"/>,
+    /// and <see cref="GlobalNodeStore{TNode,TNodeOps}.BuildSnapshotSlice"/>.
     /// </summary>
     internal bool IsMergeActive;
 }
@@ -252,6 +254,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     internal override void RewriteAndIncrementRefCounts()
     {
+        Debug.Assert(IsMergeActive, "RewriteAndIncrementRefCounts must be called within a MergeTransaction scope.");
         var startIndex = _lastDrainStart;
         var count = _lastDrainCount;
 
@@ -295,7 +298,11 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         }
     }
 
-    internal override void Drain() => this.DrainBuffers();
+    internal override void Drain()
+    {
+        Debug.Assert(IsMergeActive, "Drain must be called within a MergeTransaction scope.");
+        this.DrainBuffers();
+    }
 
     /// <summary>
     /// Resets all per-tick merge scratch state (thread-local buffers and remap table) so they
@@ -303,6 +310,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     internal override void ResetMergeState()
     {
+        Debug.Assert(IsMergeActive, "ResetMergeState must be called within a MergeTransaction scope.");
         foreach (var threadLocalBuffer in _threadLocalBuffers)
             threadLocalBuffer.Reset();
         _remap.Reset();
