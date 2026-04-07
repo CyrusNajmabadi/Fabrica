@@ -220,7 +220,8 @@ public class JobPoolTests
 
 #if DEBUG
         var stolen = false;
-        pool.DebugBeforeRentCas = () =>
+        var accessor = pool.GetTestAccessor();
+        accessor.DebugBeforeRentCas = () =>
         {
             if (!stolen)
             {
@@ -243,7 +244,8 @@ public class JobPoolTests
 
 #if DEBUG
         var injected = false;
-        pool.DebugBeforeReturnCas = () =>
+        var accessor = pool.GetTestAccessor();
+        accessor.DebugBeforeReturnCas = () =>
         {
             if (!injected)
             {
