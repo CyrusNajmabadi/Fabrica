@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using Fabrica.Core.Memory;
 using Fabrica.Core.Memory.Nodes;
 
-namespace Fabrica.Game.Nodes;
+namespace Fabrica.SampleGame.Nodes;
 
 /// <summary>
 /// Single struct implementing <see cref="INodeOps{TNode}"/> for all three game node types.

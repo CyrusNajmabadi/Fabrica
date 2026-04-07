@@ -1,9 +1,9 @@
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
-using Fabrica.Game.Jobs;
 using Fabrica.Pipeline;
+using Fabrica.SampleGame.Jobs;
 
-namespace Fabrica.Game;
+namespace Fabrica.SampleGame;
 
 /// <summary>
 /// Produces one <see cref="GameWorldImage"/> per tick by building and executing a job DAG,

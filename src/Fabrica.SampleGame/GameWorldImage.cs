@@ -1,7 +1,7 @@
 using Fabrica.Core.Memory;
-using Fabrica.Game.Nodes;
+using Fabrica.SampleGame.Nodes;
 
-namespace Fabrica.Game;
+namespace Fabrica.SampleGame;
 
 /// <summary>
 /// Game-specific payload: holds one <see cref="SnapshotSlice{TNode,TNodeOps}"/> per node type.

@@ -1,8 +1,8 @@
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
-using Fabrica.Game.Nodes;
+using Fabrica.SampleGame.Nodes;
 
-namespace Fabrica.Game.Jobs;
+namespace Fabrica.SampleGame.Jobs;
 
 /// <summary>
 /// Depends on <see cref="SpawnItemsJob"/>. Creates a singly-linked chain of

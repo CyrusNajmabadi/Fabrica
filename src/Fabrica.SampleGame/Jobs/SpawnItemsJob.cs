@@ -1,8 +1,8 @@
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
-using Fabrica.Game.Nodes;
+using Fabrica.SampleGame.Nodes;
 
-namespace Fabrica.Game.Jobs;
+namespace Fabrica.SampleGame.Jobs;
 
 /// <summary>
 /// Root of the job DAG (no dependencies). Allocates <see cref="ItemNode"/> instances in the

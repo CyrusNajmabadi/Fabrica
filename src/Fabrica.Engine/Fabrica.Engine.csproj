@@ -2,7 +2,7 @@
 	<ItemGroup>
 		<InternalsVisibleTo Include="Fabrica.ConsoleApp" />
 		<InternalsVisibleTo Include="Fabrica.Engine.Tests" />
-		<InternalsVisibleTo Include="Fabrica.Game.Tests" />
+		<InternalsVisibleTo Include="Fabrica.SampleGame.Tests" />
 	</ItemGroup>
 
 	<ItemGroup>

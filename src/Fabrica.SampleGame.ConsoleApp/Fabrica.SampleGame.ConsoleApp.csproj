@@ -4,6 +4,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Fabrica.Game\Fabrica.Game.csproj" />
+		<ProjectReference Include="..\Fabrica.SampleGame\Fabrica.SampleGame.csproj" />
 	</ItemGroup>
 </Project>

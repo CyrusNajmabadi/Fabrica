@@ -1,11 +1,11 @@
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
-using Fabrica.Game.Jobs;
-using Fabrica.Game.Nodes;
+using Fabrica.SampleGame.Jobs;
+using Fabrica.SampleGame.Nodes;
 using Xunit;
 
-namespace Fabrica.Game.Tests;
+namespace Fabrica.SampleGame.Tests;
 
 /// <summary>
 /// End-to-end integration test: creates all three stores, runs the 3-job DAG on real worker

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace Fabrica.Game.Nodes;
+namespace Fabrica.SampleGame.Nodes;
 
 /// <summary>
 /// Leaf node: a single item on a belt or in a machine's buffer. Has no children.

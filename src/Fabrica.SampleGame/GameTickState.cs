@@ -1,7 +1,7 @@
 using Fabrica.Core.Memory;
-using Fabrica.Game.Nodes;
+using Fabrica.SampleGame.Nodes;
 
-namespace Fabrica.Game;
+namespace Fabrica.SampleGame;
 
 /// <summary>
 /// Holds the per-tick mutable state shared across the producer and its jobs: node stores
