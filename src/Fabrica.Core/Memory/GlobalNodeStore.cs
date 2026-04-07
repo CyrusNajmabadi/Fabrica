@@ -42,7 +42,7 @@ namespace Fabrica.Core.Memory;
 ///   pointer or trait object. In C++: a class owning the arena + refcount table with a templated
 ///   handler.
 /// </summary>
-public sealed class GlobalNodeStore<TNode, TNodeOps>
+public sealed class GlobalNodeStore<TNode, TNodeOps> : IMergeParticipant
     where TNode : struct
     where TNodeOps : struct, INodeOps<TNode>
 {
@@ -59,6 +59,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
 
     private readonly ThreadLocalBuffer<TNode>[] _threadLocalBuffers;
     private readonly RemapTable _remap;
+    private int _lastDrainStart;
+    private int _lastDrainCount;
 
 #if DEBUG
     private Dictionary<Handle<TNode>, int>? _trackedRootCounts;
@@ -181,6 +183,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
 
         var count = this.Arena.HighWater - startIndex;
         this.RefCounts.EnsureCapacity(this.Arena.HighWater);
+        _lastDrainStart = startIndex;
+        _lastDrainCount = count;
 
         return (startIndex, count);
     }
@@ -219,6 +223,27 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
     }
 
     /// <summary>
+    /// Rewrites and increments refcounts for the range produced by the most recent
+    /// <see cref="DrainBuffers"/> call.
+    /// </summary>
+    public void RewriteAndIncrementRefCounts<TRefcountVisitor>(ref TRefcountVisitor refcountVisitor)
+        where TRefcountVisitor : struct, INodeVisitor
+        => this.RewriteAndIncrementRefCounts(_lastDrainStart, _lastDrainCount, ref refcountVisitor);
+
+    /// <summary>
+    /// Collects roots from thread-local buffers, builds a <see cref="SnapshotSlice{TNode, TNodeOps}"/>,
+    /// and increments root refcounts. Combines phases 3 and 4 of the merge pipeline into one call.
+    /// </summary>
+    public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice()
+    {
+        var roots = new UnsafeList<Handle<TNode>>();
+        this.CollectAndRemapRoots(roots);
+        var slice = new SnapshotSlice<TNode, TNodeOps>(this, roots);
+        slice.IncrementRootRefCounts();
+        return slice;
+    }
+
+    /// <summary>
     /// Collects root handles from all thread-local buffers into <paramref name="destination"/>,
     /// remapping local handles to global indices. Global handles pass through unchanged.
     /// </summary>
@@ -230,6 +255,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps>
                 destination.Add(_remap.Remap(handle));
         }
     }
+
+    void IMergeParticipant.Drain() => this.DrainBuffers();
 
     /// <summary>
     /// Resets all per-tick merge scratch state (thread-local buffers and remap table) so they
