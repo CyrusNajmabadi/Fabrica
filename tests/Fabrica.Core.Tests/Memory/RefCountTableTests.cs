@@ -11,7 +11,7 @@ public class RefCountTableTests
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private static RefCountTable<DummyNode> CreateTinyTable(int directoryLength = 4, int slabShift = 2)
-        => new(directoryLength, slabShift);
+        => RefCountTable<DummyNode>.TestAccessor.Create(directoryLength, slabShift);
 
     /// <summary>
     /// Test-only helper that wraps a <see cref="RefCountTable{T}"/> with cascade behavior.
@@ -322,7 +322,7 @@ public class RefCountTableTests
     public void CascadeDecrement_LinearChain_FreesAll()
     {
         const int ChainLength = 100;
-        var table = new RefCountTable<DummyNode>(directoryLength: 4, slabShift: 5);
+        var table = RefCountTable<DummyNode>.TestAccessor.Create(directoryLength: 4, slabShift: 5);
         table.EnsureCapacity(ChainLength);
         var freed = new List<int>();
 

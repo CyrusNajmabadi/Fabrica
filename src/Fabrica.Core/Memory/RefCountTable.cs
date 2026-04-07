@@ -51,9 +51,7 @@ internal sealed class RefCountTable<T> where T : struct
     {
     }
 
-    /// <summary>Creates a table with caller-specified directory length and slab shift. Intended for tests that need
-    /// small parameters to exercise edge cases without allocating large amounts of memory.</summary>
-    internal RefCountTable(int directoryLength, int slabShift)
+    private RefCountTable(int directoryLength, int slabShift)
         => _directory = new UnsafeSlabDirectory<int>(directoryLength, slabShift);
 
     // ── Thread ownership ──────────────────────────────────────────────────
@@ -149,6 +147,8 @@ internal sealed class RefCountTable<T> where T : struct
 
     internal readonly struct TestAccessor(RefCountTable<T> table)
     {
+        public static RefCountTable<T> Create(int directoryLength, int slabShift) => new(directoryLength, slabShift);
+
         public int[][] Directory => table._directory.RawArray;
         public int DirectoryLength => table._directory.DirectoryLength;
         public int SlabLength => table._directory.SlabLength;
