@@ -369,14 +369,17 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
         {
             var srcIdx = (first + i) & Mask;
             var dstIdx = (dstTail + i) & Mask;
-            // Interlocked.Exchange: atomically reads the slot and nulls it for GC. The
-            // claimed range [steal, steal+n) is exclusively ours (Phase 1 CAS), and the
-            // owner cannot push to these slots because steal != real forces the overflow
-            // path. The full fence also ensures we see the value the owner wrote during
-            // push (paired with Volatile.Write of _tail).
-            // Plain write to destination: destination._tail hasn't been advanced yet, so
-            // no thread can see these slots.
-            destination._buffer[dstIdx] = Interlocked.Exchange(ref _buffer[srcIdx], null);
+            // Plain read + null: the claimed range [steal, steal+n) is exclusively ours
+            // (Phase 1 CAS). The owner cannot push to these slots (steal != real forces
+            // overflow) or pop them (TryPop advances real, which is beyond our range).
+            // No other thief can start (steal != real causes early return).
+            // The Phase 1 CAS provides a full fence (acquire-release on ARM64) ensuring
+            // we see the values the owner wrote before advancing _tail. Matches Tokio's
+            // ptr::read (plain read) in the equivalent Rust code.
+            // Null for GC: safe because no thread reads these slots until Phase 2
+            // completes and new pushes overwrite them.
+            destination._buffer[dstIdx] = _buffer[srcIdx]!;
+            _buffer[srcIdx] = null;
         }
 
         // ── Phase 2: Complete ───────────────────────────────────────────────

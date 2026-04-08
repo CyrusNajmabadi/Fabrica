@@ -40,6 +40,17 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, InjectionQ
     /// </summary>
     internal JobScheduler? CurrentScheduler;
 
+    // ── Instrumentation ──────────────────────────────────────────────────
+
+    /// <summary>How the most recent job was obtained. Always set (branch-free); only read when instrumented.</summary>
+    internal JobSource LastJobSource;
+
+    /// <summary>Pre-allocated per-worker buffer. Non-null when instrumentation is active.</summary>
+    internal SchedulerRecord[]? InstrumentRecords;
+
+    /// <summary>Number of records written so far in the current instrumentation session.</summary>
+    internal int InstrumentRecordCount;
+
     /// <summary>
     /// Pushes a ready-to-execute sub-job onto this worker's deque. The sub-job is automatically
     /// stamped with the currently executing job's scheduler, and that scheduler's outstanding count
