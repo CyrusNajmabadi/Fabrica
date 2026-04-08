@@ -217,9 +217,9 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
 
     /// <summary>
     /// Pops an item. Checks the LIFO slot first (no CAS, cache-hot). Falls back to CAS-popping
-    /// from the ring buffer head.
+    /// from the ring buffer head. Returns <c>null</c> if the queue is empty.
     /// </summary>
-    public bool TryPop(out T item)
+    public T? TryPop()
     {
         _owner.AssertOwnerThread();
 
@@ -227,10 +227,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
         // TryStealHalf). Atomic swap ensures exactly one thread gets the item.
         var lifo = Interlocked.Exchange(ref _lifoSlot, null);
         if (lifo != null)
-        {
-            item = lifo;
-            return true;
-        }
+            return lifo;
 
         // Volatile.Read: acquire fence to see the latest _head from thieves' CAS
         // operations. Loaded once before the loop; updated from CAS return on retry.
@@ -243,10 +240,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
             var tail = _tail;
 
             if (real == tail)
-            {
-                item = default!;
-                return false;
-            }
+                return null;
 
             // If no steal in progress (steal == real), advance both cursors together.
             // If a steal is in progress (steal != real), advance only real — the stealer
@@ -261,7 +255,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
             // After the CAS frees this slot, a concurrent push could immediately reuse
             // the physical index (ring wraps). Reading first captures the value while
             // the full-ring invariant still protects the slot.
-            var value = _buffer[real & Mask]!;
+            var value = _buffer[real & Mask];
 
             // CAS: atomically advance real (and steal if no steal in progress).
             // Serializes with thieves' CAS on the same _head. If a thief moved _head
@@ -273,8 +267,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
                 // slot. No thief can read it (they'd need to CAS _head which now
                 // points beyond this index). Next push will overwrite it anyway.
                 _buffer[real & Mask] = null;
-                item = value;
-                return true;
+                return value;
             }
 
             head = prev;
@@ -286,8 +279,9 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
     /// <summary>
     /// Steals approximately half the items, placing them in <paramref name="destination"/> and
     /// returning one item directly. Uses the two-phase CAS protocol (see class doc).
+    /// Returns <c>null</c> if nothing was available to steal.
     /// </summary>
-    public bool TryStealHalf(BoundedLocalQueue<T> destination, out T firstItem)
+    public T? TryStealHalf(BoundedLocalQueue<T> destination)
     {
         destination._owner.AssertOwnerThread();
 
@@ -299,10 +293,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
         // thief could have concurrently stolen from the destination, advancing its head.
         var (dstSteal, _) = Unpack(Volatile.Read(ref destination._head));
         if (Distance(dstTail, dstSteal) > QueueCapacity / 2)
-        {
-            firstItem = default!;
-            return false;
-        }
+            return null;
 
         // Volatile.Read: acquire fence to see the latest source _head. The owner or
         // another thief may have CAS'd it. Loaded once; updated from CAS return on retry.
@@ -318,10 +309,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
             var (srcSteal, srcReal) = Unpack(prevPacked);
 
             if (srcSteal != srcReal)
-            {
-                firstItem = default!;
-                return false;
-            }
+                return null;
 
             // Volatile.Read: acquire fence to see the latest _tail written by the owner.
             // The owner's Volatile.Write(_tail) pairs with this read, ensuring we see
@@ -333,15 +321,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
             {
                 // Interlocked: owner may concurrently write _lifoSlot via Push. Atomic
                 // swap ensures exactly one thread (owner or thief) gets the item.
-                var lifo = Interlocked.Exchange(ref _lifoSlot, null);
-                if (lifo != null)
-                {
-                    firstItem = lifo;
-                    return true;
-                }
-
-                firstItem = default!;
-                return false;
+                return Interlocked.Exchange(ref _lifoSlot, null);
             }
 
             n = available - (available / 2);
@@ -414,7 +394,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
         // destination._tail hasn't been advanced, so no other thread can see these slots.
         n -= 1;
         var retIdx = (dstTail + n) & Mask;
-        firstItem = destination._buffer[retIdx]!;
+        var firstItem = destination._buffer[retIdx];
         destination._buffer[retIdx] = null;
 
         if (n > 0)
@@ -424,7 +404,7 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
             // destination, guaranteeing they see the copied items.
             Volatile.Write(ref destination._tail, dstTail + n);
 
-        return true;
+        return firstItem;
     }
 
     // ═══════════════════════════ DIAGNOSTICS ═════════════════════════════════

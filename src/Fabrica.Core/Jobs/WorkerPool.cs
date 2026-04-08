@@ -416,7 +416,8 @@ public sealed class WorkerPool : IDisposable
     {
         // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
         // queue — cold, after local and peer deques (JobScheduler.Submit enqueues via Inject).
-        if (context.Deque.TryPop(out var job))
+        var job = context.Deque.TryPop();
+        if (job != null)
         {
             context.LastJobSource = JobSource.Local;
             this.ExecuteJob(job, context);
@@ -444,7 +445,8 @@ public sealed class WorkerPool : IDisposable
             // returning one item for immediate execution. The remaining stolen items
             // become available via our own TryPop on subsequent iterations, avoiding
             // repeated cross-core steal overhead.
-            if (target.Deque.TryStealHalf(context.Deque, out var job))
+            var job = target.Deque.TryStealHalf(context.Deque);
+            if (job != null)
             {
                 context.LastJobSource = JobSource.Steal;
                 this.ExecuteJob(job, context);
@@ -457,7 +459,8 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        if (_injectionQueue.TryDequeue(out var job))
+        var job = _injectionQueue.TryDequeue();
+        if (job != null)
         {
             context.LastJobSource = JobSource.Injection;
             this.ExecuteJob(job, context);

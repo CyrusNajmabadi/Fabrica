@@ -29,10 +29,11 @@ public class BoundedLocalQueueStressTests
                 var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                 while (!ownerDone.IsSet || !queue.IsEmpty)
                 {
-                    if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                    var firstItem = queue.TryStealHalf(thiefDeque);
+                    if (firstItem != null)
                     {
                         stolen.Add(firstItem.Value);
-                        while (thiefDeque.TryPop(out var local))
+                        for (var local = thiefDeque.TryPop(); local != null; local = thiefDeque.TryPop())
                             stolen.Add(local.Value);
                     }
                     else
@@ -86,10 +87,11 @@ public class BoundedLocalQueueStressTests
                 var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                 while (!ownerDone.IsSet || !queue.IsEmpty)
                 {
-                    if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                    var firstItem = queue.TryStealHalf(thiefDeque);
+                    if (firstItem != null)
                     {
                         stolen.Add(firstItem.Value);
-                        while (thiefDeque.TryPop(out var local))
+                        for (var local = thiefDeque.TryPop(); local != null; local = thiefDeque.TryPop())
                             stolen.Add(local.Value);
                     }
                     else
@@ -112,11 +114,14 @@ public class BoundedLocalQueueStressTests
         {
             queue.Push(new Box(i));
 
-            if (i % popEveryN == 0 && queue.TryPop(out var item))
-                ownerPopped.Add(item.Value);
+            if (i % popEveryN == 0)
+            {
+                var item = queue.TryPop();
+                if (item != null) ownerPopped.Add(item.Value);
+            }
         }
 
-        while (queue.TryPop(out var remaining))
+        for (var remaining = queue.TryPop(); remaining != null; remaining = queue.TryPop())
             ownerPopped.Add(remaining.Value);
 
         ownerDone.Set();
@@ -157,10 +162,11 @@ public class BoundedLocalQueueStressTests
                     var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
-                            while (thiefDeque.TryPop(out var local))
+                            for (var local = thiefDeque.TryPop(); local != null; local = thiefDeque.TryPop())
                                 bag.Add(local.Value);
                         }
                         else
@@ -184,11 +190,14 @@ public class BoundedLocalQueueStressTests
         {
             queue.Push(new Box(i));
 
-            if (i % popEveryN == 0 && queue.TryPop(out var item))
-                ownerPopped.Add(item.Value);
+            if (i % popEveryN == 0)
+            {
+                var item = queue.TryPop();
+                if (item != null) ownerPopped.Add(item.Value);
+            }
         }
 
-        while (queue.TryPop(out var remaining))
+        for (var remaining = queue.TryPop(); remaining != null; remaining = queue.TryPop())
             ownerPopped.Add(remaining.Value);
 
         ownerDone.Set();
@@ -228,10 +237,11 @@ public class BoundedLocalQueueStressTests
                 {
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
-                            while (thiefDeque.TryPop(out var local))
+                            for (var local = thiefDeque.TryPop(); local != null; local = thiefDeque.TryPop())
                                 bag.Add(local.Value);
                         }
                         else
@@ -295,10 +305,11 @@ public class BoundedLocalQueueStressTests
                 {
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
-                            while (thiefDeque.TryPop(out var local))
+                            for (var local = thiefDeque.TryPop(); local != null; local = thiefDeque.TryPop())
                                 bag.Add(local.Value);
                         }
                         else
@@ -322,11 +333,14 @@ public class BoundedLocalQueueStressTests
         {
             queue.Push(new Box(i));
 
-            if (i % popEveryN == 0 && queue.TryPop(out var item))
-                ownerPopped.Add(item.Value);
+            if (i % popEveryN == 0)
+            {
+                var item = queue.TryPop();
+                if (item != null) ownerPopped.Add(item.Value);
+            }
         }
 
-        while (queue.TryPop(out var remaining))
+        for (var remaining = queue.TryPop(); remaining != null; remaining = queue.TryPop())
             ownerPopped.Add(remaining.Value);
 
         ownerDone.Set();
@@ -367,10 +381,11 @@ public class BoundedLocalQueueStressTests
                 {
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
-                            while (thiefDeque.TryPop(out var local))
+                            for (var local = thiefDeque.TryPop(); local != null; local = thiefDeque.TryPop())
                                 bag.Add(local.Value);
                         }
                         else
@@ -394,11 +409,12 @@ public class BoundedLocalQueueStressTests
         {
             queue.Push(new Box(i));
 
-            if (queue.TryPop(out var item))
+            var item = queue.TryPop();
+            if (item != null)
                 ownerPopped.Add(item.Value);
         }
 
-        while (queue.TryPop(out var remaining))
+        for (var remaining = queue.TryPop(); remaining != null; remaining = queue.TryPop())
             ownerPopped.Add(remaining.Value);
 
         ownerDone.Set();
