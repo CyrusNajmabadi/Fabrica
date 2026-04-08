@@ -65,7 +65,7 @@ namespace Fabrica.Core.Jobs;
 ///     - If numSearching > 0: do nothing. A searching worker will find the work on its next
 ///       <see cref="TryExecuteOne"/> call.
 ///     - If numSearching == 0 and numUnparked &lt; _backgroundWorkerCount: wake exactly ONE parked
-///       worker by popping from <see cref="_sleepers"/> and setting its event.
+///       worker by popping from <see cref="_sleepersArray"/> and setting its event.
 ///
 ///   When a worker finds work and leaves searching (<see cref="TransitionFromSearching"/>):
 ///     - If it was the last searcher (numSearching was 1), call <see cref="TryWakeOneWorker"/>
@@ -78,7 +78,7 @@ namespace Fabrica.Core.Jobs;
 ///   The announce-then-recheck pattern is preserved:
 ///
 ///   Before parking, the worker decrements numUnparked in <see cref="_idleState"/> (announce) and
-///   pushes itself to <see cref="_sleepers"/>, then rechecks <see cref="TryExecuteOne"/>. If a
+///   pushes itself to <see cref="_sleepersArray"/>, then rechecks <see cref="TryExecuteOne"/>. If a
 ///   producer published work before the recheck, the worker finds it and undoes the park. If a
 ///   producer publishes work after the recheck, it sees numSearching == 0 and numUnparked &lt; total,
 ///   pops from _sleepers, and wakes the worker via its event.
