@@ -280,23 +280,15 @@ public sealed class WorkerPool : IDisposable
 
     /// <summary>
     /// Enqueues a job into the global injection queue and wakes a parked worker.
-    ///
-    /// <para>
-    /// The queue is an intrusive singly-linked list: <see cref="_globalQueueHead"/> points to the
-    /// oldest job (dequeue end), <see cref="_globalQueueTail"/> to the newest (enqueue end), linked
-    /// via <see cref="Job.NextInQueue"/>. All mutations are under <see cref="_globalQueueLock"/>.
-    /// </para>
-    ///
-    /// <para>
-    /// <c>NextInQueue</c> is cleared before acquiring the lock to ensure the job is not still
-    /// chained from a previous queue residence. Inside the lock, the critical section is two
-    /// pointer writes (append to tail). After releasing the lock, we call
-    /// <see cref="NotifyWorkAvailable"/> to wake a parked worker if no searcher is active.
-    /// </para>
     /// </summary>
     internal void Inject(Job job)
     {
+        // Clear NextInQueue before enqueuing — the job may still be chained from a previous
+        // queue residence if it was recycled without going through TryDequeueInjected.
         job.NextInQueue = null;
+
+        // Intrusive singly-linked list: _globalQueueHead is the dequeue end, _globalQueueTail
+        // is the enqueue end. The critical section is two pointer writes (append to tail).
         lock (_globalQueueLock)
         {
             if (_globalQueueTail != null)
@@ -447,32 +439,33 @@ public sealed class WorkerPool : IDisposable
         Interlocked.Add(ref _idleState, -SearchingBit);
     }
 
-    /// <summary>
-    /// Transitions a worker from searching to running after finding work. If this worker was the
-    /// last searcher, cascade-wakes one parked worker to maintain the search chain.
-    /// </summary>
     private void TransitionFromSearching(WorkerContext context)
     {
         if (!context.IsSearching)
             return;
 
         context.IsSearching = false;
+
+        // Atomically decrement numSearching. Interlocked.Add returns the value BEFORE the
+        // operation, so if the old numSearching was 1, we were the last searcher.
         var prev = Interlocked.Add(ref _idleState, -SearchingBit);
         var wasLastSearcher = NumSearching(prev) == 1;
 
+        // Cascade wake: if we were the last searcher, wake one parked worker so at least one
+        // thread is always searching while surplus work exists. The chain stops naturally when
+        // a woken worker searches and finds nothing (it doesn't cascade-wake).
         if (wasLastSearcher)
             this.TryWakeOneWorker();
     }
 
-    /// <summary>
-    /// Transitions a worker to Parked state. ORDERING IS CRITICAL: push to sleeper stack first
-    /// (under lock), then decrement <c>numUnparked</c>. A concurrent <see cref="TryWakeOneWorker"/>
-    /// that observes the decremented count is guaranteed to find our index on the stack. Reversing
-    /// this order opens a lost-wake window (producer sees numUnparked &lt; total, pops empty stack).
-    /// </summary>
     private void TransitionToParked(WorkerContext context)
     {
         Debug.Assert(!context.IsSearching);
+
+        // ORDERING IS CRITICAL: push to the sleeper stack BEFORE decrementing numUnparked.
+        // A concurrent TryWakeOneWorker that observes the decremented count is guaranteed to
+        // find our index on the stack. Reversing this order opens a lost-wake window: producer
+        // sees numUnparked < total, pops from an empty stack, and nobody gets woken.
         lock (_sleepersLock)
         {
             _sleepersArray[_sleepersCount++] = context.WorkerIndex;
@@ -484,35 +477,23 @@ public sealed class WorkerPool : IDisposable
     private void TransitionFromParked() =>
         Interlocked.Add(ref _idleState, UnparkedBit);
 
-    /// <summary>
-    /// Wakes at most one parked worker if no worker is currently searching. This is the core of
-    /// Tokio's "notify then search" pattern: a searching worker will find new work on its own, so
-    /// waking a parked worker would be wasteful.
-    ///
-    /// <para>
-    /// The <see cref="Volatile.Read"/> of <c>_idleState</c> is intentionally outside the lock.
-    /// This is a speculative check: if searching workers exist or all workers are unparked, we
-    /// skip the lock entirely. The check can race (a searcher may park between our read and a
-    /// hypothetical lock acquisition), but that is safe — the announce-then-recheck protocol in
-    /// <see cref="RunWorker"/> ensures the parking worker will recheck for work before blocking.
-    /// </para>
-    ///
-    /// <para>
-    /// Inside the lock, we pop the most recently parked worker (LIFO — warmest caches). After
-    /// releasing the lock, we increment both <c>numUnparked</c> and <c>numSearching</c> atomically.
-    /// The woken worker will enter the Running phase and call <see cref="TransitionFromSearching"/>
-    /// when it finds work, which may cascade-wake another parked worker if it was the last searcher.
-    /// </para>
-    /// </summary>
     private void TryWakeOneWorker()
     {
+        // Speculative check outside the lock: if any worker is already searching, it will find
+        // the new work on its next TryExecuteOne call — no need to wake a parked worker.
+        // This can race (a searcher may park between our read and the lock), but that is safe:
+        // the announce-then-recheck protocol in RunWorker ensures the parking worker rechecks
+        // for work before blocking on its ManualResetEventSlim.
         var state = Volatile.Read(ref _idleState);
         if (NumSearching(state) > 0)
             return;
 
+        // All workers are either running (not searching) or parked. If everyone is already
+        // unparked, there's nobody to wake.
         if (NumUnparked(state) >= _backgroundWorkerCount)
             return;
 
+        // Pop the most recently parked worker (LIFO — warmest caches).
         int workerIndex;
         lock (_sleepersLock)
         {
@@ -522,6 +503,10 @@ public sealed class WorkerPool : IDisposable
             workerIndex = _sleepersArray[--_sleepersCount];
         }
 
+        // Mark the woken worker as both unparked and searching atomically, then signal its
+        // event. The worker will enter Running, and when it finds work it calls
+        // TransitionFromSearching — which may cascade-wake another parked worker if it was
+        // the last searcher.
         Interlocked.Add(ref _idleState, UnparkedBit | SearchingBit);
         _workerEvents[workerIndex].Set();
     }
@@ -548,16 +533,12 @@ public sealed class WorkerPool : IDisposable
         return this.TryDequeueInjected(context);
     }
 
-    /// <summary>
-    /// Scans all peer deques starting from a random offset (to avoid herding) and attempts a
-    /// steal-half from the first non-empty victim. Steal-half transfers ~half the victim's items
-    /// into this worker's deque (see WORK STEALING: STEAL-HALF DISTRIBUTION above), returning
-    /// the first stolen item for immediate execution. The random start index is generated by a
-    /// per-worker <see cref="WorkerContext.StealRand"/> PRNG to distribute contention evenly.
-    /// </summary>
     private bool TryStealAndExecute(WorkerContext context)
     {
         var count = _allContexts.Length;
+
+        // Random start offset avoids herding: without it, all idle workers would scan from
+        // index 0 and contend on the same victim's deque CAS.
         var start = (int)context.StealRand.NextN((uint)count);
 
         for (var i = 0; i < count; i++)
@@ -566,6 +547,9 @@ public sealed class WorkerPool : IDisposable
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
+            // TryStealHalf takes ~half the victim's items and places them in our deque,
+            // returning the first for immediate execution. This gives logarithmic fan-out
+            // at phase barriers instead of linear (see WORK STEALING in class doc).
             if (target.Deque.TryStealHalf(context.Deque, out var job))
             {
                 this.ExecuteJob(job, context);
@@ -576,32 +560,30 @@ public sealed class WorkerPool : IDisposable
         return false;
     }
 
-    /// <summary>
-    /// Dequeues one job from the global injection queue. The plain read of <c>_globalQueueHead</c>
-    /// is a lock-free fast path: if the queue appears empty, we skip acquiring
-    /// <see cref="_globalQueueLock"/> entirely. This is intentionally NOT a <see cref="Volatile.Read"/>
-    /// — the load-acquire fence measurably increases latency and variance on ARM64. A stale null
-    /// read is harmless: the worker simply continues its steal loop and discovers the injected work
-    /// on the next <see cref="TryExecuteOne"/> call (or another worker finds it first). Inside the
-    /// lock, a second null check handles the race where another worker drained the queue between
-    /// the fast-path check and lock acquisition.
-    /// </summary>
     private bool TryDequeueInjected(WorkerContext context)
     {
+        // Lock-free fast path: if the queue appears empty, skip the lock entirely.
+        // Intentionally NOT Volatile.Read — the load-acquire fence measurably regresses latency
+        // and variance on ARM64. A stale null read is harmless: the worker retries on the next
+        // TryExecuteOne call (or another worker finds the work first).
         if (_globalQueueHead == null)
             return false;
 
         Job? job;
         lock (_globalQueueLock)
         {
+            // Double-check under lock: another worker may have drained the queue between our
+            // fast-path read and lock acquisition.
             job = _globalQueueHead;
             if (job == null)
                 return false;
 
+            // Unlink head. If this was the last item, null out the tail too.
             _globalQueueHead = job.NextInQueue;
             if (_globalQueueHead == null)
                 _globalQueueTail = null;
 
+            // Sever the link so the job isn't chained when it's next injected.
             job.NextInQueue = null;
         }
 
@@ -632,24 +614,6 @@ public sealed class WorkerPool : IDisposable
         context.CurrentScheduler = null;
     }
 
-    /// <summary>
-    /// After a job completes, atomically decrements <see cref="Job.RemainingDependencies"/> on each
-    /// dependent. Any dependent that reaches zero is pushed onto this worker's local deque (LIFO,
-    /// cache-hot). This is the primary fan-out mechanism: after a barrier job completes, all N jobs
-    /// in the next phase are pushed to a single worker's deque, then redistributed via steal-half.
-    ///
-    /// <para>
-    /// <see cref="Interlocked.Decrement"/> on <c>RemainingDependencies</c> is the linearization
-    /// point: exactly one thread (the one whose decrement yields zero) readies each dependent.
-    /// No lock is needed because each dependent's counter is independent.
-    /// </para>
-    ///
-    /// <para>
-    /// After pushing readied jobs, we call <see cref="TryWakeOneWorker"/> to cascade-wake a parked
-    /// worker if needed. We call it once regardless of how many jobs were readied — the woken worker
-    /// will steal half the batch, and if it was the last searcher, it will cascade-wake another.
-    /// </para>
-    /// </summary>
     private void PropagateCompletion(Job job, WorkerContext context)
     {
         if (job.Dependents is not { Count: > 0 } dependents)
@@ -661,6 +625,10 @@ public sealed class WorkerPool : IDisposable
         for (var i = 0; i < dependents.Count; i++)
         {
             var dependent = dependents[i];
+
+            // Interlocked.Decrement is the linearization point: exactly one thread (the one
+            // whose decrement yields zero) readies each dependent. No lock needed — each
+            // dependent's counter is independent.
             var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
             Debug.Assert(remaining >= 0);
             if (remaining != 0)
@@ -672,10 +640,17 @@ public sealed class WorkerPool : IDisposable
 #endif
             dependent.Scheduler = scheduler;
             scheduler.IncrementOutstanding();
+
+            // Push to our local deque (LIFO, cache-hot). After a barrier completes, this is
+            // how all N next-phase jobs land on a single worker's deque — peers redistribute
+            // via steal-half.
             context.Deque.Push(dependent);
             readied++;
         }
 
+        // Wake one parked worker if needed. We call once regardless of how many jobs were
+        // readied — the woken worker steals half the batch, and if it was the last searcher,
+        // TransitionFromSearching cascade-wakes another.
         if (readied > 0)
             this.TryWakeOneWorker();
     }
