@@ -55,19 +55,23 @@ internal readonly struct InjectionQueue<T>()
         }
     }
 
-    /// <summary>
-    /// Drains all items into a list (LIFO order — most recently enqueued first).
-    /// Intended for tests and diagnostics.
-    /// </summary>
-    internal List<T> DrainToList()
-    {
-        var result = new List<T>();
-        using (_lock.EnterScope())
-        {
-            while (_stack.TryPop(out var item))
-                result.Add(item);
-        }
+    internal TestAccessor GetTestAccessor() => new(this);
 
-        return result;
+    internal readonly struct TestAccessor(InjectionQueue<T> queue)
+    {
+        /// <summary>
+        /// Drains all items into a list (LIFO order — most recently enqueued first).
+        /// </summary>
+        public List<T> DrainToList()
+        {
+            var result = new List<T>();
+            using (queue._lock.EnterScope())
+            {
+                while (queue._stack.TryPop(out var item))
+                    result.Add(item);
+            }
+
+            return result;
+        }
     }
 }

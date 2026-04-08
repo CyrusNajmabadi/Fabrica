@@ -483,7 +483,7 @@ public class BoundedLocalQueueTests
         // DrainToList returns LIFO order (most recently pushed first).
         // The overflow path pushes: item-0, item-1, ..., item-127, item-{cap}.
         // So drain yields: item-{cap}, item-127, ..., item-0.
-        var overflowed = overflow.DrainToList();
+        var overflowed = overflow.GetTestAccessor().DrainToList();
         Assert.Equal($"item-{cap}", overflowed[0]);
         for (var i = 1; i < overflowed.Count; i++)
             Assert.Equal($"item-{(cap / 2) - i}", overflowed[i]);
@@ -526,7 +526,7 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var item))
             popped.Add(item);
 
-        var all = new HashSet<string>(overflow.DrainToList());
+        var all = new HashSet<string>(overflow.GetTestAccessor().DrainToList());
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 
@@ -551,7 +551,7 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var remaining))
             popped.Add(remaining);
 
-        var all = new HashSet<string>(overflow.DrainToList());
+        var all = new HashSet<string>(overflow.GetTestAccessor().DrainToList());
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 

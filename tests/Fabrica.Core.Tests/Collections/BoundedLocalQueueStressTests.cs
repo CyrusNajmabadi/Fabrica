@@ -428,7 +428,7 @@ public class BoundedLocalQueueStressTests
         var all = new HashSet<int>(ownerPopped);
         foreach (var item in allStolen)
             Assert.True(all.Add(item), $"Duplicate item detected: {item}");
-        foreach (var item in overflow.DrainToList())
+        foreach (var item in overflow.GetTestAccessor().DrainToList())
             Assert.True(all.Add(item.Value), $"Duplicate item in overflow: {item.Value}");
 
         Assert.Equal(itemCount, all.Count);
