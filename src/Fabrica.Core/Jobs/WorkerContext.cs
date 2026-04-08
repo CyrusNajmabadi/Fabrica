@@ -17,7 +17,7 @@ namespace Fabrica.Core.Jobs;
 internal sealed class WorkerContext(WorkerPool pool, int workerIndex, InjectionQueue<Job> overflow)
 {
     internal readonly int WorkerIndex = workerIndex;
-    internal readonly BoundedLocalQueue<Job> Deque = new(overflow);
+    internal BoundedLocalQueue<Job> Deque = new(overflow);
 
     /// <summary>
     /// Per-worker PRNG for randomizing steal target selection. Seeded uniquely per worker via the

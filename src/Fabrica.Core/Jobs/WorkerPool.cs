@@ -445,7 +445,7 @@ public sealed class WorkerPool : IDisposable
             // returning one item for immediate execution. The remaining stolen items
             // become available via our own TryPop on subsequent iterations, avoiding
             // repeated cross-core steal overhead.
-            var job = target.Deque.TryStealHalf(context.Deque);
+            var job = target.Deque.TryStealHalf(ref context.Deque);
             if (job != null)
             {
                 context.LastJobSource = JobSource.Steal;
