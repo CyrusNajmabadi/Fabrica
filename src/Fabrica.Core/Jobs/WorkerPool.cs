@@ -418,6 +418,7 @@ public sealed class WorkerPool : IDisposable
         // queue — cold, after local and peer deques (JobScheduler.Submit enqueues via Inject).
         if (context.Deque.TryPop(out var job))
         {
+            context.LastJobSource = JobSource.Local;
             this.ExecuteJob(job, context);
             return true;
         }
@@ -445,6 +446,7 @@ public sealed class WorkerPool : IDisposable
             // repeated cross-core steal overhead.
             if (target.Deque.TryStealHalf(context.Deque, out var job))
             {
+                context.LastJobSource = JobSource.Steal;
                 this.ExecuteJob(job, context);
                 return true;
             }
@@ -455,9 +457,9 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        // Dequeue top-level jobs after exhausting local deque and peer steals (see TryExecuteOne).
         if (_injectionQueue.TryDequeue(out var job))
         {
+            context.LastJobSource = JobSource.Injection;
             this.ExecuteJob(job, context);
             return true;
         }
@@ -467,6 +469,11 @@ public sealed class WorkerPool : IDisposable
 
     private void ExecuteJob(Job job, WorkerContext context)
     {
+        var records = context.InstrumentRecords;
+        long obtainedTs = 0;
+        if (records != null)
+            obtainedTs = Stopwatch.GetTimestamp();
+
         var scheduler = job.Scheduler!;
         context.CurrentScheduler = scheduler;
 
@@ -480,18 +487,34 @@ public sealed class WorkerPool : IDisposable
         job.State = JobState.Completed;
 #endif
 
-        // SCHEDULING MODEL: after Execute, decrement dependents' RemainingDependencies; any that reach zero are pushed on
-        // this worker's deque.
-        this.PropagateCompletion(job, context);
-        scheduler.DecrementOutstanding();
+        var readied = this.PropagateCompletion(job, context);
 
+        // Record BEFORE DecrementOutstanding: the coordinator exits RunUntilComplete
+        // when _outstandingJobs hits 0, then reads these records. If we recorded after
+        // the decrement, a worker could still be writing when the coordinator reads.
+        if (records != null)
+        {
+            var idx = context.InstrumentRecordCount;
+            if (idx < records.Length)
+            {
+                ref var rec = ref records[idx];
+                rec.ObtainedTs = obtainedTs;
+                rec.CompletedTs = Stopwatch.GetTimestamp();
+                rec.Source = context.LastJobSource;
+                rec.ReadiedCount = (byte)Math.Min(readied, 255);
+                rec.WorkerIndex = (byte)context.WorkerIndex;
+                context.InstrumentRecordCount = idx + 1;
+            }
+        }
+
+        scheduler.DecrementOutstanding();
         context.CurrentScheduler = null;
     }
 
-    private void PropagateCompletion(Job job, WorkerContext context)
+    private int PropagateCompletion(Job job, WorkerContext context)
     {
         if (job.Dependents is not { Count: > 0 } dependents)
-            return;
+            return 0;
 
         var scheduler = context.CurrentScheduler!;
         var readied = 0;
@@ -516,6 +539,8 @@ public sealed class WorkerPool : IDisposable
 
         if (readied > 0)
             this.TryWakeOneWorker();
+
+        return readied;
     }
 
     // ── Disposal ────────────────────────────────────────────────────────────
@@ -547,5 +572,79 @@ public sealed class WorkerPool : IDisposable
         public WorkerContext GetWorkerContext(int index) => pool._allContexts[index];
         public int BackgroundWorkerCount => pool._backgroundWorkerCount;
         public int WorkerCount => pool._totalWorkerCount;
+
+        /// <summary>
+        /// Allocates per-worker instrumentation buffers. Each worker can record up to
+        /// <paramref name="maxEventsPerWorker"/> job executions per instrumentation session.
+        /// </summary>
+        public void EnableInstrumentation(int maxEventsPerWorker)
+        {
+            foreach (var ctx in pool._allContexts)
+            {
+                ctx.InstrumentRecords = new SchedulerRecord[maxEventsPerWorker];
+                ctx.InstrumentRecordCount = 0;
+            }
+        }
+
+        /// <summary>Disables instrumentation and releases buffers.</summary>
+        public void DisableInstrumentation()
+        {
+            foreach (var ctx in pool._allContexts)
+            {
+                ctx.InstrumentRecords = null;
+                ctx.InstrumentRecordCount = 0;
+            }
+        }
+
+        /// <summary>Resets all per-worker record counts to zero without reallocating buffers.</summary>
+        public void ResetInstrumentation()
+        {
+            foreach (var ctx in pool._allContexts)
+                ctx.InstrumentRecordCount = 0;
+        }
+
+        /// <summary>
+        /// Returns a snapshot of all instrumentation records across all workers. Each record
+        /// carries its worker index. Sorted by <see cref="SchedulerRecord.ObtainedTs"/>.
+        /// </summary>
+        public SchedulerRecord[] GetInstrumentationRecords()
+        {
+            var contexts = pool._allContexts;
+            var counts = new int[contexts.Length];
+            var total = 0;
+            for (var i = 0; i < contexts.Length; i++)
+            {
+                counts[i] = contexts[i].InstrumentRecordCount;
+                total += counts[i];
+            }
+
+            var result = new SchedulerRecord[total];
+            var offset = 0;
+            for (var i = 0; i < contexts.Length; i++)
+            {
+                var count = counts[i];
+                if (count > 0)
+                {
+                    Array.Copy(contexts[i].InstrumentRecords!, 0, result, offset, count);
+                    offset += count;
+                }
+            }
+
+            Array.Sort(result, (a, b) => a.ObtainedTs.CompareTo(b.ObtainedTs));
+            return result;
+        }
+
+        /// <summary>Returns raw per-worker records (not sorted, not merged).</summary>
+        public (SchedulerRecord[] Records, int Count)[] GetPerWorkerRecords()
+        {
+            var result = new (SchedulerRecord[], int)[pool._totalWorkerCount];
+            for (var i = 0; i < pool._totalWorkerCount; i++)
+            {
+                var ctx = pool._allContexts[i];
+                result[i] = (ctx.InstrumentRecords ?? [], ctx.InstrumentRecordCount);
+            }
+
+            return result;
+        }
     }
 }

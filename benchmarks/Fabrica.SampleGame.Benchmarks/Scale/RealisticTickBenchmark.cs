@@ -83,6 +83,7 @@ public class RealisticTickBenchmark
     public void GlobalCleanup()
     {
         this.RunPhaseAnalysis();
+        this.RunSchedulerAnalysis();
 
         if (_hasPreviousSlice)
             _store.ReleaseSnapshotSlice(_previousSlice);
@@ -372,6 +373,171 @@ public class RealisticTickBenchmark
         public double P2TotalWorkUs;
         public double P3TotalWorkUs;
         public double P4TotalWorkUs;
+    }
+
+    // ── Scheduler instrumentation analysis ──────────────────────────────
+
+    private void RunSchedulerAnalysis()
+    {
+        const int AnalysisTicks = 2000;
+        var accessor = _pool.GetTestAccessor();
+
+        accessor.EnableInstrumentation(maxEventsPerWorker: 1024);
+
+        var perTickRecords = new SchedulerRecord[AnalysisTicks][];
+        for (var t = 0; t < AnalysisTicks; t++)
+        {
+            accessor.ResetInstrumentation();
+            this.WireAndSubmit();
+
+            SnapshotSlice<BenchNode, BenchNodeOps> slice;
+            using (var merge = _coordinator.MergeAll())
+                slice = _store.BuildSnapshotSlice();
+
+            if (_hasPreviousSlice)
+                _store.ReleaseSnapshotSlice(_previousSlice);
+            _previousSlice = slice;
+            _hasPreviousSlice = true;
+
+            perTickRecords[t] = accessor.GetInstrumentationRecords();
+        }
+
+        accessor.DisableInstrumentation();
+        PrintSchedulerAnalysis(perTickRecords, accessor.WorkerCount);
+    }
+
+    private static void PrintSchedulerAnalysis(SchedulerRecord[][] perTickRecords, int workerCount)
+    {
+        var freq = (double)Stopwatch.Frequency;
+        static double ToUs(long ticks) => ticks / (double)Stopwatch.Frequency * 1_000_000;
+
+        Console.WriteLine();
+        Console.WriteLine("═══════════════════════════════════════════════════════════════");
+        Console.WriteLine("  SCHEDULER INSTRUMENTATION ANALYSIS");
+        Console.WriteLine($"  {perTickRecords.Length} ticks, {workerCount} workers");
+        Console.WriteLine("═══════════════════════════════════════════════════════════════");
+
+        // Aggregate across all ticks: per-worker stats
+        var workerLocal = new long[workerCount];
+        var workerSteal = new long[workerCount];
+        var workerInjection = new long[workerCount];
+        var workerTotalIdleTicks = new long[workerCount];
+        var workerTotalExecTicks = new long[workerCount];
+        var workerJobCount = new long[workerCount];
+        var workerMaxIdleTicks = new long[workerCount];
+
+        var allReadiedCounts = new List<int>();
+
+        foreach (var tickRecords in perTickRecords)
+        {
+            // Group by worker to compute idle gaps
+            var perWorker = new Dictionary<int, List<SchedulerRecord>>();
+            foreach (var rec in tickRecords)
+            {
+                if (!perWorker.TryGetValue(rec.WorkerIndex, out var list))
+                    perWorker[rec.WorkerIndex] = list = [];
+                list.Add(rec);
+            }
+
+            foreach (var (workerIdx, records) in perWorker)
+            {
+                if (workerIdx >= workerCount) continue;
+
+                for (var i = 0; i < records.Count; i++)
+                {
+                    var rec = records[i];
+                    var execTicks = rec.CompletedTs - rec.ObtainedTs;
+                    workerTotalExecTicks[workerIdx] += execTicks;
+                    workerJobCount[workerIdx]++;
+
+                    switch (rec.Source)
+                    {
+                        case JobSource.Local: workerLocal[workerIdx]++; break;
+                        case JobSource.Steal: workerSteal[workerIdx]++; break;
+                        case JobSource.Injection: workerInjection[workerIdx]++; break;
+                    }
+
+                    if (rec.ReadiedCount > 0)
+                        allReadiedCounts.Add(rec.ReadiedCount);
+
+                    if (i > 0)
+                    {
+                        var idleTicks = rec.ObtainedTs - records[i - 1].CompletedTs;
+                        if (idleTicks > 0)
+                        {
+                            workerTotalIdleTicks[workerIdx] += idleTicks;
+                            if (idleTicks > workerMaxIdleTicks[workerIdx])
+                                workerMaxIdleTicks[workerIdx] = idleTicks;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Per-worker table
+        Console.WriteLine();
+        Console.WriteLine("  ┌────────┬────────┬──────────────────────────┬──────────┬──────────┬──────────┐");
+        Console.WriteLine("  │ Worker │  Jobs  │  Source (L / S / I)      │ Idle/job │ Max idle │ Exec/job │");
+        Console.WriteLine("  ├────────┼────────┼──────────────────────────┼──────────┼──────────┼──────────┤");
+
+        long totalJobs = 0, totalLocal = 0, totalSteal = 0, totalInjection = 0;
+        double totalIdleUs = 0, totalExecUs = 0;
+
+        for (var w = 0; w < workerCount; w++)
+        {
+            var jobs = workerJobCount[w];
+            if (jobs == 0) continue;
+
+            var local = workerLocal[w];
+            var steal = workerSteal[w];
+            var injection = workerInjection[w];
+            var avgIdleUs = ToUs(workerTotalIdleTicks[w]) / jobs;
+            var maxIdleUs = ToUs(workerMaxIdleTicks[w]);
+            var avgExecUs = ToUs(workerTotalExecTicks[w]) / jobs;
+
+            totalJobs += jobs;
+            totalLocal += local;
+            totalSteal += steal;
+            totalInjection += injection;
+            totalIdleUs += ToUs(workerTotalIdleTicks[w]);
+            totalExecUs += ToUs(workerTotalExecTicks[w]);
+
+            Console.WriteLine($"  │ {w,6} │ {jobs / perTickRecords.Length,6} │ {local / perTickRecords.Length,6} / {steal / perTickRecords.Length,6} / {injection / perTickRecords.Length,6} │ {avgIdleUs,7:F2}μ │ {maxIdleUs,7:F1}μ │ {avgExecUs,7:F2}μ │");
+        }
+
+        Console.WriteLine("  └────────┴────────┴──────────────────────────┴──────────┴──────────┴──────────┘");
+
+        var ticks = (double)perTickRecords.Length;
+        Console.WriteLine();
+        Console.WriteLine($"  Avg per tick: {totalJobs / ticks:F0} jobs  ({totalLocal / ticks:F0} local, {totalSteal / ticks:F0} steal, {totalInjection / ticks:F0} injection)");
+        Console.WriteLine($"  Avg scheduling overhead: {totalIdleUs / totalJobs * 1000:F0} ns/job  (total idle: {totalIdleUs / ticks:F1} μs/tick)");
+        Console.WriteLine($"  Avg execute+propagate:   {totalExecUs / totalJobs * 1000:F0} ns/job");
+
+        if (allReadiedCounts.Count > 0)
+        {
+            allReadiedCounts.Sort();
+            var maxReadied = allReadiedCounts[^1];
+            var p50Readied = allReadiedCounts[allReadiedCounts.Count / 2];
+            var p99Readied = allReadiedCounts[(int)(allReadiedCounts.Count * 0.99)];
+
+            // Histogram of fan-out sizes
+            var buckets = new int[6]; // 1, 2-4, 5-16, 17-64, 65-128, 129+
+            foreach (var r in allReadiedCounts)
+            {
+                if (r <= 1) buckets[0]++;
+                else if (r <= 4) buckets[1]++;
+                else if (r <= 16) buckets[2]++;
+                else if (r <= 64) buckets[3]++;
+                else if (r <= 128) buckets[4]++;
+                else buckets[5]++;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"  Fan-out (readied > 0): {allReadiedCounts.Count} events, P50={p50Readied}, P99={p99Readied}, max={maxReadied}");
+            Console.WriteLine($"    1: {buckets[0]}  2-4: {buckets[1]}  5-16: {buckets[2]}  17-64: {buckets[3]}  65-128: {buckets[4]}  129+: {buckets[5]}");
+        }
+
+        Console.WriteLine("═══════════════════════════════════════════════════════════════");
     }
 
     // ── Job allocation (once) ────────────────────────────────────────────
