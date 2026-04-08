@@ -10,13 +10,15 @@ G_M000_IG01:                ;; offset=0x0000
        push     rax
  
 G_M000_IG02:                ;; offset=0x0001
-       mov      byte  ptr [(reloc <addr>)], 1
+       mov      rax, <addr>
+       mov      byte  ptr [rax], 1
        call     [MixedChildEnumerator:EnumerateChildren[MixedDecrementVisitor](byref,byref):this]
-       mov      byte  ptr [(reloc <addr>)], 1
+       mov      rax, <addr>
+       mov      byte  ptr [rax], 1
  
-G_M000_IG03:                ;; offset=0x0015
+G_M000_IG03:                ;; offset=0x0021
        add      rsp, 8
        ret      
  
-; Total bytes of code 26
+; Total bytes of code 38
 
