@@ -6,18 +6,18 @@ namespace Fabrica.Core.Jobs;
 
 /// <summary>
 /// Per-worker internal context owned by <see cref="WorkerPool"/>. Each worker thread has its own
-/// instance, providing access to the thread's work-stealing deque, steal offset, and current
-/// scheduler. Not exposed to job subclasses — they receive a <see cref="JobContext"/> instead.
+/// instance, providing access to the thread's local queue, steal offset, and current scheduler.
+/// Not exposed to job subclasses — they receive a <see cref="JobContext"/> instead.
 ///
 /// THREAD MODEL
-///   <see cref="Enqueue"/> calls <see cref="WorkStealingDeque{T}.Push"/>, which is an owner-only
+///   <see cref="Enqueue"/> calls <see cref="BoundedLocalQueue{T}.Push"/>, which is an owner-only
 ///   operation. This is safe because <see cref="Enqueue"/> is only called during
-///   <see cref="Job.Execute"/>, which runs on the thread that owns this context's deque.
+///   <see cref="Job.Execute"/>, which runs on the thread that owns this context's queue.
 /// </summary>
-internal sealed class WorkerContext(WorkerPool pool, int workerIndex)
+internal sealed class WorkerContext(WorkerPool pool, int workerIndex, InjectionQueue<Job> overflow)
 {
     internal readonly int WorkerIndex = workerIndex;
-    internal readonly WorkStealingDeque<Job> Deque = new();
+    internal readonly BoundedLocalQueue<Job> Deque = new(overflow);
 
     /// <summary>
     /// Per-worker PRNG for randomizing steal target selection. Seeded uniquely per worker via the

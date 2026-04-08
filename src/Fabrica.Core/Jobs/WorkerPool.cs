@@ -5,7 +5,7 @@ using Fabrica.Core.Threading.Queues;
 namespace Fabrica.Core.Jobs;
 
 /// <summary>
-/// Shared pool of worker threads backed by per-worker work-stealing deques (Chase-Lev). Multiple
+/// Shared pool of worker threads backed by per-worker <see cref="BoundedLocalQueue{T}"/>. Multiple
 /// <see cref="JobScheduler"/> instances share a single pool; top-level jobs are submitted via
 /// <see cref="Inject"/>.
 ///
@@ -101,7 +101,6 @@ namespace Fabrica.Core.Jobs;
 ///   parked workers, then Joins all threads. Workers check _shutdownRequested at the top of each
 ///   loop iteration and in the WarmYield phase, then exit.
 ///
-/// REFERENCE: D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
 /// REFERENCE: Tokio scheduler, <see href="https://github.com/tokio-rs/tokio"/>, MIT License.
 /// </summary>
 public sealed class WorkerPool : IDisposable
@@ -151,9 +150,10 @@ public sealed class WorkerPool : IDisposable
     private int _disposed;
 
     /// <summary>
-    /// Top-level jobs injected via the test accessor's <see cref="JobScheduler.TestAccessor.Inject"/>
-    /// land here. Not used by the coordinator fast-path (<see cref="JobScheduler.Submit"/>), which
-    /// pushes directly onto the coordinator's deque.
+    /// Shared injection queue. Serves dual purpose: (1) overflow target when a worker's local
+    /// <see cref="BoundedLocalQueue{T}"/> is full, and (2) landing zone for top-level jobs injected
+    /// via <see cref="JobScheduler.TestAccessor.Inject"/>. The coordinator fast-path
+    /// (<see cref="JobScheduler.Submit"/>) pushes directly onto the coordinator's deque instead.
     /// </summary>
     private readonly InjectionQueue<Job> _injectionQueue = new();
 
@@ -182,7 +182,7 @@ public sealed class WorkerPool : IDisposable
 
         _allContexts = new WorkerContext[totalCount];
         for (var i = 0; i < totalCount; i++)
-            _allContexts[i] = new WorkerContext(this, i);
+            _allContexts[i] = new WorkerContext(this, i, _injectionQueue);
 
         _workerThreads = new Thread[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -220,7 +220,6 @@ public sealed class WorkerPool : IDisposable
     /// </summary>
     internal void Inject(Job job)
     {
-        // Called by JobScheduler.Submit after stamping the job with its scheduler.
         _injectionQueue.Enqueue(job);
         this.NotifyWorkAvailable();
     }
@@ -440,7 +439,11 @@ public sealed class WorkerPool : IDisposable
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
-            if (target.Deque.TrySteal(out var job))
+            // TryStealHalf: batch-steal ~half the victim's items into our local queue,
+            // returning one item for immediate execution. The remaining stolen items
+            // become available via our own TryPop on subsequent iterations, avoiding
+            // repeated cross-core steal overhead.
+            if (target.Deque.TryStealHalf(context.Deque, out var job))
             {
                 this.ExecuteJob(job, context);
                 return true;
