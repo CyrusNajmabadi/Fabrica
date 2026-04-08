@@ -20,97 +20,28 @@ namespace Fabrica.Core.Jobs;
 ///   Two kinds of threads participate in work execution:
 ///
 ///   - Background workers: managed by the pool, loop in <see cref="RunWorker"/>. When idle, they
-///     park on <see cref="_workSignal"/> (a <see cref="SemaphoreSlim"/>).
+///     spin via <see cref="SpinWait"/> (user-mode spinning, then OS yield). Workers never block on
+///     a kernel primitive — this trades idle CPU for minimal wake latency between DAG phases.
 ///
 ///   - Coordinators: external threads (e.g. the game loop) that call <see cref="JobScheduler.Submit"/>.
 ///     They run <see cref="TryExecuteOne"/> in a spin loop (<see cref="JobScheduler"/>'s
-///     RunUntilComplete) and NEVER park on the semaphore. This is critical for progress — at least
-///     one coordinator is always runnable while a DAG is in flight.
+///     RunUntilComplete) — identical to background workers.
 ///
-/// PARKING AND WAKE PROTOCOL
+/// SPIN-WAIT STRATEGY
 ///
-///   The core invariant is: a background worker must never permanently sleep on the semaphore while
-///   stealable work exists. The protocol uses announce-then-recheck to prevent lost wakes, and
-///   batched notification to minimize contention.
+///   Background workers use <see cref="SpinWait"/> when no work is found. SpinWait starts with
+///   pure CPU spinning (~10 iterations), then progresses to Thread.Yield/Thread.Sleep(0)/
+///   Thread.Sleep(1). This gives sub-microsecond response when work arrives quickly (e.g. between
+///   DAG phases) while yielding the CPU when the system is truly idle. No kernel synchronization
+///   primitives are involved — there are no lost-wake races to reason about.
 ///
-///   Background worker loop (<see cref="RunWorker"/>):
-///     (1) TryExecuteOne — attempt local pop, peer steal, injection dequeue.
-///     (2) If (1) fails: Interlocked.Increment(_parkedWorkers) — announce intent to park.
-///     (3) TryExecuteOne again — the recheck. This closes the race window between (1) and (2).
-///     (4) If (3) finds work: Interlocked.Decrement(_parkedWorkers), execute, go to (1).
-///     (5) If (3) finds nothing: _workSignal.Wait() — block until woken.
-///     (6) On wake: Interlocked.Decrement(_parkedWorkers), go to (1).
-///
-///   Producer notification (<see cref="PropagateCompletion"/>):
-///     (a) Push all newly-readied dependents onto the completing worker's deque.
-///     (b) Read Volatile.Read(_parkedWorkers) to get a snapshot of how many workers are sleeping.
-///     (c) If parked > 0: _workSignal.Release(Min(readied, parked)) — wake up to one worker per
-///         readied job, but never more than are actually parked.
-///
-///   Single-job notification (<see cref="NotifyWorkAvailable"/>):
-///     Used by <see cref="Inject"/> and <see cref="JobScheduler.Submit"/>. Reads _parkedWorkers;
-///     if > 0, releases one permit.
-///
-/// CORRECTNESS ARGUMENT (NO LOST WAKES)
-///
-///   The safety argument rests on the interaction between work publication (deque Push / injection
-///   Enqueue) and the announce-then-recheck protocol. We enumerate all interleavings between a
-///   producer P making work visible and a worker W attempting to park.
-///
-///   W is in one of four states relative to its park cycle:
-///
-///   Case 1 — W is in step (1), scanning for work:
-///     P pushes work onto a deque. W's TryExecuteOne scans all deques (own pop + peer steal +
-///     injection). If the push is visible by the time W scans that deque, W finds it. If not (W
-///     already passed that deque), W proceeds to (2)→(3), and the recheck at (3) will see it —
-///     the push happened-before the recheck because P's push precedes P's notification, and W's
-///     increment at (2) provides a full fence that orders W's subsequent reads after P's store.
-///
-///   Case 2 — W is between (1) and (2), about to announce:
-///     W hasn't incremented _parkedWorkers yet, so P's Volatile.Read(_parkedWorkers) may not
-///     count W. But W hasn't blocked yet — it will still execute (2)→(3), and the recheck at (3)
-///     sees the pushed work. W never reaches Wait().
-///
-///   Case 3 — W is between (2) and (3), announced but rechecking:
-///     W has incremented _parkedWorkers, so P's snapshot may or may not include W. Either way, W
-///     is about to run TryExecuteOne at (3). The pushed work is visible (it was pushed before P
-///     reads _parkedWorkers, and W's (3) runs after W's increment which is a full barrier). W
-///     finds the work and decrements _parkedWorkers at (4). No lost wake.
-///
-///   Case 4 — W is in (5), blocked on Wait():
-///     W already ran the recheck at (3) and found nothing — meaning the push had not yet happened
-///     at that point. P's push happens after W's recheck. P then reads _parkedWorkers and sees W
-///     (W incremented before (3), and W is still counted because decrement only happens at (4) or
-///     (6)). P releases a permit, waking W. No lost wake.
-///
-///   In all four cases, either W discovers work before parking, or P's notification wakes W after
-///   parking. There is no interleaving where W sleeps permanently with stealable work.
-///
-/// COORDINATOR PROGRESS GUARANTEE
-///
-///   Even if every background worker is parked, at least one coordinator thread is running the
-///   TryExecuteOne spin loop while its DAG has outstanding jobs (Volatile.Read(_outstandingJobs)
-///   > 0). The coordinator can pop, steal, and drain injection — it is a full participant in work
-///   execution. This means progress is guaranteed even if notification is delayed or under-counted;
-///   the coordinator will eventually steal every job that no background worker picks up.
-///
-/// SEMAPHORE PERMIT BOUNDS
-///
-///   Over-release is possible: P reads _parkedWorkers = K, but between the read and the Release
-///   call, some workers wake from other notifications and decrement _parkedWorkers. The excess
-///   permits cause spurious wakeups — a worker wakes, finds no work, and re-parks on the next
-///   loop iteration, consuming the permit. Permits do not accumulate unboundedly because:
-///   (a) Release is guarded by _parkedWorkers > 0 (no release when nobody is sleeping).
-///   (b) Each spurious wake consumes one permit (Wait + re-park).
-///   (c) Batched release caps at Min(readied, parked), reducing permit storms compared to
-///       per-job notification.
+///   This is the standard approach for game engine job systems (Unity, Unreal, Naughty Dog) where
+///   the engine owns all cores and latency matters more than power efficiency.
 ///
 /// SHUTDOWN
 ///
-///   <see cref="Dispose"/> sets _shutdownRequested = true, then releases _backgroundWorkerCount
-///   permits to wake all parked workers, then Joins all threads. Workers check _shutdownRequested
-///   at the top of each loop iteration and exit. Shutdown permits do not interfere with work
-///   notifications because threads exit immediately after waking.
+///   <see cref="Dispose"/> sets <see cref="_shutdownRequested"/> = true and Joins all threads.
+///   Workers check this flag at the top of each loop iteration and exit.
 ///
 /// REFERENCE: D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
 /// </summary>
@@ -131,24 +62,11 @@ public sealed class WorkerPool : IDisposable
     /// <summary>Total number of worker contexts (background + coordinator).</summary>
     private readonly int _totalWorkerCount;
 
-    /// <summary>
-    /// Shared semaphore for parking idle background workers. Only released when
-    /// <see cref="_parkedWorkers"/> is positive, preventing unbounded permit accumulation.
-    /// </summary>
-    private readonly SemaphoreSlim _workSignal;
-
     /// <summary>Set to <c>true</c> during <see cref="Dispose"/> to break worker loops.</summary>
     private volatile bool _shutdownRequested;
 
     /// <summary>Guard for idempotent <see cref="Dispose"/>.</summary>
     private int _disposed;
-
-    /// <summary>
-    /// Number of background workers currently parked (blocked on <see cref="_workSignal"/>). Used
-    /// by <see cref="NotifyWorkAvailable"/> to avoid releasing the semaphore when no one is
-    /// waiting, which would cause unbounded permit accumulation. Updated via announce-then-recheck.
-    /// </summary>
-    private int _parkedWorkers;
 
     /// <summary>
     /// Top-level jobs injected via the test accessor's <see cref="JobScheduler.TestAccessor.Inject"/>
@@ -175,7 +93,6 @@ public sealed class WorkerPool : IDisposable
 
         _backgroundWorkerCount = workerCount;
         _totalWorkerCount = totalCount;
-        _workSignal = new SemaphoreSlim(0);
 
         _allContexts = new WorkerContext[totalCount];
         for (var i = 0; i < totalCount; i++)
@@ -213,47 +130,30 @@ public sealed class WorkerPool : IDisposable
     // ── Job injection ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Enqueues a job into the shared injection queue and wakes a parked worker.
+    /// Enqueues a job into the shared injection queue. Spinning workers will pick it up.
     /// </summary>
-    internal void Inject(Job job)
-    {
-        // Called by JobScheduler.Submit after stamping the job with its scheduler.
-        _injectionQueue.Enqueue(job);
-        this.NotifyWorkAvailable();
-    }
+    internal void Inject(Job job) => _injectionQueue.Enqueue(job);
 
     /// <summary>
-    /// Signals that work is available, waking at most one parked worker.
+    /// No-op in spin-wait mode. Workers discover work through continuous polling.
+    /// Retained for API compatibility with <see cref="JobScheduler"/>.
     /// </summary>
-    internal void NotifyWorkAvailable()
-    {
-        // Only release when someone is parked so permits do not accumulate without bound.
-        if (Volatile.Read(ref _parkedWorkers) > 0)
-            _workSignal.Release();
-    }
+    internal void NotifyWorkAvailable() { }
 
     // ── Worker loop ─────────────────────────────────────────────────────────
 
     private void RunWorker(WorkerContext context)
     {
+        var spinWait = new SpinWait();
         while (!_shutdownRequested)
         {
             if (this.TryExecuteOne(context))
-                continue;
-
-            // Announce-then-recheck: declare intent to park, then re-check for work. This closes
-            // the race where work arrives between our failed steal and the Wait call — the producer
-            // sees _parkedWorkers > 0 and releases, or our re-check finds the work directly.
-            Interlocked.Increment(ref _parkedWorkers);
-
-            if (this.TryExecuteOne(context))
             {
-                Interlocked.Decrement(ref _parkedWorkers);
+                spinWait.Reset();
                 continue;
             }
 
-            _workSignal.Wait();
-            Interlocked.Decrement(ref _parkedWorkers);
+            spinWait.SpinOnce();
         }
     }
 
@@ -341,7 +241,6 @@ public sealed class WorkerPool : IDisposable
             return;
 
         var scheduler = context.CurrentScheduler!;
-        var readied = 0;
 
         for (var i = 0; i < dependents.Count; i++)
         {
@@ -358,14 +257,6 @@ public sealed class WorkerPool : IDisposable
             dependent.Scheduler = scheduler;
             scheduler.IncrementOutstanding();
             context.Deque.Push(dependent);
-            readied++;
-        }
-
-        if (readied > 0)
-        {
-            var parked = Volatile.Read(ref _parkedWorkers);
-            if (parked > 0)
-                _workSignal.Release(Math.Min(readied, parked));
         }
     }
 
@@ -377,12 +268,9 @@ public sealed class WorkerPool : IDisposable
             return;
 
         _shutdownRequested = true;
-        _workSignal.Release(_backgroundWorkerCount);
 
         foreach (var thread in _workerThreads)
             thread.Join();
-
-        _workSignal.Dispose();
     }
 
     // ── Test accessor ───────────────────────────────────────────────────────
