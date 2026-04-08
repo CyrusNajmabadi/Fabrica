@@ -152,31 +152,27 @@ public sealed class Host<TPayload, TProducer, TConsumer, TClock, TWaiter>(
         {
             var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // Capturing lambda — allocated once per thread, not on a hot path.
-            var thread = new Thread(() =>
-            {
-                try
+            ThreadPinningNative.StartNativeThreadWithHighQos(
+                name,
+                () =>
                 {
-                    loopAction(linkedCancellationToken);
-                    completion.SetResult();
-                }
-                catch (OperationCanceledException)
-                {
-                    completion.SetCanceled(linkedCancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    // Signal the other loop to exit so it doesn't continue running after this one has faulted.
-                    linkedCancellationTokenSource.Cancel();
-                    completion.SetException(ex);
-                }
-            })
-            {
-                Name = name,
-                IsBackground = false,
-            };
+                    try
+                    {
+                        loopAction(linkedCancellationToken);
+                        completion.SetResult();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        completion.SetCanceled(linkedCancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        linkedCancellationTokenSource.Cancel();
+                        completion.SetException(ex);
+                    }
+                },
+                isBackground: false);
 
-            thread.Start();
             return completion.Task;
         }
     }

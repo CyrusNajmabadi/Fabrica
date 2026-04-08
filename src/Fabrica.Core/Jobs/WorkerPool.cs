@@ -165,7 +165,7 @@ public sealed class WorkerPool : IDisposable
     public WorkerPool(int workerCount = -1, int coordinatorCount = 0)
     {
         if (workerCount < 0)
-            workerCount = Math.Min(Environment.ProcessorCount, MaxWorkerCount);
+            workerCount = Math.Max(1, Math.Min(Environment.ProcessorCount - coordinatorCount, MaxWorkerCount));
 
         ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(coordinatorCount, 0);
@@ -185,12 +185,10 @@ public sealed class WorkerPool : IDisposable
         for (var i = 0; i < workerCount; i++)
         {
             var ctx = _allContexts[i];
-            _workerThreads[i] = new Thread(() => this.RunWorker(ctx))
-            {
-                IsBackground = true,
-                Name = $"WorkerPool-Worker-{i}",
-            };
-            _workerThreads[i].Start();
+            _workerThreads[i] = Threading.ThreadPinningNative.StartNativeThreadWithHighQos(
+                $"WorkerPool-Worker-{i}",
+                () => this.RunWorker(ctx),
+                coreIndex: i);
         }
     }
 
@@ -238,11 +236,6 @@ public sealed class WorkerPool : IDisposable
 
     private void RunWorker(WorkerContext context)
     {
-        // WORKER LIFECYCLE: announce-then-recheck — when a worker finds no work, it increments _parkedWorkers, re-checks
-        // for work (closing the missed-wake race), then blocks on _workSignal. NotifyWorkAvailable coordinates with
-        // _parkedWorkers (see that method).
-        Threading.ThreadPinningNative.TryPinCurrentThread(context.WorkerIndex);
-
         while (!_shutdownRequested)
         {
             if (this.TryExecuteOne(context))
