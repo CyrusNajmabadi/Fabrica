@@ -43,6 +43,10 @@ public sealed class JobScheduler(WorkerPool pool)
     /// Submits a root job and participates as a worker until the entire DAG (including sub-jobs
     /// and dependents) completes. The calling thread runs the coordinator work loop, executing
     /// jobs from its own deque, stealing from peers, and draining the injection queue.
+    ///
+    /// Thread pinning and QoS are NOT handled here — the caller is responsible for creating the
+    /// calling thread with <see cref="Threading.ThreadPinningNative.StartNativeThreadWithHighQos"/>
+    /// (see <c>Host.StartLoopTask</c> and <c>WorkerPool</c> constructor).
     /// </summary>
     public void Submit(Job job)
     {

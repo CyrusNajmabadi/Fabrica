@@ -33,7 +33,7 @@ public class FullRebuildBenchmark
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
+        _pool = new WorkerPool(coordinatorCount: 1);
         _scheduler = new JobScheduler(_pool);
         _store = new GlobalNodeStore<BenchNode, BenchNodeOps>(_pool.WorkerCount);
         var ops = new BenchNodeOps { Store = _store };
