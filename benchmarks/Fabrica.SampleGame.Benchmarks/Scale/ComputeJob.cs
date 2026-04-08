@@ -4,14 +4,16 @@ using Fabrica.Core.Jobs;
 namespace Fabrica.SampleGame.Benchmarks.Scale;
 
 /// <summary>
-/// Job that simulates realistic CPU work via a tight hash-mixing loop over a small array that
-/// fits in L1 cache. The iteration count controls how long the job runs (~30-40μs at the
-/// calibrated value). Subclasses or direct configuration sets <see cref="Iterations"/>.
+/// Job that simulates realistic CPU work via a tight hash-mixing loop over a per-job local
+/// array that fits in L1 cache. The iteration count controls how long the job runs.
+/// Each job owns its own array to avoid false sharing between cores.
 /// </summary>
 internal sealed class ComputeJob : Job
 {
-    /// <summary>Shared work array (64 ints = 256 bytes, fits in a single cache line pair).</summary>
-    internal int[]? WorkArray;
+    private const int ArrayLength = 64;
+
+    /// <summary>Per-job work array (64 ints = 256 bytes, fits in L1 cache). Avoids false sharing.</summary>
+    private readonly int[] _localArray = new int[ArrayLength];
 
     /// <summary>Number of hash-mixing iterations. Controls job duration.</summary>
     internal int Iterations;
@@ -21,7 +23,7 @@ internal sealed class ComputeJob : Job
 
     protected internal override void Execute(JobContext context)
     {
-        var arr = WorkArray!;
+        var arr = _localArray;
         var len = arr.Length;
         var iterations = Iterations;
         var seed = Seed;
@@ -46,7 +48,6 @@ internal sealed class ComputeJob : Job
 
     protected override void ResetState()
     {
-        WorkArray = null;
         Iterations = 0;
         Seed = 0;
     }
