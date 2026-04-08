@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Jobs;
 
@@ -21,8 +22,13 @@ internal sealed class ComputeJob : Job
     /// <summary>Per-job seed to prevent the optimizer from merging identical jobs.</summary>
     internal int Seed;
 
+    internal bool Instrument;
+    internal long StartTimestamp;
+    internal long EndTimestamp;
+
     protected internal override void Execute(JobContext context)
     {
+        if (Instrument) StartTimestamp = Stopwatch.GetTimestamp();
         var arr = _localArray;
         var len = arr.Length;
         var iterations = Iterations;
@@ -33,6 +39,8 @@ internal sealed class ComputeJob : Job
             var idx = (i + seed) & (len - 1);
             arr[idx] = HashMix(arr[idx], i);
         }
+
+        if (Instrument) EndTimestamp = Stopwatch.GetTimestamp();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -50,5 +58,7 @@ internal sealed class ComputeJob : Job
     {
         Iterations = 0;
         Seed = 0;
+        StartTimestamp = 0;
+        EndTimestamp = 0;
     }
 }

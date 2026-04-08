@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
@@ -21,8 +22,13 @@ internal sealed class SnapshotJob : Job
 
     internal Handle<BenchNode> ResultHead;
 
+    internal bool Instrument;
+    internal long StartTimestamp;
+    internal long EndTimestamp;
+
     protected internal override void Execute(JobContext context)
     {
+        if (Instrument) StartTimestamp = Stopwatch.GetTimestamp();
         var arr = _localArray;
         var len = arr.Length;
         var iterations = Iterations;
@@ -44,6 +50,7 @@ internal sealed class SnapshotJob : Job
         }
 
         ResultHead = next;
+        if (Instrument) EndTimestamp = Stopwatch.GetTimestamp();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,5 +72,7 @@ internal sealed class SnapshotJob : Job
         NodeCount = 0;
         IsRoot = false;
         ResultHead = default;
+        StartTimestamp = 0;
+        EndTimestamp = 0;
     }
 }

@@ -62,7 +62,8 @@ namespace Fabrica.Core.Tests.Memory;
 ///
 /// <para><b>BASELINE DIRECTORY STRUCTURE</b></para>
 /// <para>
-///   <c>tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.asm</c>
+///   <c>tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.asm</c> (primary)<br/>
+///   <c>tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.v{N}.asm</c> (variant)
 /// </para>
 /// <para>
 ///   The runtime version is included because even patch releases can change JIT codegen.
@@ -71,9 +72,15 @@ namespace Fabrica.Core.Tests.Memory;
 ///
 /// <para><b>WORKFLOW</b></para>
 /// <list type="number">
-///   <item>If a baseline exists for the current platform+version, the test compares against it.</item>
+///   <item>If baselines exist for the current platform+version, the test compares against all
+///     known variants (<c>.asm</c> primary + <c>.v{N}.asm</c> alternates). A match with any
+///     variant is a pass.</item>
 ///   <item>If no baseline exists, the test writes the current output as a <c>.actual</c> file next to
 ///     where the baseline would be, and fails with instructions to review and commit.</item>
+///   <item>If baselines exist but none match, the test fails and suggests adding the new output
+///     as a variant (<c>{name}.v{N}.asm</c>). Structural validation has already passed at this
+///     point — review the diff to confirm the new encoding is a valid alternative (e.g.,
+///     RIP-relative vs register-indirect addressing due to ASLR / memory layout).</item>
 ///   <item>When the runtime is upgraded, the test will fail on first run (new version directory).
 ///     Do NOT delete old baselines — they're still valid for that version. Instead, review the
 ///     new <c>.actual</c> output and rename to <c>.asm</c> to add the new version's baseline.
@@ -136,9 +143,9 @@ public partial class JitBaselineTests
         AssertTypeofEliminated(normalized, baselineName, expectedDecrements);
 
         var actualFile = Path.Combine(s_baselineDir, $"{baselineName}.actual");
-        var resolvedBaseline = ResolveBaseline(s_baselineDir, baselineName);
+        var variants = ResolveBaselineVariants(s_baselineDir, baselineName);
 
-        if (resolvedBaseline is null)
+        if (variants.Length == 0)
         {
             Directory.CreateDirectory(s_baselineDir);
             File.WriteAllText(actualFile, normalized);
@@ -157,23 +164,36 @@ public partial class JitBaselineTests
             return;
         }
 
-        var expected = File.ReadAllText(resolvedBaseline);
-        if (normalized != expected)
+        foreach (var variant in variants)
         {
-            Directory.CreateDirectory(s_baselineDir);
-            File.WriteAllText(actualFile, normalized);
-            Assert.Fail(
-                $"JIT output for {baselineName} on {PlatformKey()} differs from baseline.\n" +
-                $"Baseline: {resolvedBaseline}\n" +
-                $"Actual:   {actualFile}\n" +
-                "Review the diff. If the new output is correct, replace the .asm baseline.\n" +
-                "Do NOT delete baselines for other platform/version directories — they remain valid.\n" +
-                $"\n--- BEGIN {baselineName}.asm ---\n{normalized}--- END {baselineName}.asm ---");
+            if (File.ReadAllText(variant) == normalized)
+            {
+                if (File.Exists(actualFile))
+                    File.Delete(actualFile);
+                return;
+            }
         }
-        else if (File.Exists(actualFile))
-        {
-            File.Delete(actualFile);
-        }
+
+        Directory.CreateDirectory(s_baselineDir);
+        File.WriteAllText(actualFile, normalized);
+
+        var nextNum = NextVariantNumber(s_baselineDir, baselineName);
+        var variantFileName = $"{baselineName}.v{nextNum}.asm";
+        var hint = FindMatchingBaseline(baselineName, normalized);
+
+        var msg = $"JIT output for {baselineName} on {PlatformKey()} differs from {variants.Length} known variant(s).\n" +
+            $"Actual:   {actualFile}\n" +
+            "Structural validation passed — typeof elimination is correct.\n";
+        msg += hint is not null
+            ? $"Output MATCHES existing variant: {hint}\n" +
+              $"To deduplicate, create a .ref:\n" +
+              $"  echo \"{hint}\" > {Path.Combine(s_baselineDir, $"{baselineName}.v{nextNum}.ref")}\n"
+            : $"If the new output is a valid alternative encoding, add it as a variant:\n" +
+              $"  cp {actualFile} {Path.Combine(s_baselineDir, variantFileName)}\n";
+        msg += "Do NOT delete existing baselines or variants — they remain valid.\n" +
+            $"\n--- BEGIN {baselineName}.actual ---\n{normalized}--- END {baselineName}.actual ---";
+
+        Assert.Fail(msg);
 #pragma warning restore CS0162
     }
 
@@ -354,27 +374,82 @@ public partial class JitBaselineTests
     }
 
     /// <summary>
-    /// Resolves a baseline for the given name. Checks for <c>.asm</c> first, then <c>.ref</c>.
-    /// A <c>.ref</c> file contains a relative path to the actual <c>.asm</c> baseline,
-    /// enabling deduplication across runtime versions with identical JIT output.
+    /// Resolves all known baseline variants for the given name. The primary baseline is
+    /// <c>{name}.asm</c> (or <c>{name}.ref</c>), and additional variants are numbered
+    /// <c>{name}.v2.asm</c>, <c>{name}.v3.asm</c>, etc. Each variant represents a valid
+    /// alternative encoding that the JIT may produce non-deterministically (e.g., RIP-relative
+    /// vs register-indirect addressing depending on ASLR / memory layout).
     /// </summary>
-    private static string? ResolveBaseline(string baselineDir, string baselineName)
+    private static string[] ResolveBaselineVariants(string baselineDir, string baselineName)
     {
-        var asmFile = Path.Combine(baselineDir, $"{baselineName}.asm");
-        if (File.Exists(asmFile))
-            return asmFile;
+        var variants = new List<string>();
 
-        var refFile = Path.Combine(baselineDir, $"{baselineName}.ref");
-        if (File.Exists(refFile))
+        ResolveInto(variants, baselineDir, baselineName);
+
+        if (!Directory.Exists(baselineDir))
+            return [.. variants];
+
+        var prefix = baselineName + ".v";
+        var variantNumbers = new SortedSet<int>();
+
+        foreach (var file in Directory.EnumerateFiles(baselineDir))
         {
-            var relativePath = File.ReadAllText(refFile).Trim();
-            var resolved = Path.GetFullPath(Path.Combine(baselineDir, relativePath));
-            Assert.True(File.Exists(resolved),
-                $"Baseline .ref file {refFile} points to {relativePath}, but resolved path {resolved} does not exist.");
-            return resolved;
+            var name = Path.GetFileName(file);
+            if (!name.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+
+            var rest = name[prefix.Length..];
+            var dotIdx = rest.IndexOf('.');
+            if (dotIdx > 0 && int.TryParse(rest[..dotIdx], out var num))
+                variantNumbers.Add(num);
         }
 
-        return null;
+        foreach (var num in variantNumbers)
+            ResolveInto(variants, baselineDir, $"{baselineName}.v{num}");
+
+        return [.. variants];
+    }
+
+    private static void ResolveInto(List<string> variants, string baselineDir, string name)
+    {
+        var asmFile = Path.Combine(baselineDir, $"{name}.asm");
+        if (File.Exists(asmFile))
+        {
+            variants.Add(asmFile);
+            return;
+        }
+
+        var refFile = Path.Combine(baselineDir, $"{name}.ref");
+        if (!File.Exists(refFile))
+            return;
+
+        var relativePath = File.ReadAllText(refFile).Trim();
+        var resolved = Path.GetFullPath(Path.Combine(baselineDir, relativePath));
+        if (File.Exists(resolved))
+            variants.Add(resolved);
+    }
+
+    private static int NextVariantNumber(string baselineDir, string baselineName)
+    {
+        var max = 1;
+
+        if (!Directory.Exists(baselineDir))
+            return max + 1;
+
+        var prefix = baselineName + ".v";
+        foreach (var file in Directory.EnumerateFiles(baselineDir))
+        {
+            var name = Path.GetFileName(file);
+            if (!name.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+
+            var rest = name[prefix.Length..];
+            var dotIdx = rest.IndexOf('.');
+            if (dotIdx > 0 && int.TryParse(rest[..dotIdx], out var num) && num > max)
+                max = num;
+        }
+
+        return max + 1;
     }
 
     /// <summary>
@@ -395,12 +470,11 @@ public partial class JitBaselineTests
             if (!siblingDirName.StartsWith(platformPrefix, StringComparison.Ordinal))
                 continue;
 
-            var candidateAsm = Path.Combine(siblingDir, $"{baselineName}.asm");
-            if (!File.Exists(candidateAsm))
-                continue;
-
-            if (File.ReadAllText(candidateAsm) == normalizedAsm)
-                return $"../{siblingDirName}/{baselineName}.asm";
+            foreach (var variant in ResolveBaselineVariants(siblingDir, baselineName))
+            {
+                if (File.ReadAllText(variant) == normalizedAsm)
+                    return $"../{siblingDirName}/{Path.GetFileName(variant)}";
+            }
         }
 
         return null;
