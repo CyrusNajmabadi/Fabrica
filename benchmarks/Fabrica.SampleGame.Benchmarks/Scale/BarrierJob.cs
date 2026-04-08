@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Fabrica.Core.Jobs;
 
 namespace Fabrica.SampleGame.Benchmarks.Scale;
@@ -8,6 +9,14 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// </summary>
 internal sealed class BarrierJob : Job
 {
-    protected internal override void Execute(JobContext context) { }
-    protected override void ResetState() { }
+    internal bool Instrument;
+    internal long ExecutedTimestamp;
+
+    protected internal override void Execute(JobContext context)
+    {
+        if (Instrument) ExecutedTimestamp = Stopwatch.GetTimestamp();
+    }
+
+    protected override void ResetState() =>
+        ExecutedTimestamp = 0;
 }

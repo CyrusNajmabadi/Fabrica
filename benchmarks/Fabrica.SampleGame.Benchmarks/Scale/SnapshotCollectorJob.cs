@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 
@@ -12,8 +13,13 @@ internal sealed class SnapshotCollectorJob : Job
     internal SnapshotJob[] Sources = null!;
     internal Handle<BenchNode> ResultHead;
 
+    internal bool Instrument;
+    internal long StartTimestamp;
+    internal long EndTimestamp;
+
     protected internal override void Execute(JobContext context)
     {
+        if (Instrument) StartTimestamp = Stopwatch.GetTimestamp();
         var buf = Buffers![context.WorkerIndex];
         var h = buf.Allocate(isRoot: true);
         var node = new BenchNode();
@@ -42,11 +48,14 @@ internal sealed class SnapshotCollectorJob : Job
 
         buf[h] = node;
         ResultHead = h;
+        if (Instrument) EndTimestamp = Stopwatch.GetTimestamp();
     }
 
     protected override void ResetState()
     {
         Buffers = null;
         ResultHead = default;
+        StartTimestamp = 0;
+        EndTimestamp = 0;
     }
 }
