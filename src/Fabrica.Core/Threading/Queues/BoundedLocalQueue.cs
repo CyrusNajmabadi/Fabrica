@@ -99,7 +99,7 @@ namespace Fabrica.Core.Threading.Queues;
 /// REFERENCE
 ///   Tokio scheduler queue: tokio/src/runtime/scheduler/multi_thread/queue.rs
 /// </summary>
-internal sealed class BoundedLocalQueue<T> where T : class
+internal sealed class BoundedLocalQueue<T>(Action<T>? onOverflow = null) where T : class
 {
     internal const int QueueCapacity = 256;
     private const int Mask = QueueCapacity - 1;
@@ -129,14 +129,9 @@ internal sealed class BoundedLocalQueue<T> where T : class
     /// Receives each item individually. The caller is responsible for batching wake
     /// notifications. Null means overflow is not supported (asserts in DEBUG).
     /// </summary>
-    private readonly Action<T>? _onOverflow;
+    private readonly Action<T>? _onOverflow = onOverflow;
 
     private SingleThreadedOwner _owner;
-
-    public BoundedLocalQueue(Action<T>? onOverflow = null)
-    {
-        _onOverflow = onOverflow;
-    }
 
     // ═══════════════════════════ PACKING HELPERS ══════════════════════════════
 
