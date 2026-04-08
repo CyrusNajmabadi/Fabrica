@@ -93,6 +93,62 @@ namespace Fabrica.Core.Jobs;
 ///   TryExecuteOne spin loop while its DAG has outstanding jobs. The coordinator can pop, steal,
 ///   and drain injection — it is a full participant in work execution.
 ///
+/// WORK STEALING: STEAL-HALF DISTRIBUTION
+///
+///   When a worker's local deque is empty and it steals from a peer, it takes ~half the items
+///   (via <see cref="Threading.Queues.WorkStealingDeque{T}.TryStealHalf"/>) instead of one.
+///   The stolen items are placed directly into the thief's deque; the first is returned for
+///   immediate execution. This gives logarithmic work distribution at phase boundaries:
+///
+///   After a barrier completes, one worker (the one that finished the last barrier prerequisite)
+///   holds all N ready jobs in its local deque. With steal-one, the other W-1 workers each
+///   serialize on CAS against that deque (~W rounds). With steal-half, the first thief takes N/2
+///   jobs, then two victims have ~N/4 each for the next round of thieves — full fan-out in
+///   ~log₂(W) CAS rounds instead of ~W.
+///
+///   The steal-half CAS may fail if another thief or the owner races on <c>_top</c>. On failure,
+///   no items are transferred — the speculative writes to the thief's buffer are invisible
+///   because <c>_bottom</c> is only advanced after a successful CAS. This is the same
+///   linearization strategy as Chase-Lev steal-one.
+///
+/// INJECTION QUEUE (INTRUSIVE LINKED LIST)
+///
+///   The global injection queue (<see cref="_globalQueueHead"/>/<see cref="_globalQueueTail"/>)
+///   is a singly-linked list threaded through <see cref="Job.NextInQueue"/>, guarded by
+///   <see cref="_globalQueueLock"/>. This replaces <c>ConcurrentQueue&lt;Job&gt;</c> for zero
+///   steady-state allocation (no segment objects).
+///
+///   Memory ordering: <see cref="TryDequeueInjected"/> reads <c>_globalQueueHead</c> with
+///   <see cref="Volatile.Read"/> before acquiring the lock. This is a fast-path optimization:
+///   if the queue is empty, we skip the lock entirely. The Volatile.Read ensures visibility of
+///   stores made by <see cref="Inject"/> on other threads (critical on ARM64 where plain loads
+///   can be reordered past stores on other cores). Inside the lock, plain reads are safe because
+///   the lock provides acquire/release semantics.
+///
+///   Lifecycle: <see cref="Inject"/> sets <c>NextInQueue = null</c> before enqueuing.
+///   <see cref="TryDequeueInjected"/> clears <c>NextInQueue</c> after unlinking the head.
+///   A job must not be injected while it is already in the queue (same contract as the old
+///   <c>ConcurrentQueue</c> — the scheduler enforces this via the DAG structure).
+///
+/// SLEEPER STACK (BOUNDED ARRAY)
+///
+///   Parked worker indices are stored in <see cref="_sleepersArray"/>, a bounded <c>int[]</c>
+///   pre-allocated to <c>_backgroundWorkerCount</c>. All access is guarded by
+///   <see cref="_sleepersLock"/>. This replaces <c>ConcurrentStack&lt;int&gt;</c> which
+///   allocated a <c>Node</c> object on every <c>Push</c>.
+///
+///   The array never overflows because at most <c>_backgroundWorkerCount</c> workers can be
+///   parked simultaneously (each background worker parks at most once before being woken).
+///   LIFO ordering means the most recently parked worker (whose caches are warmest) is woken
+///   first.
+///
+///   Ordering in <see cref="TransitionToParked"/>: the worker pushes its index onto the sleeper
+///   stack (under <c>_sleepersLock</c>) BEFORE decrementing <c>numUnparked</c> in
+///   <see cref="_idleState"/>. This ensures a concurrent producer calling
+///   <see cref="TryWakeOneWorker"/> that observes the decremented <c>numUnparked</c> will
+///   always find the worker's index on the stack. The reverse order (decrement first, push
+///   second) would open a window where the producer sees a parkable slot but the stack is empty.
+///
 /// SHUTDOWN
 ///
 ///   <see cref="Dispose"/> sets _shutdownRequested = true, then sets all per-worker events to wake
@@ -395,6 +451,12 @@ public sealed class WorkerPool : IDisposable
             this.TryWakeOneWorker();
     }
 
+    /// <summary>
+    /// Transitions a worker to Parked state. ORDERING IS CRITICAL: push to sleeper stack first
+    /// (under lock), then decrement <c>numUnparked</c>. A concurrent <see cref="TryWakeOneWorker"/>
+    /// that observes the decremented count is guaranteed to find our index on the stack. Reversing
+    /// this order opens a lost-wake window (producer sees numUnparked &lt; total, pops empty stack).
+    /// </summary>
     private void TransitionToParked(WorkerContext context)
     {
         Debug.Assert(!context.IsSearching);
@@ -413,6 +475,21 @@ public sealed class WorkerPool : IDisposable
     /// Wakes at most one parked worker if no worker is currently searching. This is the core of
     /// Tokio's "notify then search" pattern: a searching worker will find new work on its own, so
     /// waking a parked worker would be wasteful.
+    ///
+    /// <para>
+    /// The <see cref="Volatile.Read"/> of <c>_idleState</c> is intentionally outside the lock.
+    /// This is a speculative check: if searching workers exist or all workers are unparked, we
+    /// skip the lock entirely. The check can race (a searcher may park between our read and a
+    /// hypothetical lock acquisition), but that is safe — the announce-then-recheck protocol in
+    /// <see cref="RunWorker"/> ensures the parking worker will recheck for work before blocking.
+    /// </para>
+    ///
+    /// <para>
+    /// Inside the lock, we pop the most recently parked worker (LIFO — warmest caches). After
+    /// releasing the lock, we increment both <c>numUnparked</c> and <c>numSearching</c> atomically.
+    /// The woken worker will enter the Running phase and call <see cref="TransitionFromSearching"/>
+    /// when it finds work, which may cascade-wake another parked worker if it was the last searcher.
+    /// </para>
     /// </summary>
     private void TryWakeOneWorker()
     {
@@ -458,6 +535,13 @@ public sealed class WorkerPool : IDisposable
         return this.TryDequeueInjected(context);
     }
 
+    /// <summary>
+    /// Scans all peer deques starting from a random offset (to avoid herding) and attempts a
+    /// steal-half from the first non-empty victim. Steal-half transfers ~half the victim's items
+    /// into this worker's deque (see WORK STEALING: STEAL-HALF DISTRIBUTION above), returning
+    /// the first stolen item for immediate execution. The random start index is generated by a
+    /// per-worker <see cref="WorkerContext.StealRand"/> PRNG to distribute contention evenly.
+    /// </summary>
     private bool TryStealAndExecute(WorkerContext context)
     {
         var count = _allContexts.Length;
@@ -479,6 +563,14 @@ public sealed class WorkerPool : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// Dequeues one job from the global injection queue. The <see cref="Volatile.Read"/> on
+    /// <c>_globalQueueHead</c> is a lock-free fast path: if the queue is visibly empty, we avoid
+    /// acquiring <see cref="_globalQueueLock"/> entirely. On ARM64, the volatile read is a load-acquire
+    /// that ensures we see stores from <see cref="Inject"/> on other cores. Inside the lock, a second
+    /// null check handles the race where another worker drained the queue between our volatile read
+    /// and lock acquisition (double-checked locking pattern).
+    /// </summary>
     private bool TryDequeueInjected(WorkerContext context)
     {
         if (Volatile.Read(ref _globalQueueHead) == null)
@@ -525,6 +617,24 @@ public sealed class WorkerPool : IDisposable
         context.CurrentScheduler = null;
     }
 
+    /// <summary>
+    /// After a job completes, atomically decrements <see cref="Job.RemainingDependencies"/> on each
+    /// dependent. Any dependent that reaches zero is pushed onto this worker's local deque (LIFO,
+    /// cache-hot). This is the primary fan-out mechanism: after a barrier job completes, all N jobs
+    /// in the next phase are pushed to a single worker's deque, then redistributed via steal-half.
+    ///
+    /// <para>
+    /// <see cref="Interlocked.Decrement"/> on <c>RemainingDependencies</c> is the linearization
+    /// point: exactly one thread (the one whose decrement yields zero) readies each dependent.
+    /// No lock is needed because each dependent's counter is independent.
+    /// </para>
+    ///
+    /// <para>
+    /// After pushing readied jobs, we call <see cref="TryWakeOneWorker"/> to cascade-wake a parked
+    /// worker if needed. We call it once regardless of how many jobs were readied — the woken worker
+    /// will steal half the batch, and if it was the last searcher, it will cascade-wake another.
+    /// </para>
+    /// </summary>
     private void PropagateCompletion(Job job, WorkerContext context)
     {
         if (job.Dependents is not { Count: > 0 } dependents)
