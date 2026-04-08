@@ -279,6 +279,122 @@ public class WorkStealingDequeStressTests
         AssertAllItemsAccountedFor(itemCount, ownerPopped, allStolen);
     }
 
+    // ═══════════════════════════ STEAL HALF UNDER CONTENTION ═══════════════
+
+    [Theory]
+    [InlineData(50_000, 4, 2)]
+    [InlineData(50_000, 64, 3)]
+    [InlineData(200_000, 4, 4)]
+    [InlineData(200_000, 64, 2)]
+    public void Stress_OwnerPushes_MultipleThievesStealHalf_NoItemsLost(
+        int itemCount, int initialCapacity, int thiefCount)
+    {
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
+
+        var stolenBags = new List<int>[thiefCount];
+        var ownerDone = new ManualResetEventSlim(false);
+        var thiefBarrier = new CountdownEvent(thiefCount);
+
+        for (var thiefIndex = 0; thiefIndex < thiefCount; thiefIndex++)
+        {
+            stolenBags[thiefIndex] = [];
+            var bag = stolenBags[thiefIndex];
+            var thiefDeque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
+
+            var thread = new Thread(() =>
+            {
+                while (!ownerDone.IsSet || !deque.IsEmpty)
+                {
+                    if (deque.TryStealHalf(thiefDeque, out var firstItem))
+                    {
+                        bag.Add(firstItem);
+                        while (thiefDeque.TryPop(out var local))
+                            bag.Add(local);
+                    }
+                    else
+                    {
+                        Thread.SpinWait(10);
+                    }
+                }
+
+                thiefBarrier.Signal();
+            });
+
+            thread.Start();
+        }
+
+        for (var i = 0; i < itemCount; i++)
+            deque.Push(i);
+
+        ownerDone.Set();
+        thiefBarrier.Wait(TestContext.Current.CancellationToken);
+
+        var allStolen = new List<int>();
+        foreach (var bag in stolenBags)
+            allStolen.AddRange(bag);
+
+        AssertAllItemsAccountedFor(itemCount, [], allStolen);
+    }
+
+    [Theory]
+    [InlineData(50_000, 4, 2, 3)]
+    [InlineData(100_000, 64, 3, 5)]
+    [InlineData(200_000, 4, 4, 7)]
+    public void Stress_OwnerPushPop_MultipleThievesStealHalf_NoItemsLost(
+        int itemCount, int initialCapacity, int thiefCount, int popEveryN)
+    {
+        var deque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
+
+        var ownerPopped = new List<int>();
+        var stolenBags = new List<int>[thiefCount];
+        var ownerDone = new ManualResetEventSlim(false);
+        var thiefBarrier = new CountdownEvent(thiefCount);
+
+        for (var thiefIndex = 0; thiefIndex < thiefCount; thiefIndex++)
+        {
+            stolenBags[thiefIndex] = [];
+            var bag = stolenBags[thiefIndex];
+            var thiefDeque = WorkStealingDeque<int>.TestAccessor.Create(initialCapacity);
+
+            var thread = new Thread(() =>
+            {
+                while (!ownerDone.IsSet || !deque.IsEmpty)
+                {
+                    if (deque.TryStealHalf(thiefDeque, out var firstItem))
+                    {
+                        bag.Add(firstItem);
+                        while (thiefDeque.TryPop(out var local))
+                            bag.Add(local);
+                    }
+                    else
+                    {
+                        Thread.SpinWait(10);
+                    }
+                }
+
+                thiefBarrier.Signal();
+            });
+
+            thread.Start();
+        }
+
+        for (var i = 0; i < itemCount; i++)
+        {
+            deque.Push(i);
+
+            if (i % popEveryN == 0 && deque.TryPop(out var item))
+                ownerPopped.Add(item);
+        }
+
+        while (deque.TryPop(out var remaining))
+            ownerPopped.Add(remaining);
+
+        ownerDone.Set();
+        thiefBarrier.Wait(TestContext.Current.CancellationToken);
+
+        AssertAllItemsAccountedFor(itemCount, ownerPopped, stolenBags);
+    }
+
     // ═══════════════════════════ HELPERS ═══════════════════════════════════
 
     private static void AssertAllItemsAccountedFor(int itemCount, List<int> ownerPopped, List<int> allStolen)

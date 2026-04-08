@@ -211,6 +211,108 @@ internal sealed class WorkStealingDeque<T>
         return false;
     }
 
+    // ═══════════════════════════ BATCH STEAL ═════════════════════════════════
+
+    /// <summary>
+    /// Steals approximately half the items from this deque into <paramref name="destination"/>, returning one item
+    /// directly for immediate execution. Adapted from Tokio's <c>steal_into2</c> (queue.rs) and Go's <c>runqsteal</c>.
+    ///
+    /// <para>
+    /// This is the key optimization for fan-out scenarios (e.g. a barrier completing 64 dependent jobs that all land on
+    /// one worker's deque). Instead of 15 idle workers each stealing one item via CAS on a single <c>_top</c>, the first
+    /// stealer takes half (~32), the second takes half of what remains (~16), etc. Distribution becomes logarithmic:
+    /// ~log2(N) rounds instead of ~N sequential CAS operations.
+    /// </para>
+    ///
+    /// THREAD MODEL
+    ///   Called by a thief thread. <paramref name="destination"/> must be the thief's own deque (the thief is the single
+    ///   producer for its deque, so writing to <c>destination._bottom</c> and its buffer is safe). Multiple thieves may
+    ///   call this concurrently on the same victim — at most one succeeds (CAS on <c>_top</c>), others return false.
+    ///
+    /// ALGORITHM
+    ///   1. Read victim's _top (acquire) and _bottom (acquire), with a full fence between them (same ordering as TrySteal).
+    ///   2. Compute n = ceil(available / 2). Steal the older half, leaving the newer half for the owner.
+    ///   3. Read source buffer and copy all n items into the destination buffer BEFORE the CAS. The writes into the
+    ///      destination are invisible to other threads because destination._bottom has not yet been advanced. This is
+    ///      critical: once the CAS advances source._top, the owner may immediately push new items that wrap around into
+    ///      the ring buffer slots we just read from.
+    ///   4. CAS victim's _top from top to top+n, atomically claiming the range [top, top+n). If the CAS fails (another
+    ///      thief or the owner's TryPop won the race), discard and return false.
+    ///   5. Publish destination._bottom += (n-1) with a release store, making the stolen items visible.
+    ///
+    /// CORRECTNESS
+    ///   - Items are read from the source BEFORE the CAS. While _top == top, the range [top, top+n) is safe to read:
+    ///     the owner only writes at _bottom (above our range), and other stealers only advance _top via CAS (which would
+    ///     cause our CAS to fail, discarding our reads).
+    ///   - After a successful CAS, the owner may push new items that wrap into the slots we read. This is safe because
+    ///     we already copied the items out.
+    ///   - On CAS failure, the items written to the destination buffer are harmless: destination._bottom was not advanced,
+    ///     so those slots appear empty to stealers, and the owner (thief) will overwrite them on future pushes.
+    ///   - The destination writes are safe because the thief is the single producer (Push/TryPop owner) of its own deque.
+    ///   - If the destination's buffer is too small, it is grown before copying (same Grow logic as Push).
+    /// </summary>
+    /// <returns><c>true</c> if at least one item was stolen; <c>false</c> if the deque was empty or the CAS lost the race.</returns>
+    public bool TryStealHalf(WorkStealingDeque<T> destination, out T firstItem)
+    {
+        var top = Volatile.Read(ref _top);
+        Thread.MemoryBarrier();
+        var bottom = Volatile.Read(ref _bottom);
+
+        var available = bottom - top;
+        if (available <= 0)
+        {
+            firstItem = default!;
+            return false;
+        }
+
+        // Steal ceil(available/2): the older half from the top.
+        var n = available - (available / 2);
+
+        var srcBuffer = Volatile.Read(ref _buffer);
+
+        // Read the first item (will be returned directly for immediate execution).
+        firstItem = srcBuffer.Items[top & srcBuffer.Mask];
+
+        // Copy remaining n-1 items into the destination's buffer. These writes are invisible to other threads
+        // because destination._bottom has not been advanced yet.
+        var itemsToTransfer = n - 1;
+        if (itemsToTransfer > 0)
+        {
+            destination._owner.AssertOwnerThread();
+
+            var dstBottom = destination._bottom;
+            var dstTop = Volatile.Read(ref destination._top);
+            var dstBuffer = destination._buffer;
+
+            // Grow may need multiple doublings since we're inserting a batch, not a single item.
+            while (dstBottom - dstTop + itemsToTransfer >= dstBuffer.Capacity)
+                dstBuffer = destination.Grow(dstBottom, dstTop);
+
+            for (var i = 1L; i < n; i++)
+            {
+                var srcIdx = (top + i) & srcBuffer.Mask;
+                var dstIdx = (dstBottom + i - 1) & dstBuffer.Mask;
+                dstBuffer.Items[dstIdx] = srcBuffer.Items[srcIdx];
+            }
+        }
+
+        // Now atomically claim the range. If this fails, another thief (or owner's TryPop) already advanced _top.
+        if (Interlocked.CompareExchange(ref _top, top + n, top) != top)
+        {
+            firstItem = default!;
+            return false;
+        }
+
+        // Publish the stolen items in the destination deque.
+        if (itemsToTransfer > 0)
+        {
+            var dstBottom = destination._bottom;
+            Volatile.Write(ref destination._bottom, dstBottom + itemsToTransfer);
+        }
+
+        return true;
+    }
+
     // ═══════════════════════════ DIAGNOSTICS ═════════════════════════════════
 
     /// <summary>

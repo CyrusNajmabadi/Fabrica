@@ -490,4 +490,193 @@ public class WorkStealingDequeTests
         Assert.False(deque.TrySteal(out _));
         Assert.True(deque.IsEmpty);
     }
+
+    // ═══════════════════════════ STEAL HALF ══════════════════════════════════
+
+    [Fact]
+    public void TryStealHalf_EmptySource_ReturnsFalse()
+    {
+        var victim = new WorkStealingDeque<int>();
+        var thief = new WorkStealingDeque<int>();
+
+        Assert.False(victim.TryStealHalf(thief, out var item));
+        Assert.Equal(default, item);
+        Assert.True(thief.IsEmpty);
+    }
+
+    [Fact]
+    public void TryStealHalf_SingleItem_ReturnsItDirectly_NothingInDestination()
+    {
+        var victim = new WorkStealingDeque<int>();
+        victim.Push(42);
+
+        var thief = new WorkStealingDeque<int>();
+        Assert.True(victim.TryStealHalf(thief, out var item));
+        Assert.Equal(42, item);
+        Assert.True(victim.IsEmpty);
+        Assert.True(thief.IsEmpty);
+    }
+
+    [Fact]
+    public void TryStealHalf_TwoItems_StealsCeilHalf_ReturnsOneDirectly()
+    {
+        var victim = new WorkStealingDeque<int>();
+        victim.Push(1);
+        victim.Push(2);
+
+        var thief = new WorkStealingDeque<int>();
+        Assert.True(victim.TryStealHalf(thief, out var item));
+
+        // ceil(2/2) = 1 item stolen total. Returned directly, nothing in destination.
+        Assert.Equal(1, item);
+        Assert.True(thief.IsEmpty);
+        Assert.Equal(1, victim.Count);
+
+        Assert.True(victim.TrySteal(out var remaining));
+        Assert.Equal(2, remaining);
+    }
+
+    [Fact]
+    public void TryStealHalf_FourItems_StealsCeilHalf()
+    {
+        var victim = new WorkStealingDeque<int>();
+        for (var i = 1; i <= 4; i++)
+            victim.Push(i);
+
+        var thief = new WorkStealingDeque<int>();
+        Assert.True(victim.TryStealHalf(thief, out var firstItem));
+
+        Assert.Equal(1, firstItem);
+        Assert.Equal(1, thief.Count);
+        Assert.Equal(2, victim.Count);
+
+        Assert.True(thief.TryPop(out var thiefItem));
+        Assert.Equal(2, thiefItem);
+
+        Assert.True(victim.TrySteal(out var remaining1));
+        Assert.Equal(3, remaining1);
+        Assert.True(victim.TrySteal(out var remaining2));
+        Assert.Equal(4, remaining2);
+    }
+
+    [Fact]
+    public void TryStealHalf_EightItems_StealsHalf_InFifoOrder()
+    {
+        var victim = new WorkStealingDeque<int>();
+        for (var i = 1; i <= 8; i++)
+            victim.Push(i);
+
+        var thief = new WorkStealingDeque<int>();
+        Assert.True(victim.TryStealHalf(thief, out var firstItem));
+
+        Assert.Equal(1, firstItem);
+        Assert.Equal(3, thief.Count);
+        Assert.Equal(4, victim.Count);
+
+        // Thief's deque: items 2,3,4 (stolen from FIFO end), pop gives LIFO order
+        Assert.True(thief.TryPop(out var t1));
+        Assert.Equal(4, t1);
+        Assert.True(thief.TryPop(out var t2));
+        Assert.Equal(3, t2);
+        Assert.True(thief.TryPop(out var t3));
+        Assert.Equal(2, t3);
+
+        // Victim retains the newer half: 5,6,7,8
+        for (var expected = 5; expected <= 8; expected++)
+        {
+            Assert.True(victim.TrySteal(out var v));
+            Assert.Equal(expected, v);
+        }
+    }
+
+    [Fact]
+    public void TryStealHalf_LargeCount_NoItemsLostOrDuplicated()
+    {
+        const int Count = 64;
+        var victim = new WorkStealingDeque<int>();
+        for (var i = 0; i < Count; i++)
+            victim.Push(i);
+
+        var thief = new WorkStealingDeque<int>();
+        Assert.True(victim.TryStealHalf(thief, out var firstItem));
+
+        var all = new HashSet<int> { firstItem };
+
+        while (thief.TryPop(out var item))
+            Assert.True(all.Add(item));
+
+        while (victim.TrySteal(out var item))
+            Assert.True(all.Add(item));
+
+        Assert.Equal(Count, all.Count);
+        for (var i = 0; i < Count; i++)
+            Assert.Contains(i, all);
+    }
+
+    [Fact]
+    public void TryStealHalf_CascadeDistribution_FullyDistributes()
+    {
+        var source = new WorkStealingDeque<int>();
+        for (var i = 0; i < 16; i++)
+            source.Push(i);
+
+        var all = new HashSet<int>();
+
+        var d1 = new WorkStealingDeque<int>();
+        Assert.True(source.TryStealHalf(d1, out var item1));
+        all.Add(item1);
+
+        var d2 = new WorkStealingDeque<int>();
+        Assert.True(source.TryStealHalf(d2, out var item2));
+        all.Add(item2);
+
+        var d3 = new WorkStealingDeque<int>();
+        Assert.True(d1.TryStealHalf(d3, out var item3));
+        all.Add(item3);
+
+        // Drain remaining from all deques
+        foreach (var deque in new[] { source, d1, d2, d3 })
+        {
+            while (deque.TryPop(out var v))
+                all.Add(v);
+        }
+
+        Assert.Equal(16, all.Count);
+    }
+
+    [Fact]
+    public void TryStealHalf_DestinationGrowsIfNeeded()
+    {
+        var victim = new WorkStealingDeque<int>();
+        for (var i = 0; i < 64; i++)
+            victim.Push(i);
+
+        var thief = WorkStealingDeque<int>.TestAccessor.Create(4);
+        Assert.True(victim.TryStealHalf(thief, out _));
+
+        Assert.True(thief.GetTestAccessor().Capacity >= 31);
+    }
+
+    [Fact]
+    public void TryStealHalf_DestinationAlreadyHasItems_AppendsCorrectly()
+    {
+        var victim = new WorkStealingDeque<int>();
+        victim.Push(10);
+        victim.Push(20);
+        victim.Push(30);
+        victim.Push(40);
+
+        var thief = new WorkStealingDeque<int>();
+        thief.Push(100);
+
+        Assert.True(victim.TryStealHalf(thief, out var firstItem));
+        Assert.Equal(10, firstItem);
+
+        Assert.Equal(2, thief.Count);
+
+        Assert.True(thief.TryPop(out var newest));
+        Assert.Equal(20, newest);
+        Assert.True(thief.TryPop(out var oldest));
+        Assert.Equal(100, oldest);
+    }
 }
