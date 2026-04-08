@@ -164,7 +164,7 @@ public sealed class WorkerPool : IDisposable
     public WorkerPool(int workerCount = -1, int coordinatorCount = 0)
     {
         if (workerCount < 0)
-            workerCount = Math.Max(1, Math.Min(Environment.ProcessorCount - coordinatorCount, MaxWorkerCount));
+            workerCount = Math.Max(1, Math.Min(Threading.ProcessorTopology.PerformanceCoreCount - coordinatorCount, MaxWorkerCount));
 
         ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(coordinatorCount, 0);
