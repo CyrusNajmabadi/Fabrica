@@ -564,16 +564,18 @@ public sealed class WorkerPool : IDisposable
     }
 
     /// <summary>
-    /// Dequeues one job from the global injection queue. The <see cref="Volatile.Read"/> on
-    /// <c>_globalQueueHead</c> is a lock-free fast path: if the queue is visibly empty, we avoid
-    /// acquiring <see cref="_globalQueueLock"/> entirely. On ARM64, the volatile read is a load-acquire
-    /// that ensures we see stores from <see cref="Inject"/> on other cores. Inside the lock, a second
-    /// null check handles the race where another worker drained the queue between our volatile read
-    /// and lock acquisition (double-checked locking pattern).
+    /// Dequeues one job from the global injection queue. The plain read of <c>_globalQueueHead</c>
+    /// is a lock-free fast path: if the queue appears empty, we skip acquiring
+    /// <see cref="_globalQueueLock"/> entirely. This is intentionally NOT a <see cref="Volatile.Read"/>
+    /// — the load-acquire fence measurably increases latency and variance on ARM64. A stale null
+    /// read is harmless: the worker simply continues its steal loop and discovers the injected work
+    /// on the next <see cref="TryExecuteOne"/> call (or another worker finds it first). Inside the
+    /// lock, a second null check handles the race where another worker drained the queue between
+    /// the fast-path check and lock acquisition.
     /// </summary>
     private bool TryDequeueInjected(WorkerContext context)
     {
-        if (Volatile.Read(ref _globalQueueHead) == null)
+        if (_globalQueueHead == null)
             return false;
 
         Job? job;
