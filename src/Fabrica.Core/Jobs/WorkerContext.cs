@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Fabrica.Core.Threading;
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
@@ -18,8 +19,12 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex)
     internal readonly int WorkerIndex = workerIndex;
     internal readonly WorkStealingDeque<Job> Deque = new();
 
-    /// <summary>Round-robin offset for steal target selection. Accessed only by the owning thread.</summary>
-    internal int StealOffset;
+    /// <summary>
+    /// Per-worker PRNG for randomizing steal target selection. Seeded uniquely per worker via the
+    /// golden-ratio hash to ensure spatial decorrelation — avoids pathological lock-step where all
+    /// workers try to steal from the same victim simultaneously.
+    /// </summary>
+    internal FastRand StealRand = new((ulong)workerIndex * 0x9E3779B97F4A7C15);
 
     /// <summary>
     /// The scheduler that owns the currently executing job's DAG. Set by
