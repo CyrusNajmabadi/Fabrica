@@ -30,16 +30,19 @@ namespace Fabrica.Core.Jobs;
 /// PARKING AND WAKE PROTOCOL
 ///
 ///   The core invariant is: a background worker must never permanently sleep on the semaphore while
-///   stealable work exists. The protocol uses announce-then-recheck to prevent lost wakes, and
-///   batched notification to minimize contention.
+///   stealable work exists. The protocol uses adaptive spinning followed by announce-then-recheck
+///   to prevent lost wakes, with batched notification to minimize contention.
 ///
 ///   Background worker loop (<see cref="RunWorker"/>):
-///     (1) TryExecuteOne — attempt local pop, peer steal, injection dequeue.
-///     (2) If (1) fails: Interlocked.Increment(_parkedWorkers) — announce intent to park.
+///     (0) TryExecuteOne — attempt local pop, peer steal, injection dequeue.
+///     (1) If (0) fails: adaptive spin — SpinWait for ~10 iterations of pure user-mode spinning,
+///         calling TryExecuteOne each iteration. If work is found, go to (0). This avoids the
+///         expensive kernel park for short inter-phase gaps.
+///     (2) If spin exhausted: Interlocked.Increment(_parkedWorkers) — announce intent to park.
 ///     (3) TryExecuteOne again — the recheck. This closes the race window between (1) and (2).
-///     (4) If (3) finds work: Interlocked.Decrement(_parkedWorkers), execute, go to (1).
+///     (4) If (3) finds work: Interlocked.Decrement(_parkedWorkers), execute, go to (0).
 ///     (5) If (3) finds nothing: _workSignal.Wait() — block until woken.
-///     (6) On wake: Interlocked.Decrement(_parkedWorkers), go to (1).
+///     (6) On wake: Interlocked.Decrement(_parkedWorkers), go to (0).
 ///
 ///   Producer notification (<see cref="PropagateCompletion"/>):
 ///     (a) Push all newly-readied dependents onto the completing worker's deque.
@@ -241,9 +244,26 @@ public sealed class WorkerPool : IDisposable
             if (this.TryExecuteOne(context))
                 continue;
 
-            // Announce-then-recheck: declare intent to park, then re-check for work. This closes
-            // the race where work arrives between our failed steal and the Wait call — the producer
-            // sees _parkedWorkers > 0 and releases, or our re-check finds the work directly.
+            // Adaptive spin: try a few more times in user-mode before committing to the expensive
+            // kernel park path. In phased DAGs, the next batch of work often arrives within
+            // microseconds — spinning here avoids the ~50-100μs SemaphoreSlim round-trip.
+            // SpinWait.NextSpinWillYield becomes true after ~10 iterations of pure CPU spinning.
+            var spinWait = new SpinWait();
+            var found = false;
+            while (!spinWait.NextSpinWillYield)
+            {
+                spinWait.SpinOnce();
+                if (this.TryExecuteOne(context))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found)
+                continue;
+
+            // Spin exhausted — fall through to announce-then-recheck-then-park.
             Interlocked.Increment(ref _parkedWorkers);
 
             if (this.TryExecuteOne(context))
