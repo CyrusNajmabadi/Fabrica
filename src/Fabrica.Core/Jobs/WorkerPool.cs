@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
 
@@ -154,7 +155,7 @@ public sealed class WorkerPool : IDisposable
     /// land here. Not used by the coordinator fast-path (<see cref="JobScheduler.Submit"/>), which
     /// pushes directly onto the coordinator's deque.
     /// </summary>
-    private readonly ConcurrentQueue<Job> _injectionQueue = new();
+    private readonly InjectionQueue<Job> _injectionQueue = new();
 
     /// <summary>Next coordinator slot index to hand out via <see cref="AttachCoordinator"/>.</summary>
     private int _nextCoordinatorSlot;
