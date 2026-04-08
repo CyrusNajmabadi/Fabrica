@@ -14,7 +14,7 @@ namespace Fabrica.Core.Threading.Queues;
 /// buffer overflows (rare) or when a worker drains global work (periodic). A simple lock is
 /// cheaper and simpler than a lock-free structure for this access pattern.
 /// </summary>
-internal sealed class InjectionQueue<T>
+internal readonly struct InjectionQueue<T>()
 {
     private readonly Lock _lock = new();
     private readonly UnsafeStack<T> _stack = new();
