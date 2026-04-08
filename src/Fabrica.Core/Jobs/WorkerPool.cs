@@ -481,7 +481,7 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        if (_globalQueueHead == null)
+        if (Volatile.Read(ref _globalQueueHead) == null)
             return false;
 
         Job? job;
