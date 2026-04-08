@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -57,7 +56,7 @@ namespace Fabrica.Core.Threading.Queues;
 /// OVERFLOW
 ///
 ///   When the ring buffer is full (<c>tail - steal &gt;= Capacity</c>), the owner moves half
-///   the items plus the incoming item to a shared injection queue (<see cref="_overflow"/>).
+///   the items plus the incoming item to a shared <see cref="InjectionQueue{T}"/>.
 ///   Follows Tokio's algorithm:
 ///
 ///   1. If <c>steal != real</c> (a concurrent steal is in progress, which will free capacity
@@ -95,7 +94,7 @@ namespace Fabrica.Core.Threading.Queues;
 /// REFERENCE
 ///   Tokio scheduler queue: tokio/src/runtime/scheduler/multi_thread/queue.rs
 /// </summary>
-internal sealed class BoundedLocalQueue<T>(ConcurrentQueue<T> overflow) where T : class
+internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
 {
     internal const int QueueCapacity = 256;
     private const int Mask = QueueCapacity - 1;
@@ -123,7 +122,7 @@ internal sealed class BoundedLocalQueue<T>(ConcurrentQueue<T> overflow) where T 
     /// <summary>
     /// Shared injection queue. When the ring buffer is full, overflow items are enqueued here.
     /// </summary>
-    private readonly ConcurrentQueue<T> _overflow = overflow;
+    private readonly InjectionQueue<T> _overflow = overflow;
 
     private SingleThreadedOwner _owner;
 

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Fabrica.Core.Threading.Queues;
 using Xunit;
 
@@ -6,7 +5,7 @@ namespace Fabrica.Core.Tests.Collections;
 
 public class BoundedLocalQueueTests
 {
-    private static ConcurrentQueue<T> MakeOverflow<T>() => new();
+    private static InjectionQueue<T> MakeOverflow<T>() => new();
 
     // ═══════════════════════════ EMPTY QUEUE ═════════════════════════════════
 
@@ -481,11 +480,13 @@ public class BoundedLocalQueueTests
 
         Assert.Equal((cap / 2) + 1, overflow.Count);
 
-        var overflowed = overflow.ToList();
-        for (var i = 0; i < cap / 2; i++)
-            Assert.Equal($"item-{i}", overflowed[i]);
-
-        Assert.Equal($"item-{cap}", overflowed[^1]);
+        // DrainToList returns LIFO order (most recently pushed first).
+        // The overflow path pushes: item-0, item-1, ..., item-127, item-{cap}.
+        // So drain yields: item-{cap}, item-127, ..., item-0.
+        var overflowed = overflow.GetTestAccessor().DrainToList();
+        Assert.Equal($"item-{cap}", overflowed[0]);
+        for (var i = 1; i < overflowed.Count; i++)
+            Assert.Equal($"item-{(cap / 2) - i}", overflowed[i]);
     }
 
     [Fact]
@@ -525,7 +526,7 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var item))
             popped.Add(item);
 
-        var all = new HashSet<string>(overflow);
+        var all = new HashSet<string>(overflow.GetTestAccessor().DrainToList());
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 
@@ -550,7 +551,7 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var remaining))
             popped.Add(remaining);
 
-        var all = new HashSet<string>(overflow);
+        var all = new HashSet<string>(overflow.GetTestAccessor().DrainToList());
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 
