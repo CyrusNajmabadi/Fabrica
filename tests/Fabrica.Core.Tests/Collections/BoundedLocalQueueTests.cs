@@ -461,4 +461,119 @@ public class BoundedLocalQueueTests
         Assert.True(queue.TryPop(out _));
         Assert.False(queue.TrySteal(out _));
     }
+
+    // ═══════════════════════════ OVERFLOW ═════════════════════════════════════
+
+    [Fact]
+    public void Push_WhenFull_OverflowsHalfPlusNewItem()
+    {
+        var overflowed = new List<string>();
+        var queue = new BoundedLocalQueue<string>(item => overflowed.Add(item));
+        var cap = BoundedLocalQueue<string>.QueueCapacity;
+
+        // Fill ring: 1st push → LIFO only. Pushes 2..257 evict into ring.
+        // After cap+1 pushes: LIFO has item-{cap}, ring has items 0..{cap-1} (256 items, full).
+        for (var i = 0; i <= cap; i++)
+            queue.Push($"item-{i}");
+
+        Assert.Empty(overflowed);
+
+        // The (cap+2)th push evicts LIFO → PushToRingBuffer → overflow.
+        queue.Push("trigger");
+
+        // Overflow: 128 oldest ring items (item-0..item-127) + the evicted item (item-{cap}).
+        Assert.Equal(cap / 2 + 1, overflowed.Count);
+        for (var i = 0; i < cap / 2; i++)
+            Assert.Equal($"item-{i}", overflowed[i]);
+
+        Assert.Equal($"item-{cap}", overflowed[^1]);
+    }
+
+    [Fact]
+    public void Push_WhenFull_RingRetainsNewerHalf()
+    {
+        var overflowed = new List<string>();
+        var queue = new BoundedLocalQueue<string>(item => overflowed.Add(item));
+        var cap = BoundedLocalQueue<string>.QueueCapacity;
+
+        for (var i = 0; i <= cap; i++)
+            queue.Push($"item-{i}");
+
+        queue.Push("trigger");
+
+        var popped = new List<string>();
+        while (queue.TryPop(out var item))
+            popped.Add(item);
+
+        // "trigger" pops first (LIFO), then ring items {cap/2}..{cap-1} (FIFO order).
+        Assert.Equal("trigger", popped[0]);
+        for (var i = 1; i < popped.Count; i++)
+            Assert.Equal($"item-{cap / 2 - 1 + i}", popped[i]);
+
+        // Total: 1 (trigger) + cap/2 (remaining ring half) = cap/2 + 1.
+        Assert.Equal(cap / 2 + 1, popped.Count);
+    }
+
+    [Fact]
+    public void Push_WhenFull_NoItemsLostOrDuplicated()
+    {
+        var overflowed = new List<string>();
+        var queue = new BoundedLocalQueue<string>(item => overflowed.Add(item));
+        const int TotalItems = 1000;
+
+        for (var i = 0; i < TotalItems; i++)
+            queue.Push($"item-{i}");
+
+        var popped = new List<string>();
+        while (queue.TryPop(out var item))
+            popped.Add(item);
+
+        var all = new HashSet<string>(overflowed);
+        foreach (var p in popped)
+            Assert.True(all.Add(p), $"Duplicate item: {p}");
+
+        Assert.Equal(TotalItems, all.Count);
+    }
+
+    [Fact]
+    public void Push_WhenFull_WithoutCallback_SilentlyDropsInRelease()
+    {
+        var queue = new BoundedLocalQueue<string>();
+        var cap = BoundedLocalQueue<string>.QueueCapacity;
+
+        // Fill ring to capacity (cap+1 pushes: 1 LIFO + cap ring).
+        for (var i = 0; i <= cap; i++)
+            queue.Push($"item-{i}");
+
+        // One more push triggers overflow — no callback, so in Release the item is dropped.
+        queue.Push("overflow-item");
+
+        Assert.True(queue.Count > 0);
+    }
+
+    [Fact]
+    public void Push_RepeatedOverflow_AllItemsAccountedFor()
+    {
+        var overflowed = new List<string>();
+        var queue = new BoundedLocalQueue<string>(item => overflowed.Add(item));
+        const int TotalItems = 5000;
+
+        // Push items while periodically popping to create repeated overflow cycles.
+        var popped = new List<string>();
+        for (var i = 0; i < TotalItems; i++)
+        {
+            queue.Push($"item-{i}");
+            if (i % 3 == 0 && queue.TryPop(out var item))
+                popped.Add(item);
+        }
+
+        while (queue.TryPop(out var remaining))
+            popped.Add(remaining);
+
+        var all = new HashSet<string>(overflowed);
+        foreach (var p in popped)
+            Assert.True(all.Add(p), $"Duplicate item: {p}");
+
+        Assert.Equal(TotalItems, all.Count);
+    }
 }
