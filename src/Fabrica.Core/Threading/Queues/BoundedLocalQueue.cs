@@ -360,26 +360,32 @@ internal sealed class BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T :
 
         Debug.Assert(n <= QueueCapacity / 2);
 
-        // ── Copy ────────────────────────────────────────────────────────────
-        // The claimed items are at [first, first+n) in the source buffer.
-        // Copy all n into the destination. We'll extract one for direct return after.
+        // ── Copy (bulk) ────────────────────────────────────────────────────
+        // The claimed range [steal, steal+n) is exclusively ours (Phase 1 CAS).
+        // The owner cannot push (steal != real forces overflow) or pop these slots
+        // (TryPop advances real, beyond our range). No other thief can start
+        // (steal != real causes early return). The Phase 1 CAS provides a full
+        // fence ensuring we see the owner's buffer writes. Matches Tokio's
+        // ptr::read (plain read) in the equivalent Rust code.
+        //
+        // Bulk copy + clear: each circular range is at most 2 contiguous segments
+        // (before and after the buffer wrap point). The while loop handles all
+        // combinations in 1–3 iterations, using Array.Copy/Clear instead of
+        // per-element reads/writes.
         var (first, _) = Unpack(nextPacked);
+        var srcStart = first & Mask;
+        var dstStart = dstTail & Mask;
+        var remaining = n;
 
-        for (var i = 0; i < n; i++)
+        while (remaining > 0)
         {
-            var srcIdx = (first + i) & Mask;
-            var dstIdx = (dstTail + i) & Mask;
-            // Plain read + null: the claimed range [steal, steal+n) is exclusively ours
-            // (Phase 1 CAS). The owner cannot push to these slots (steal != real forces
-            // overflow) or pop them (TryPop advances real, which is beyond our range).
-            // No other thief can start (steal != real causes early return).
-            // The Phase 1 CAS provides a full fence (acquire-release on ARM64) ensuring
-            // we see the values the owner wrote before advancing _tail. Matches Tokio's
-            // ptr::read (plain read) in the equivalent Rust code.
-            // Null for GC: safe because no thread reads these slots until Phase 2
-            // completes and new pushes overwrite them.
-            destination._buffer[dstIdx] = _buffer[srcIdx]!;
-            _buffer[srcIdx] = null;
+            var chunk = Math.Min(remaining, Math.Min(QueueCapacity - srcStart, QueueCapacity - dstStart));
+            Array.Copy(_buffer, srcStart, destination._buffer, dstStart, chunk);
+            Array.Clear(_buffer, srcStart, chunk);
+
+            remaining -= chunk;
+            srcStart = (srcStart + chunk) & Mask;
+            dstStart = (dstStart + chunk) & Mask;
         }
 
         // ── Phase 2: Complete ───────────────────────────────────────────────
