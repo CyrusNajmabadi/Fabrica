@@ -14,7 +14,7 @@ namespace Fabrica.Core.Threading.Queues;
 /// buffer overflows (rare) or when a worker drains global work (periodic). A simple lock is
 /// cheaper and simpler than a lock-free structure for this access pattern.
 /// </summary>
-internal readonly struct InjectionQueue<T>()
+internal readonly struct InjectionQueue<T>() where T : class
 {
     private readonly Lock _lock = new();
     private readonly UnsafeStack<T> _stack = new();
@@ -27,12 +27,12 @@ internal readonly struct InjectionQueue<T>()
             _stack.Push(item);
     }
 
-    /// <summary>Tries to dequeue an item. Returns false if the queue is empty.</summary>
+    /// <summary>Tries to dequeue an item. Returns <c>null</c> if the queue is empty.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryDequeue(out T item)
+    public T? TryDequeue()
     {
         using (_lock.EnterScope())
-            return _stack.TryPop(out item);
+            return _stack.TryPop(out var item) ? item : null;
     }
 
     /// <summary>Approximate item count. Acquires the lock for an exact snapshot.</summary>

@@ -16,11 +16,10 @@ public class InjectionQueueTests
     }
 
     [Fact]
-    public void TryDequeue_OnEmpty_ReturnsFalse()
+    public void TryDequeue_OnEmpty_ReturnsNull()
     {
         var queue = new InjectionQueue<string>();
-        Assert.False(queue.TryDequeue(out var item));
-        Assert.Null(item);
+        Assert.Null(queue.TryDequeue());
     }
 
     // ═══════════════════════════ ENQUEUE / DEQUEUE ═══════════════════════════
@@ -34,8 +33,7 @@ public class InjectionQueueTests
         Assert.Equal(1, queue.Count);
         Assert.False(queue.IsEmpty);
 
-        Assert.True(queue.TryDequeue(out var item));
-        Assert.Equal("a", item);
+        Assert.Equal("a", queue.TryDequeue());
         Assert.True(queue.IsEmpty);
     }
 
@@ -49,14 +47,9 @@ public class InjectionQueueTests
 
         Assert.Equal(3, queue.Count);
 
-        Assert.True(queue.TryDequeue(out var first));
-        Assert.Equal("c", first);
-
-        Assert.True(queue.TryDequeue(out var second));
-        Assert.Equal("b", second);
-
-        Assert.True(queue.TryDequeue(out var third));
-        Assert.Equal("a", third);
+        Assert.Equal("c", queue.TryDequeue());
+        Assert.Equal("b", queue.TryDequeue());
+        Assert.Equal("a", queue.TryDequeue());
 
         Assert.True(queue.IsEmpty);
     }
@@ -66,8 +59,8 @@ public class InjectionQueueTests
     {
         var queue = new InjectionQueue<string>();
         queue.Enqueue("a");
-        Assert.True(queue.TryDequeue(out _));
-        Assert.False(queue.TryDequeue(out _));
+        Assert.NotNull(queue.TryDequeue());
+        Assert.Null(queue.TryDequeue());
     }
 
     // ═══════════════════════════ COUNT ═══════════════════════════════════════
@@ -75,17 +68,17 @@ public class InjectionQueueTests
     [Fact]
     public void Count_TracksEnqueueAndDequeue()
     {
-        var queue = new InjectionQueue<int>();
+        var queue = new InjectionQueue<string>();
 
         for (var i = 0; i < 10; i++)
         {
-            queue.Enqueue(i);
+            queue.Enqueue(i.ToString());
             Assert.Equal(i + 1, queue.Count);
         }
 
         for (var i = 9; i >= 0; i--)
         {
-            Assert.True(queue.TryDequeue(out _));
+            Assert.NotNull(queue.TryDequeue());
             Assert.Equal(i, queue.Count);
         }
     }
@@ -95,19 +88,16 @@ public class InjectionQueueTests
     [Fact]
     public void Interleaved_EnqueueDequeue_WorksCorrectly()
     {
-        var queue = new InjectionQueue<int>();
+        var queue = new InjectionQueue<string>();
 
-        queue.Enqueue(1);
-        queue.Enqueue(2);
-        Assert.True(queue.TryDequeue(out var item));
-        Assert.Equal(2, item);
+        queue.Enqueue("1");
+        queue.Enqueue("2");
+        Assert.Equal("2", queue.TryDequeue());
 
-        queue.Enqueue(3);
-        Assert.True(queue.TryDequeue(out item));
-        Assert.Equal(3, item);
+        queue.Enqueue("3");
+        Assert.Equal("3", queue.TryDequeue());
 
-        Assert.True(queue.TryDequeue(out item));
-        Assert.Equal(1, item);
+        Assert.Equal("1", queue.TryDequeue());
 
         Assert.True(queue.IsEmpty);
     }
@@ -143,9 +133,9 @@ public class InjectionQueueTests
     [InlineData(8, 10_000)]
     public void Stress_ConcurrentEnqueueDequeue_NoItemsLost(int threadCount, int itemsPerThread)
     {
-        var queue = new InjectionQueue<int>();
+        var queue = new InjectionQueue<string>();
         var totalItems = threadCount * itemsPerThread;
-        var dequeued = new System.Collections.Concurrent.ConcurrentBag<int>();
+        var dequeued = new System.Collections.Concurrent.ConcurrentBag<string>();
         var barrier = new Barrier(threadCount);
 
         var threads = new Thread[threadCount];
@@ -158,11 +148,14 @@ public class InjectionQueueTests
 
                 for (var i = 0; i < itemsPerThread; i++)
                 {
-                    var value = (threadId * itemsPerThread) + i;
+                    var value = ((threadId * itemsPerThread) + i).ToString();
                     queue.Enqueue(value);
 
-                    if (i % 2 == 0 && queue.TryDequeue(out var item))
-                        dequeued.Add(item);
+                    if (i % 2 == 0)
+                    {
+                        var item = queue.TryDequeue();
+                        if (item != null) dequeued.Add(item);
+                    }
                 }
             });
             threads[t].Start();
@@ -171,15 +164,15 @@ public class InjectionQueueTests
         foreach (var t in threads)
             t.Join();
 
-        while (queue.TryDequeue(out var remaining))
+        for (var remaining = queue.TryDequeue(); remaining != null; remaining = queue.TryDequeue())
             dequeued.Add(remaining);
 
         Assert.True(queue.IsEmpty);
 
-        var all = new HashSet<int>(dequeued);
+        var all = new HashSet<string>(dequeued);
         Assert.Equal(totalItems, all.Count);
         for (var i = 0; i < totalItems; i++)
-            Assert.Contains(i, all);
+            Assert.Contains(i.ToString(), all);
     }
 
     // ═══════════════════════════ STRUCT COPY SAFETY ══════════════════════════
@@ -191,11 +184,9 @@ public class InjectionQueueTests
         var copy = original;
 
         original.Enqueue("from-original");
-        Assert.True(copy.TryDequeue(out var item));
-        Assert.Equal("from-original", item);
+        Assert.Equal("from-original", copy.TryDequeue());
 
         copy.Enqueue("from-copy");
-        Assert.True(original.TryDequeue(out item));
-        Assert.Equal("from-copy", item);
+        Assert.Equal("from-copy", original.TryDequeue());
     }
 }
