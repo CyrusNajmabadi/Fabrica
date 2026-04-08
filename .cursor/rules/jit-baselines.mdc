@@ -12,13 +12,18 @@ methods. They verify that `typeof` dead-branch elimination, struct devirtualizat
 inlining are working as expected. Each baseline is stored at:
 
 ```
-tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.asm   # real baseline
-tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.ref   # redirect to another version's .asm
+tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.asm       # primary baseline
+tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.v{N}.asm  # variant (alternative valid encoding)
+tests/baselines/jit/{os}-{arch}-net{major}.{minor}.{patch}/{method}.ref       # redirect to another version's .asm
 ```
 
 A `.ref` file is a plain text file containing a relative path to the actual `.asm` baseline.
 Use `.ref` files to deduplicate when a new runtime version produces identical JIT output
 to an existing version. This avoids duplicating files and works on all platforms (unlike symlinks).
+
+**Variants** (`.v2.asm`, `.v3.asm`, etc.) represent alternative valid encodings the JIT may
+produce non-deterministically — e.g., RIP-relative vs register-indirect addressing depending
+on ASLR / memory layout. The test passes if the actual output matches ANY variant.
 
 The platform key includes the .NET runtime version because even patch releases can change
 JIT codegen.
@@ -92,15 +97,18 @@ file with the current JIT output.
 4. Rename `.actual` → `.asm` to establish the baseline (or create a `.ref` per step 2)
 5. Commit the new baseline directory
 
-### "JIT output differs from baseline"
+### "JIT output differs from N known variant(s)"
 
-This happens when the JIT changes its codegen for an existing platform+version (rare — usually
-means a rebuild with a different SDK that targets the same runtime).
+This happens when the JIT produces a new encoding that doesn't match any known variant.
+Structural validation has already passed at this point (typeof elimination confirmed).
 
 **What to do:**
-1. Diff the `.actual` file against the existing `.asm` baseline
-2. Verify the new output still demonstrates the expected optimizations
-3. If correct, replace the `.asm` with the `.actual` content
+1. Review the `.actual` output — the failure message includes the ASM and a suggested command
+2. If it's a valid alternative encoding (e.g., different addressing mode), add it as a variant:
+   - The failure message tells you the exact filename (e.g., `{method}.v2.asm`)
+   - If the output matches a variant in another version directory, create a `.ref` instead
+3. Do NOT replace the existing `.asm` — it remains valid for other CI runner configurations
+4. Do NOT delete any existing variants
 
 ### "Runtime correctness check failed"
 
