@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Fabrica.Core.Threading.Queues;
 using Xunit;
 
@@ -5,12 +6,14 @@ namespace Fabrica.Core.Tests.Collections;
 
 public class BoundedLocalQueueTests
 {
+    private static ConcurrentQueue<T> MakeOverflow<T>() => new();
+
     // ═══════════════════════════ EMPTY QUEUE ═════════════════════════════════
 
     [Fact]
     public void NewQueue_IsEmpty()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.True(queue.IsEmpty);
         Assert.Equal(0, queue.Count);
     }
@@ -18,24 +21,16 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryPop_OnEmpty_ReturnsFalse()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.False(queue.TryPop(out var item));
-        Assert.Null(item);
-    }
-
-    [Fact]
-    public void TrySteal_OnEmpty_ReturnsFalse()
-    {
-        var queue = new BoundedLocalQueue<string>();
-        Assert.False(queue.TrySteal(out var item));
         Assert.Null(item);
     }
 
     [Fact]
     public void TryStealHalf_OnEmpty_ReturnsFalse()
     {
-        var victim = new BoundedLocalQueue<string>();
-        var thief = new BoundedLocalQueue<string>();
+        var victim = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.False(victim.TryStealHalf(thief, out var item));
         Assert.Null(item);
     }
@@ -45,7 +40,7 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Push_SingleItem_PopReturnsIt()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         queue.Push("a");
 
         Assert.Equal(1, queue.Count);
@@ -57,17 +52,15 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Push_TwoItems_PopReturnsNewestFirst_ThenOldest()
     {
-        // First push goes to LIFO slot. Second push evicts first to ring, takes LIFO slot.
-        // Pop returns LIFO slot (newest), then ring head (oldest).
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         queue.Push("a");
         queue.Push("b");
 
         Assert.True(queue.TryPop(out var first));
-        Assert.Equal("b", first); // LIFO slot (newest)
+        Assert.Equal("b", first);
 
         Assert.True(queue.TryPop(out var second));
-        Assert.Equal("a", second); // ring buffer (evicted from LIFO)
+        Assert.Equal("a", second);
 
         Assert.True(queue.IsEmpty);
     }
@@ -75,15 +68,14 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Push_ThreeItems_PopReturnsLifoThenFifo()
     {
-        var queue = new BoundedLocalQueue<string>();
-        queue.Push("a"); // → LIFO slot
-        queue.Push("b"); // → LIFO slot; "a" evicted to ring[0]
-        queue.Push("c"); // → LIFO slot; "b" evicted to ring[1]
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        queue.Push("a");
+        queue.Push("b");
+        queue.Push("c");
 
         Assert.True(queue.TryPop(out var first));
-        Assert.Equal("c", first); // LIFO slot
+        Assert.Equal("c", first);
 
-        // Ring has [a, b] — pop from head (FIFO within the ring)
         Assert.True(queue.TryPop(out var second));
         Assert.Equal("a", second);
 
@@ -96,74 +88,79 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Pop_AfterAllPopped_ReturnsFalse()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         queue.Push("a");
         Assert.True(queue.TryPop(out _));
         Assert.False(queue.TryPop(out _));
     }
 
-    // ═══════════════════════════ PUSH / STEAL ═══════════════════════════════
+    // ═══════════════════════════ PUSH / STEAL HALF ═══════════════════════════
 
     [Fact]
-    public void Push_SingleItem_StealReturnsIt()
+    public void Push_SingleItem_StealHalfReturnsIt()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         queue.Push("a");
 
-        // Single item is in LIFO slot. Steal takes it.
-        Assert.True(queue.TrySteal(out var item));
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        Assert.True(queue.TryStealHalf(thief, out var item));
         Assert.Equal("a", item);
         Assert.True(queue.IsEmpty);
     }
 
     [Fact]
-    public void Push_TwoItems_StealTakesRingFirst_ThenLifo()
+    public void Push_TwoItems_StealHalfTakesOldestFromRing()
     {
-        var queue = new BoundedLocalQueue<string>();
-        queue.Push("a"); // → LIFO slot
-        queue.Push("b"); // → LIFO slot; "a" evicted to ring
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        queue.Push("a");
+        queue.Push("b");
 
-        // Steal takes from ring first (head = "a"), then LIFO ("b")
-        Assert.True(queue.TrySteal(out var first));
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        Assert.True(queue.TryStealHalf(thief, out var first));
         Assert.Equal("a", first);
 
-        Assert.True(queue.TrySteal(out var second));
+        Assert.True(queue.TryPop(out var second));
         Assert.Equal("b", second);
 
         Assert.True(queue.IsEmpty);
     }
 
     [Fact]
-    public void Steal_AfterAllStolen_ReturnsFalse()
+    public void StealHalf_AfterAllStolen_ReturnsFalse()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         queue.Push("a");
-        Assert.True(queue.TrySteal(out _));
-        Assert.False(queue.TrySteal(out _));
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        Assert.True(queue.TryStealHalf(thief, out _));
+        Assert.False(queue.TryStealHalf(thief, out _));
     }
 
-    // ═══════════════════════════ INTERLEAVED POP + STEAL ════════════════════
+    // ═══════════════════════════ INTERLEAVED POP + STEAL HALF ════════════════
 
     [Fact]
-    public void Push_Three_StealTakesOldest_PopTakesNewest()
+    public void Push_Three_StealHalfTakesOldest_PopTakesNewest()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         queue.Push("a");
         queue.Push("b");
         queue.Push("c");
 
-        // Steal: takes ring head (oldest in ring = "a")
-        Assert.True(queue.TrySteal(out var stolen));
-        Assert.Equal("a", stolen);
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        Assert.True(queue.TryStealHalf(thief, out var stolen));
 
-        // Pop: takes LIFO slot first ("c")
         Assert.True(queue.TryPop(out var popped));
         Assert.Equal("c", popped);
 
-        // Remaining: "b" in ring
-        Assert.Equal(1, queue.Count);
-        Assert.True(queue.TryPop(out var last));
-        Assert.Equal("b", last);
+        var all = new HashSet<string> { stolen, popped };
+        while (thief.TryPop(out var t))
+            Assert.True(all.Add(t));
+        while (queue.TryPop(out var q))
+            Assert.True(all.Add(q));
+
+        Assert.Equal(3, all.Count);
+        Assert.Contains("a", all);
+        Assert.Contains("b", all);
+        Assert.Contains("c", all);
     }
 
     // ═══════════════════════════ STEAL HALF ═════════════════════════════════
@@ -171,10 +168,10 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryStealHalf_SingleItemInLifo_ReturnsItDirectly()
     {
-        var victim = new BoundedLocalQueue<string>();
-        victim.Push("a"); // in LIFO slot only
+        var victim = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        victim.Push("a");
 
-        var thief = new BoundedLocalQueue<string>();
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.True(victim.TryStealHalf(thief, out var item));
         Assert.Equal("a", item);
         Assert.True(victim.IsEmpty);
@@ -184,15 +181,13 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryStealHalf_TwoItemsInRing_StealsOne()
     {
-        var victim = new BoundedLocalQueue<string>();
-        victim.Push("a"); // → LIFO
-        victim.Push("b"); // → LIFO; "a" evicted to ring
-        // Pop LIFO to leave only ring items
+        var victim = new BoundedLocalQueue<string>(MakeOverflow<string>());
+        victim.Push("a");
+        victim.Push("b");
         Assert.True(victim.TryPop(out var lifo));
         Assert.Equal("b", lifo);
 
-        // Ring has 1 item ("a"). ceil(1/2) = 1. Returned directly.
-        var thief = new BoundedLocalQueue<string>();
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.True(victim.TryStealHalf(thief, out var item));
         Assert.Equal("a", item);
         Assert.True(victim.IsEmpty);
@@ -202,22 +197,18 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryStealHalf_FourItemsInRing_StealsCeilHalf()
     {
-        var victim = new BoundedLocalQueue<string>();
-        // Push 5, pop LIFO to leave 4 in ring
+        var victim = new BoundedLocalQueue<string>(MakeOverflow<string>());
         for (var i = 0; i < 5; i++)
             victim.Push(i.ToString());
-        Assert.True(victim.TryPop(out _)); // removes LIFO ("4")
+        Assert.True(victim.TryPop(out _));
 
-        // Ring: [0, 1, 2, 3]. ceil(4/2) = 2 stolen.
-        var thief = new BoundedLocalQueue<string>();
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.True(victim.TryStealHalf(thief, out var firstItem));
 
-        // One returned directly, one in thief's ring
         var all = new HashSet<string> { firstItem };
         while (thief.TryPop(out var t))
             Assert.True(all.Add(t));
 
-        // Victim retains the newer half
         while (victim.TryPop(out var v))
             Assert.True(all.Add(v));
 
@@ -229,19 +220,18 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryStealHalf_EightItemsInRing_StealsHalf()
     {
-        var victim = new BoundedLocalQueue<string>();
-        // Push 9, pop LIFO to leave 8 in ring
+        var victim = new BoundedLocalQueue<string>(MakeOverflow<string>());
         for (var i = 0; i < 9; i++)
             victim.Push(i.ToString());
         Assert.True(victim.TryPop(out _));
 
-        var thief = new BoundedLocalQueue<string>();
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.True(victim.TryStealHalf(thief, out var firstItem));
 
         var all = new HashSet<string> { firstItem };
         while (thief.TryPop(out var t))
             Assert.True(all.Add(t));
-        while (victim.TrySteal(out var v))
+        while (victim.TryPop(out var v))
             Assert.True(all.Add(v));
 
         Assert.Equal(8, all.Count);
@@ -251,19 +241,18 @@ public class BoundedLocalQueueTests
     public void TryStealHalf_LargeCount_NoItemsLostOrDuplicated()
     {
         const int Count = 128;
-        var victim = new BoundedLocalQueue<string>();
-        // Push Count+1, pop LIFO to leave Count in ring
+        var victim = new BoundedLocalQueue<string>(MakeOverflow<string>());
         for (var i = 0; i <= Count; i++)
             victim.Push(i.ToString());
         Assert.True(victim.TryPop(out _));
 
-        var thief = new BoundedLocalQueue<string>();
+        var thief = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.True(victim.TryStealHalf(thief, out var firstItem));
 
         var all = new HashSet<string> { firstItem };
         while (thief.TryPop(out var t))
             Assert.True(all.Add(t), $"Duplicate in thief: {t}");
-        while (victim.TrySteal(out var v))
+        while (victim.TryPop(out var v))
             Assert.True(all.Add(v), $"Duplicate in victim: {v}");
 
         Assert.Equal(Count, all.Count);
@@ -275,22 +264,23 @@ public class BoundedLocalQueueTests
     public void TryStealHalf_CascadeDistribution_FullyDistributes()
     {
         const int Count = 16;
-        var source = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var source = new BoundedLocalQueue<string>(overflow);
         for (var i = 0; i <= Count; i++)
             source.Push(i.ToString());
-        Assert.True(source.TryPop(out _)); // remove LIFO
+        Assert.True(source.TryPop(out _));
 
         var all = new HashSet<string>();
 
-        var d1 = new BoundedLocalQueue<string>();
+        var d1 = new BoundedLocalQueue<string>(overflow);
         Assert.True(source.TryStealHalf(d1, out var item1));
         all.Add(item1);
 
-        var d2 = new BoundedLocalQueue<string>();
+        var d2 = new BoundedLocalQueue<string>(overflow);
         Assert.True(source.TryStealHalf(d2, out var item2));
         all.Add(item2);
 
-        var d3 = new BoundedLocalQueue<string>();
+        var d3 = new BoundedLocalQueue<string>(overflow);
         Assert.True(d1.TryStealHalf(d3, out var item3));
         all.Add(item3);
 
@@ -306,17 +296,17 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryStealHalf_DestinationAlreadyHasItems_AppendsCorrectly()
     {
-        var victim = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var victim = new BoundedLocalQueue<string>(overflow);
         victim.Push("a");
         victim.Push("b");
         victim.Push("c");
         victim.Push("d");
-        Assert.True(victim.TryPop(out _)); // remove LIFO ("d"), ring = [a, b, c]
+        Assert.True(victim.TryPop(out _));
 
-        var thief = new BoundedLocalQueue<string>();
-        thief.Push("x"); // thief has "x" in LIFO
+        var thief = new BoundedLocalQueue<string>(overflow);
+        thief.Push("x");
 
-        // Steal half of victim's ring [a, b, c] → ceil(3/2) = 2
         Assert.True(victim.TryStealHalf(thief, out var firstItem));
 
         var all = new HashSet<string> { firstItem };
@@ -325,7 +315,6 @@ public class BoundedLocalQueueTests
         while (victim.TryPop(out var v))
             Assert.True(all.Add(v));
 
-        // All original items accounted for
         Assert.Contains("a", all);
         Assert.Contains("b", all);
         Assert.Contains("c", all);
@@ -337,7 +326,7 @@ public class BoundedLocalQueueTests
     [Fact]
     public void RepeatedPushPop_WorksCorrectly()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
 
         for (var cycle = 0; cycle < 100; cycle++)
         {
@@ -349,14 +338,16 @@ public class BoundedLocalQueueTests
     }
 
     [Fact]
-    public void RepeatedPushSteal_WorksCorrectly()
+    public void RepeatedPushStealHalf_WorksCorrectly()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
 
         for (var cycle = 0; cycle < 100; cycle++)
         {
             queue.Push(cycle.ToString());
-            Assert.True(queue.TrySteal(out var item));
+            var thief = new BoundedLocalQueue<string>(overflow);
+            Assert.True(queue.TryStealHalf(thief, out var item));
             Assert.Equal(cycle.ToString(), item);
             Assert.True(queue.IsEmpty);
         }
@@ -367,7 +358,7 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Count_TracksCorrectly_ThroughPushAndPop()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
 
         for (var i = 0; i < 10; i++)
         {
@@ -387,26 +378,25 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Capacity_Is256()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var queue = new BoundedLocalQueue<string>(MakeOverflow<string>());
         Assert.Equal(256, queue.GetTestAccessor().Capacity);
     }
 
     [Fact]
     public void Push_FillsRingToCapacity_NoOverflow()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
 
-        // Push Capacity items: 1 in LIFO slot, Capacity-1 in ring.
-        // Ring capacity is 256, so Capacity total items should be fine.
         for (var i = 0; i < BoundedLocalQueue<string>.QueueCapacity; i++)
             queue.Push(i.ToString());
 
-        // Verify all items are recoverable
         var all = new HashSet<string>();
         while (queue.TryPop(out var item))
             Assert.True(all.Add(item));
 
         Assert.Equal(BoundedLocalQueue<string>.QueueCapacity, all.Count);
+        Assert.True(overflow.IsEmpty);
     }
 
     // ═══════════════════════════ LIFO SLOT DETAILS ══════════════════════════
@@ -414,13 +404,15 @@ public class BoundedLocalQueueTests
     [Fact]
     public void LifoSlot_StealableWhenRingEmpty()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         queue.Push("only-in-lifo");
 
         Assert.True(queue.GetTestAccessor().HasLifoItem);
         Assert.Equal(0, queue.GetTestAccessor().RingCount);
 
-        Assert.True(queue.TrySteal(out var stolen));
+        var thief = new BoundedLocalQueue<string>(overflow);
+        Assert.True(queue.TryStealHalf(thief, out var stolen));
         Assert.Equal("only-in-lifo", stolen);
         Assert.False(queue.GetTestAccessor().HasLifoItem);
     }
@@ -428,10 +420,11 @@ public class BoundedLocalQueueTests
     [Fact]
     public void LifoSlot_StealHalfFallsBackToLifo_WhenRingEmpty()
     {
-        var victim = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var victim = new BoundedLocalQueue<string>(overflow);
         victim.Push("lifo-only");
 
-        var thief = new BoundedLocalQueue<string>();
+        var thief = new BoundedLocalQueue<string>(overflow);
         Assert.True(victim.TryStealHalf(thief, out var item));
         Assert.Equal("lifo-only", item);
         Assert.True(thief.IsEmpty);
@@ -443,23 +436,31 @@ public class BoundedLocalQueueTests
     [Fact]
     public void TryPop_AfterAllStolen_ReturnsFalse()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         queue.Push("a");
         queue.Push("b");
-        Assert.True(queue.TrySteal(out _));
-        Assert.True(queue.TrySteal(out _));
+
+        var thief = new BoundedLocalQueue<string>(overflow);
+        Assert.True(queue.TryStealHalf(thief, out _));
+        while (queue.TryPop(out _)) { }
+        while (thief.TryPop(out _)) { }
+
         Assert.False(queue.TryPop(out _));
     }
 
     [Fact]
-    public void TrySteal_AfterAllPopped_ReturnsFalse()
+    public void TryStealHalf_AfterAllPopped_ReturnsFalse()
     {
-        var queue = new BoundedLocalQueue<string>();
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         queue.Push("a");
         queue.Push("b");
         Assert.True(queue.TryPop(out _));
         Assert.True(queue.TryPop(out _));
-        Assert.False(queue.TrySteal(out _));
+
+        var thief = new BoundedLocalQueue<string>(overflow);
+        Assert.False(queue.TryStealHalf(thief, out _));
     }
 
     // ═══════════════════════════ OVERFLOW ═════════════════════════════════════
@@ -467,22 +468,20 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Push_WhenFull_OverflowsHalfPlusNewItem()
     {
-        var overflowed = new List<string>();
-        var queue = new BoundedLocalQueue<string>(overflowed.Add);
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         var cap = BoundedLocalQueue<string>.QueueCapacity;
 
-        // Fill ring: 1st push → LIFO only. Pushes 2..257 evict into ring.
-        // After cap+1 pushes: LIFO has item-{cap}, ring has items 0..{cap-1} (256 items, full).
         for (var i = 0; i <= cap; i++)
             queue.Push($"item-{i}");
 
-        Assert.Empty(overflowed);
+        Assert.True(overflow.IsEmpty);
 
-        // The (cap+2)th push evicts LIFO → PushToRingBuffer → overflow.
         queue.Push("trigger");
 
-        // Overflow: 128 oldest ring items (item-0..item-127) + the evicted item (item-{cap}).
-        Assert.Equal((cap / 2) + 1, overflowed.Count);
+        Assert.Equal((cap / 2) + 1, overflow.Count);
+
+        var overflowed = overflow.ToList();
         for (var i = 0; i < cap / 2; i++)
             Assert.Equal($"item-{i}", overflowed[i]);
 
@@ -492,8 +491,8 @@ public class BoundedLocalQueueTests
     [Fact]
     public void Push_WhenFull_RingRetainsNewerHalf()
     {
-        var overflowed = new List<string>();
-        var queue = new BoundedLocalQueue<string>(overflowed.Add);
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         var cap = BoundedLocalQueue<string>.QueueCapacity;
 
         for (var i = 0; i <= cap; i++)
@@ -505,20 +504,18 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var item))
             popped.Add(item);
 
-        // "trigger" pops first (LIFO), then ring items {cap/2}..{cap-1} (FIFO order).
         Assert.Equal("trigger", popped[0]);
         for (var i = 1; i < popped.Count; i++)
             Assert.Equal($"item-{(cap / 2) - 1 + i}", popped[i]);
 
-        // Total: 1 (trigger) + cap/2 (remaining ring half) = cap/2 + 1.
         Assert.Equal((cap / 2) + 1, popped.Count);
     }
 
     [Fact]
     public void Push_WhenFull_NoItemsLostOrDuplicated()
     {
-        var overflowed = new List<string>();
-        var queue = new BoundedLocalQueue<string>(overflowed.Add);
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         const int TotalItems = 1000;
 
         for (var i = 0; i < TotalItems; i++)
@@ -528,7 +525,7 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var item))
             popped.Add(item);
 
-        var all = new HashSet<string>(overflowed);
+        var all = new HashSet<string>(overflow);
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 
@@ -536,30 +533,12 @@ public class BoundedLocalQueueTests
     }
 
     [Fact]
-    public void Push_WhenFull_WithoutCallback_AssertsInDebug()
-    {
-        var queue = new BoundedLocalQueue<string>();
-        var cap = BoundedLocalQueue<string>.QueueCapacity;
-
-        for (var i = 0; i <= cap; i++)
-            queue.Push($"item-{i}");
-
-#if DEBUG
-        Assert.ThrowsAny<Exception>(() => queue.Push("overflow-item"));
-#else
-        queue.Push("overflow-item");
-        Assert.True(queue.Count > 0);
-#endif
-    }
-
-    [Fact]
     public void Push_RepeatedOverflow_AllItemsAccountedFor()
     {
-        var overflowed = new List<string>();
-        var queue = new BoundedLocalQueue<string>(overflowed.Add);
+        var overflow = MakeOverflow<string>();
+        var queue = new BoundedLocalQueue<string>(overflow);
         const int TotalItems = 5000;
 
-        // Push items while periodically popping to create repeated overflow cycles.
         var popped = new List<string>();
         for (var i = 0; i < TotalItems; i++)
         {
@@ -571,7 +550,7 @@ public class BoundedLocalQueueTests
         while (queue.TryPop(out var remaining))
             popped.Add(remaining);
 
-        var all = new HashSet<string>(overflowed);
+        var all = new HashSet<string>(overflow);
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 

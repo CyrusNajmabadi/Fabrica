@@ -7,16 +7,16 @@ namespace Fabrica.Core.Tests.Collections;
 [Trait("Category", "Stress")]
 public class BoundedLocalQueueStressTests
 {
-    // ═══════════════════════════ OWNER PUSH + SINGLE THIEF STEAL ════════════
+    // ═══════════════════════════ OWNER PUSH + SINGLE THIEF STEAL-HALF ═══════
 
     [Theory]
     [InlineData(10_000)]
     [InlineData(50_000)]
     [InlineData(200_000)]
-    public void Stress_OwnerPushes_SingleThiefSteals_NoItemsLost(int itemCount)
+    public void Stress_OwnerPushes_SingleThiefStealsHalf_NoItemsLost(int itemCount)
     {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
+        var overflow = new ConcurrentQueue<Box>();
+        var queue = new BoundedLocalQueue<Box>(overflow);
 
         var stolen = new List<int>();
         var ownerDone = new ManualResetEventSlim(false);
@@ -27,12 +27,19 @@ public class BoundedLocalQueueStressTests
         {
             try
             {
+                var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                 while (!ownerDone.IsSet || !queue.IsEmpty)
                 {
-                    if (queue.TrySteal(out var item))
-                        stolen.Add(item.Value);
+                    if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                    {
+                        stolen.Add(firstItem.Value);
+                        while (thiefDeque.TryPop(out var local))
+                            stolen.Add(local.Value);
+                    }
                     else
+                    {
                         Thread.SpinWait(10);
+                    }
                 }
             }
             catch (Exception ex)
@@ -55,17 +62,17 @@ public class BoundedLocalQueueStressTests
         AssertAllItemsAccountedFor(itemCount, [], stolen, overflow);
     }
 
-    // ═══════════════════════════ OWNER PUSH/POP + SINGLE THIEF STEAL ═══════
+    // ═══════════════════════════ OWNER PUSH/POP + SINGLE THIEF STEAL-HALF ═══
 
     [Theory]
     [InlineData(10_000, 2)]
     [InlineData(50_000, 3)]
     [InlineData(50_000, 5)]
     [InlineData(200_000, 3)]
-    public void Stress_OwnerPushPop_SingleThiefSteals_NoItemsLost(int itemCount, int popEveryN)
+    public void Stress_OwnerPushPop_SingleThiefStealsHalf_NoItemsLost(int itemCount, int popEveryN)
     {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
+        var overflow = new ConcurrentQueue<Box>();
+        var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
         var stolen = new List<int>();
@@ -77,12 +84,19 @@ public class BoundedLocalQueueStressTests
         {
             try
             {
+                var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                 while (!ownerDone.IsSet || !queue.IsEmpty)
                 {
-                    if (queue.TrySteal(out var item))
-                        stolen.Add(item.Value);
+                    if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                    {
+                        stolen.Add(firstItem.Value);
+                        while (thiefDeque.TryPop(out var local))
+                            stolen.Add(local.Value);
+                    }
                     else
+                    {
                         Thread.SpinWait(10);
+                    }
                 }
             }
             catch (Exception ex)
@@ -120,11 +134,11 @@ public class BoundedLocalQueueStressTests
     [InlineData(50_000, 2, 3)]
     [InlineData(50_000, 4, 5)]
     [InlineData(200_000, 4, 5)]
-    public void Stress_OwnerPushPop_MultipleThieves_NoItemsLost(
+    public void Stress_OwnerPushPop_MultipleThievesStealsHalf_NoItemsLost(
         int itemCount, int thiefCount, int popEveryN)
     {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
+        var overflow = new ConcurrentQueue<Box>();
+        var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
         var stolenBags = new List<int>[thiefCount];
@@ -141,12 +155,19 @@ public class BoundedLocalQueueStressTests
             {
                 try
                 {
+                    var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        if (queue.TrySteal(out var item))
-                            bag.Add(item.Value);
+                        if (queue.TryStealHalf(thiefDeque, out var firstItem))
+                        {
+                            bag.Add(firstItem.Value);
+                            while (thiefDeque.TryPop(out var local))
+                                bag.Add(local.Value);
+                        }
                         else
+                        {
                             Thread.SpinWait(10);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -188,8 +209,8 @@ public class BoundedLocalQueueStressTests
     public void Stress_OwnerPushes_MultipleThievesStealHalf_NoItemsLost(
         int itemCount, int thiefCount)
     {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
+        var overflow = new ConcurrentQueue<Box>();
+        var queue = new BoundedLocalQueue<Box>(overflow);
 
         var stolenBags = new List<int>[thiefCount];
         var ownerDone = new ManualResetEventSlim(false);
@@ -200,7 +221,7 @@ public class BoundedLocalQueueStressTests
         {
             stolenBags[thiefIndex] = [];
             var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>();
+            var thiefDeque = new BoundedLocalQueue<Box>(overflow);
 
             var thread = new Thread(() =>
             {
@@ -254,8 +275,8 @@ public class BoundedLocalQueueStressTests
     public void Stress_OwnerPushPop_MultipleThievesStealHalf_NoItemsLost(
         int itemCount, int thiefCount, int popEveryN)
     {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
+        var overflow = new ConcurrentQueue<Box>();
+        var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
         var stolenBags = new List<int>[thiefCount];
@@ -267,7 +288,7 @@ public class BoundedLocalQueueStressTests
         {
             stolenBags[thiefIndex] = [];
             var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>();
+            var thiefDeque = new BoundedLocalQueue<Box>(overflow);
 
             var thread = new Thread(() =>
             {
@@ -326,8 +347,8 @@ public class BoundedLocalQueueStressTests
     public void Stress_RapidPushPopCycles_ThievesStealHalf_NoItemsLost(
         int itemCount, int thiefCount)
     {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
+        var overflow = new ConcurrentQueue<Box>();
+        var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
         var stolenBags = new List<int>[thiefCount];
@@ -339,7 +360,7 @@ public class BoundedLocalQueueStressTests
         {
             stolenBags[thiefIndex] = [];
             var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>();
+            var thiefDeque = new BoundedLocalQueue<Box>(overflow);
 
             var thread = new Thread(() =>
             {
@@ -388,107 +409,6 @@ public class BoundedLocalQueueStressTests
         AssertAllItemsAccountedFor(itemCount, ownerPopped, stolenBags, overflow);
     }
 
-    // ═══════════════════════════ MIXED STEAL + STEAL-HALF ══════════════════
-
-    [Theory]
-    [InlineData(10_000, 1, 2, 3)]
-    [InlineData(50_000, 2, 2, 3)]
-    [InlineData(50_000, 2, 3, 5)]
-    [InlineData(200_000, 2, 3, 5)]
-    public void Stress_OwnerPushPop_MixedStealAndStealHalf_NoItemsLost(
-        int itemCount, int singleStealThieves, int halfStealThieves, int popEveryN)
-    {
-        var overflow = new ConcurrentBag<int>();
-        var queue = new BoundedLocalQueue<Box>(item => overflow.Add(item.Value));
-
-        var ownerPopped = new List<int>();
-        var totalThieves = singleStealThieves + halfStealThieves;
-        var stolenBags = new List<int>[totalThieves];
-        var ownerDone = new ManualResetEventSlim(false);
-        var thiefBarrier = new CountdownEvent(totalThieves);
-        Exception? thiefException = null;
-
-        for (var thiefIndex = 0; thiefIndex < singleStealThieves; thiefIndex++)
-        {
-            stolenBags[thiefIndex] = [];
-            var bag = stolenBags[thiefIndex];
-
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    while (!ownerDone.IsSet || !queue.IsEmpty)
-                    {
-                        if (queue.TrySteal(out var item))
-                            bag.Add(item.Value);
-                        else
-                            Thread.SpinWait(10);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Volatile.Write(ref thiefException, ex);
-                }
-
-                thiefBarrier.Signal();
-            });
-
-            thread.Start();
-        }
-
-        for (var thiefIndex = singleStealThieves; thiefIndex < totalThieves; thiefIndex++)
-        {
-            stolenBags[thiefIndex] = [];
-            var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>();
-
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    while (!ownerDone.IsSet || !queue.IsEmpty)
-                    {
-                        if (queue.TryStealHalf(thiefDeque, out var firstItem))
-                        {
-                            bag.Add(firstItem.Value);
-                            while (thiefDeque.TryPop(out var local))
-                                bag.Add(local.Value);
-                        }
-                        else
-                        {
-                            Thread.SpinWait(10);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Volatile.Write(ref thiefException, ex);
-                }
-
-                thiefBarrier.Signal();
-            });
-
-            thread.Start();
-        }
-
-        for (var i = 0; i < itemCount; i++)
-        {
-            queue.Push(new Box(i));
-
-            if (i % popEveryN == 0 && queue.TryPop(out var item))
-                ownerPopped.Add(item.Value);
-        }
-
-        while (queue.TryPop(out var remaining))
-            ownerPopped.Add(remaining.Value);
-
-        ownerDone.Set();
-        thiefBarrier.Wait(TestContext.Current.CancellationToken);
-
-        AssertNoThiefExceptions(ref thiefException);
-        AssertAllItemsAccountedFor(itemCount, ownerPopped, stolenBags, overflow);
-    }
-
     // ═══════════════════════════ HELPERS ═══════════════════════════════════
 
     internal sealed class Box(int value)
@@ -504,19 +424,19 @@ public class BoundedLocalQueueStressTests
     }
 
     private static void AssertAllItemsAccountedFor(
-        int itemCount, List<int> ownerPopped, List<int> allStolen, ConcurrentBag<int> overflow)
+        int itemCount, List<int> ownerPopped, List<int> allStolen, ConcurrentQueue<Box> overflow)
     {
         var all = new HashSet<int>(ownerPopped);
         foreach (var item in allStolen)
             Assert.True(all.Add(item), $"Duplicate item detected: {item}");
         foreach (var item in overflow)
-            Assert.True(all.Add(item), $"Duplicate item in overflow: {item}");
+            Assert.True(all.Add(item.Value), $"Duplicate item in overflow: {item.Value}");
 
         Assert.Equal(itemCount, all.Count);
     }
 
     private static void AssertAllItemsAccountedFor(
-        int itemCount, List<int> ownerPopped, List<int>[] stolenBags, ConcurrentBag<int> overflow)
+        int itemCount, List<int> ownerPopped, List<int>[] stolenBags, ConcurrentQueue<Box> overflow)
     {
         var allStolen = new List<int>();
         foreach (var bag in stolenBags)
