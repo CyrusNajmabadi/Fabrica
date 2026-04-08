@@ -103,7 +103,12 @@ public sealed class JobScheduler(WorkerPool pool)
                 continue;
             }
 
-            spinWait.SpinOnce();
+            // sleep1Threshold: -1 prevents SpinWait from ever calling Thread.Sleep(1). The
+            // coordinator is the game loop thread — it must stay responsive. Thread.Sleep(1) on
+            // macOS sleeps for ~1ms (the OS timer granularity), which would cause the coordinator
+            // to miss the _outstandingJobs → 0 transition while jobs are still completing on
+            // other cores. With -1, SpinWait does CPU-spin then Thread.Yield() but never sleeps.
+            spinWait.SpinOnce(sleep1Threshold: -1);
         }
     }
 

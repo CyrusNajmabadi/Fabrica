@@ -38,8 +38,6 @@ public class RealisticTickBenchmark
     private GlobalNodeStore<BenchNode, BenchNodeOps> _store = null!;
     private MergeCoordinator _coordinator;
 
-    private int[] _workArray = null!;
-
     private TriggerJob _trigger = null!;
     private ComputeJob[] _phase1 = null!;
     private BarrierJob _barrier1 = null!;
@@ -62,8 +60,6 @@ public class RealisticTickBenchmark
         var ops = new BenchNodeOps { Store = _store };
         _store.SetNodeOps(ops);
         _coordinator = new MergeCoordinator([_store]);
-
-        _workArray = new int[64];
 
         this.AllocateJobs();
 
@@ -144,7 +140,6 @@ public class RealisticTickBenchmark
         {
             var job = _phase1[i];
             job.Reset();
-            job.WorkArray = _workArray;
             job.Iterations = ComputeIterations;
             job.Seed = i;
             job.DependsOn(_trigger);
@@ -160,7 +155,6 @@ public class RealisticTickBenchmark
         {
             var job = _phase2[i];
             job.Reset();
-            job.WorkArray = _workArray;
             job.Iterations = ComputeIterations;
             job.Seed = Phase1Count + i;
             job.DependsOn(_barrier1);
@@ -176,7 +170,6 @@ public class RealisticTickBenchmark
         {
             var job = _phase3[i];
             job.Reset();
-            job.WorkArray = _workArray;
             job.Iterations = ComputeIterations;
             job.Seed = Phase1Count + Phase2Count + i;
             job.DependsOn(_barrier2);
@@ -192,7 +185,6 @@ public class RealisticTickBenchmark
         {
             var job = _phase4[i];
             job.Reset();
-            job.WorkArray = _workArray;
             job.Iterations = ComputeIterations;
             job.Seed = Phase1Count + Phase2Count + Phase3Count + i;
             job.Buffers = buffers;
