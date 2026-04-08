@@ -29,7 +29,7 @@ public class BoundedLocalQueueStressTests
                 var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                 while (!ownerDone.IsSet || !queue.IsEmpty)
                 {
-                    var firstItem = queue.TryStealHalf(thiefDeque);
+                    var firstItem = queue.TryStealHalf(ref thiefDeque);
                     if (firstItem != null)
                     {
                         stolen.Add(firstItem.Value);
@@ -87,7 +87,7 @@ public class BoundedLocalQueueStressTests
                 var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                 while (!ownerDone.IsSet || !queue.IsEmpty)
                 {
-                    var firstItem = queue.TryStealHalf(thiefDeque);
+                    var firstItem = queue.TryStealHalf(ref thiefDeque);
                     if (firstItem != null)
                     {
                         stolen.Add(firstItem.Value);
@@ -162,7 +162,7 @@ public class BoundedLocalQueueStressTests
                     var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        var firstItem = queue.TryStealHalf(ref thiefDeque);
                         if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
@@ -229,15 +229,15 @@ public class BoundedLocalQueueStressTests
         {
             stolenBags[thiefIndex] = [];
             var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>(overflow);
 
             var thread = new Thread(() =>
             {
                 try
                 {
+                    var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        var firstItem = queue.TryStealHalf(ref thiefDeque);
                         if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
@@ -297,15 +297,15 @@ public class BoundedLocalQueueStressTests
         {
             stolenBags[thiefIndex] = [];
             var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>(overflow);
 
             var thread = new Thread(() =>
             {
                 try
                 {
+                    var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        var firstItem = queue.TryStealHalf(ref thiefDeque);
                         if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
@@ -373,15 +373,15 @@ public class BoundedLocalQueueStressTests
         {
             stolenBags[thiefIndex] = [];
             var bag = stolenBags[thiefIndex];
-            var thiefDeque = new BoundedLocalQueue<Box>(overflow);
 
             var thread = new Thread(() =>
             {
                 try
                 {
+                    var thiefDeque = new BoundedLocalQueue<Box>(overflow);
                     while (!ownerDone.IsSet || !queue.IsEmpty)
                     {
-                        var firstItem = queue.TryStealHalf(thiefDeque);
+                        var firstItem = queue.TryStealHalf(ref thiefDeque);
                         if (firstItem != null)
                         {
                             bag.Add(firstItem.Value);
