@@ -44,6 +44,13 @@ public abstract class Job
     /// </summary>
     internal Job? PoolNext;
 
+    /// <summary>
+    /// Intrusive linked-list pointer for the global injection queue in <see cref="WorkerPool"/>.
+    /// Set by <see cref="WorkerPool"/> when enqueuing; cleared on dequeue. Must not be read or
+    /// written by derived classes.
+    /// </summary>
+    internal Job? NextInQueue;
+
 #if DEBUG
     internal JobState State;
 #endif

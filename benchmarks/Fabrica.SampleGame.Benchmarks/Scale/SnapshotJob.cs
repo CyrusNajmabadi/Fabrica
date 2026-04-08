@@ -10,7 +10,9 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// </summary>
 internal sealed class SnapshotJob : Job
 {
-    internal int[]? WorkArray;
+    private const int ArrayLength = 64;
+    private readonly int[] _localArray = new int[ArrayLength];
+
     internal int Iterations;
     internal int Seed;
     internal ThreadLocalBuffer<BenchNode>[]? Buffers;
@@ -21,7 +23,7 @@ internal sealed class SnapshotJob : Job
 
     protected internal override void Execute(JobContext context)
     {
-        var arr = WorkArray!;
+        var arr = _localArray;
         var len = arr.Length;
         var iterations = Iterations;
         var seed = Seed;
@@ -57,7 +59,6 @@ internal sealed class SnapshotJob : Job
 
     protected override void ResetState()
     {
-        WorkArray = null;
         Iterations = 0;
         Seed = 0;
         Buffers = null;

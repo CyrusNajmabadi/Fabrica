@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace Fabrica.Core.Jobs;
@@ -131,10 +130,14 @@ public sealed class WorkerPool : IDisposable
     private readonly ManualResetEventSlim[] _workerEvents;
 
     /// <summary>
-    /// Stack of background worker indices currently parked. Producers pop from here to wake a
-    /// specific worker. Lock-free via <see cref="ConcurrentStack{T}"/>.
+    /// Bounded stack of background worker indices currently parked. Guarded by
+    /// <see cref="_sleepersLock"/>. Zero-allocation: the array is pre-allocated to
+    /// <c>_backgroundWorkerCount</c> and never grows. Replaces <c>ConcurrentStack&lt;int&gt;</c>
+    /// which allocated a <c>Node</c> object on every <c>Push</c>.
     /// </summary>
-    private readonly ConcurrentStack<int> _sleepers = new();
+    private readonly int[] _sleepersArray;
+    private int _sleepersCount;
+    private readonly Lock _sleepersLock = new();
 
     /// <summary>
     /// How long (ms) a worker stays in WarmYield before parking. During active gameplay (work
@@ -150,11 +153,14 @@ public sealed class WorkerPool : IDisposable
     private int _disposed;
 
     /// <summary>
-    /// Top-level jobs injected via the test accessor's <see cref="JobScheduler.TestAccessor.Inject"/>
-    /// land here. Not used by the coordinator fast-path (<see cref="JobScheduler.Submit"/>), which
-    /// pushes directly onto the coordinator's deque.
+    /// Intrusive singly-linked list serving as the global injection/overflow queue. Guarded by
+    /// <see cref="_globalQueueLock"/>. Zero-allocation: the <see cref="Job.NextInQueue"/> pointer
+    /// lives inside Job itself. Replaces <c>ConcurrentQueue&lt;Job&gt;</c> which used 32-element
+    /// segments with complex CAS-based slot management.
     /// </summary>
-    private readonly ConcurrentQueue<Job> _injectionQueue = new();
+    private readonly Lock _globalQueueLock = new();
+    private Job? _globalQueueHead;
+    private Job? _globalQueueTail;
 
     /// <summary>Next coordinator slot index to hand out via <see cref="AttachCoordinator"/>.</summary>
     private int _nextCoordinatorSlot;
@@ -174,6 +180,8 @@ public sealed class WorkerPool : IDisposable
 
         _backgroundWorkerCount = workerCount;
         _totalWorkerCount = totalCount;
+
+        _sleepersArray = new int[workerCount];
 
         _workerEvents = new ManualResetEventSlim[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -215,12 +223,24 @@ public sealed class WorkerPool : IDisposable
     // ── Job injection ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Enqueues a job into the shared injection queue and wakes a parked worker.
+    /// Enqueues a job into the global injection queue and wakes a parked worker.
     /// </summary>
     internal void Inject(Job job)
     {
-        // Called by JobScheduler.Submit after stamping the job with its scheduler.
-        _injectionQueue.Enqueue(job);
+        job.NextInQueue = null;
+        lock (_globalQueueLock)
+        {
+            if (_globalQueueTail != null)
+            {
+                _globalQueueTail.NextInQueue = job;
+                _globalQueueTail = job;
+            }
+            else
+            {
+                _globalQueueHead = _globalQueueTail = job;
+            }
+        }
+
         this.NotifyWorkAvailable();
     }
 
@@ -378,7 +398,11 @@ public sealed class WorkerPool : IDisposable
     private void TransitionToParked(WorkerContext context)
     {
         Debug.Assert(!context.IsSearching);
-        _sleepers.Push(context.WorkerIndex);
+        lock (_sleepersLock)
+        {
+            _sleepersArray[_sleepersCount++] = context.WorkerIndex;
+        }
+
         Interlocked.Add(ref _idleState, -UnparkedBit);
     }
 
@@ -399,11 +423,17 @@ public sealed class WorkerPool : IDisposable
         if (NumUnparked(state) >= _backgroundWorkerCount)
             return;
 
-        if (_sleepers.TryPop(out var workerIndex))
+        int workerIndex;
+        lock (_sleepersLock)
         {
-            Interlocked.Add(ref _idleState, UnparkedBit | SearchingBit);
-            _workerEvents[workerIndex].Set();
+            if (_sleepersCount == 0)
+                return;
+
+            workerIndex = _sleepersArray[--_sleepersCount];
         }
+
+        Interlocked.Add(ref _idleState, UnparkedBit | SearchingBit);
+        _workerEvents[workerIndex].Set();
     }
 
     // ── Core execution ──────────────────────────────────────────────────────
@@ -439,7 +469,7 @@ public sealed class WorkerPool : IDisposable
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
-            if (target.Deque.TrySteal(out var job))
+            if (target.Deque.TryStealHalf(context.Deque, out var job))
             {
                 this.ExecuteJob(job, context);
                 return true;
@@ -451,14 +481,25 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        // Dequeue top-level jobs after exhausting local deque and peer steals (see TryExecuteOne).
-        if (_injectionQueue.TryDequeue(out var job))
+        if (_globalQueueHead == null)
+            return false;
+
+        Job? job;
+        lock (_globalQueueLock)
         {
-            this.ExecuteJob(job, context);
-            return true;
+            job = _globalQueueHead;
+            if (job == null)
+                return false;
+
+            _globalQueueHead = job.NextInQueue;
+            if (_globalQueueHead == null)
+                _globalQueueTail = null;
+
+            job.NextInQueue = null;
         }
 
-        return false;
+        this.ExecuteJob(job, context);
+        return true;
     }
 
     private void ExecuteJob(Job job, WorkerContext context)
