@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Fabrica.Core.Threading.Queues;
 using Xunit;
 
@@ -15,7 +14,7 @@ public class BoundedLocalQueueStressTests
     [InlineData(200_000)]
     public void Stress_OwnerPushes_SingleThiefStealsHalf_NoItemsLost(int itemCount)
     {
-        var overflow = new ConcurrentQueue<Box>();
+        var overflow = new InjectionQueue<Box>();
         var queue = new BoundedLocalQueue<Box>(overflow);
 
         var stolen = new List<int>();
@@ -71,7 +70,7 @@ public class BoundedLocalQueueStressTests
     [InlineData(200_000, 3)]
     public void Stress_OwnerPushPop_SingleThiefStealsHalf_NoItemsLost(int itemCount, int popEveryN)
     {
-        var overflow = new ConcurrentQueue<Box>();
+        var overflow = new InjectionQueue<Box>();
         var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
@@ -137,7 +136,7 @@ public class BoundedLocalQueueStressTests
     public void Stress_OwnerPushPop_MultipleThievesStealsHalf_NoItemsLost(
         int itemCount, int thiefCount, int popEveryN)
     {
-        var overflow = new ConcurrentQueue<Box>();
+        var overflow = new InjectionQueue<Box>();
         var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
@@ -209,7 +208,7 @@ public class BoundedLocalQueueStressTests
     public void Stress_OwnerPushes_MultipleThievesStealHalf_NoItemsLost(
         int itemCount, int thiefCount)
     {
-        var overflow = new ConcurrentQueue<Box>();
+        var overflow = new InjectionQueue<Box>();
         var queue = new BoundedLocalQueue<Box>(overflow);
 
         var stolenBags = new List<int>[thiefCount];
@@ -275,7 +274,7 @@ public class BoundedLocalQueueStressTests
     public void Stress_OwnerPushPop_MultipleThievesStealHalf_NoItemsLost(
         int itemCount, int thiefCount, int popEveryN)
     {
-        var overflow = new ConcurrentQueue<Box>();
+        var overflow = new InjectionQueue<Box>();
         var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
@@ -347,7 +346,7 @@ public class BoundedLocalQueueStressTests
     public void Stress_RapidPushPopCycles_ThievesStealHalf_NoItemsLost(
         int itemCount, int thiefCount)
     {
-        var overflow = new ConcurrentQueue<Box>();
+        var overflow = new InjectionQueue<Box>();
         var queue = new BoundedLocalQueue<Box>(overflow);
 
         var ownerPopped = new List<int>();
@@ -424,19 +423,19 @@ public class BoundedLocalQueueStressTests
     }
 
     private static void AssertAllItemsAccountedFor(
-        int itemCount, List<int> ownerPopped, List<int> allStolen, ConcurrentQueue<Box> overflow)
+        int itemCount, List<int> ownerPopped, List<int> allStolen, InjectionQueue<Box> overflow)
     {
         var all = new HashSet<int>(ownerPopped);
         foreach (var item in allStolen)
             Assert.True(all.Add(item), $"Duplicate item detected: {item}");
-        foreach (var item in overflow)
+        foreach (var item in overflow.DrainToList())
             Assert.True(all.Add(item.Value), $"Duplicate item in overflow: {item.Value}");
 
         Assert.Equal(itemCount, all.Count);
     }
 
     private static void AssertAllItemsAccountedFor(
-        int itemCount, List<int> ownerPopped, List<int>[] stolenBags, ConcurrentQueue<Box> overflow)
+        int itemCount, List<int> ownerPopped, List<int>[] stolenBags, InjectionQueue<Box> overflow)
     {
         var allStolen = new List<int>();
         foreach (var bag in stolenBags)
