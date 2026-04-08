@@ -280,6 +280,19 @@ public sealed class WorkerPool : IDisposable
 
     /// <summary>
     /// Enqueues a job into the global injection queue and wakes a parked worker.
+    ///
+    /// <para>
+    /// The queue is an intrusive singly-linked list: <see cref="_globalQueueHead"/> points to the
+    /// oldest job (dequeue end), <see cref="_globalQueueTail"/> to the newest (enqueue end), linked
+    /// via <see cref="Job.NextInQueue"/>. All mutations are under <see cref="_globalQueueLock"/>.
+    /// </para>
+    ///
+    /// <para>
+    /// <c>NextInQueue</c> is cleared before acquiring the lock to ensure the job is not still
+    /// chained from a previous queue residence. Inside the lock, the critical section is two
+    /// pointer writes (append to tail). After releasing the lock, we call
+    /// <see cref="NotifyWorkAvailable"/> to wake a parked worker if no searcher is active.
+    /// </para>
     /// </summary>
     internal void Inject(Job job)
     {
