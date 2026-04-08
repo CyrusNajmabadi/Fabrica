@@ -55,16 +55,55 @@ namespace Fabrica.Core.Threading.Queues;
 ///
 /// OVERFLOW
 ///
-///   When the ring buffer is full (<c>tail - steal &gt;= Capacity</c>), the owner should move
-///   half the items to a global injection queue. Not yet implemented — asserts on overflow.
+///   When the ring buffer is full (<c>tail - steal &gt;= Capacity</c>), the owner moves half
+///   the items plus the incoming item to a global injection queue via the <c>_onOverflow</c>
+///   callback. Follows Tokio's algorithm:
+///
+///   1. If <c>steal != real</c> (a concurrent steal is in progress, which will free capacity
+///      soon): inject only the incoming item.
+///   2. If <c>steal == real</c>: CAS <c>_head</c> to advance both cursors by
+///      <c>Capacity / 2</c>, claiming the oldest half. Read those items from the buffer and
+///      inject them along with the incoming item. If the CAS fails (a thief moved), retry
+///      from step 1.
+///
+///   The incoming item is always injected (never written to the ring buffer on overflow),
+///   matching Tokio's <c>push_back_or_overflow</c> + <c>push_overflow</c>.
+///
+/// BUFFER ACCESS PATTERN — SPECULATIVE READ BEFORE CAS
+///
+///   Both <see cref="TryPop"/> and <see cref="TrySteal"/> read the buffer slot BEFORE
+///   the CAS on <c>_head</c>. This is required for <see cref="TrySteal"/> because once
+///   the CAS succeeds (freeing a slot at the head), the owner's <see cref="Push"/> can
+///   immediately overwrite the same physical slot — the ring is circular, and when full,
+///   <c>tail &amp; Mask == head &amp; Mask</c>. Reading first captures the value while the
+///   full-ring invariant still protects the slot. If the CAS fails, the speculative read
+///   is simply discarded on retry.
+///
+///   Tokio's <c>pop()</c> does the opposite: CAS first, then read. This is safe because
+///   <c>pop</c> is owner-only and sequential with <c>push</c> — no concurrent writer can
+///   overwrite the slot between the CAS and the read. Tokio has no single-item steal;
+///   its batch <c>steal_into</c> uses a two-phase CAS that prevents owner ring writes
+///   during the copy phase (Phase 1 sets <c>steal != real</c>, forcing the owner's push
+///   into the inject-only overflow path).
+///
+///   We use read-before-CAS uniformly in both <see cref="TryPop"/> and
+///   <see cref="TrySteal"/> for consistency. Both orderings are correct for
+///   <see cref="TryPop"/> (owner-only); only read-before-CAS is correct for
+///   <see cref="TrySteal"/> (multi-threaded).
+///
+///   Nulling consumed slots (for GC) is safe in <see cref="TryPop"/> (owner-only, sequential
+///   with push). In <see cref="TrySteal"/>, we skip nulling because a concurrent push may
+///   have already overwritten the slot with a newer item — at most 256 stale references are
+///   held until the next push cycle overwrites them.
 ///
 /// REFERENCE
 ///   Tokio scheduler queue: tokio/src/runtime/scheduler/multi_thread/queue.rs
 /// </summary>
-internal sealed class BoundedLocalQueue<T> where T : class
+internal sealed class BoundedLocalQueue<T>(Action<T>? onOverflow = null) where T : class
 {
     internal const int QueueCapacity = 256;
     private const int Mask = QueueCapacity - 1;
+    private const int OverflowBatchSize = QueueCapacity / 2;
 
     /// <summary>
     /// Packed head: high 32 bits = steal cursor, low 32 bits = real cursor.
@@ -84,6 +123,13 @@ internal sealed class BoundedLocalQueue<T> where T : class
     /// thieves can steal it when the ring buffer is empty.
     /// </summary>
     private T? _lifoSlot;
+
+    /// <summary>
+    /// Called when the ring buffer is full to inject overflow items into a global queue.
+    /// Receives each item individually. The caller is responsible for batching wake
+    /// notifications. Null means overflow is not supported (asserts in DEBUG).
+    /// </summary>
+    private readonly Action<T>? _onOverflow = onOverflow;
 
     private SingleThreadedOwner _owner;
 
@@ -122,11 +168,47 @@ internal sealed class BoundedLocalQueue<T> where T : class
     private void PushToRingBuffer(T item)
     {
         var tail = _tail;
-        var (steal, _) = Unpack(Volatile.Read(ref _head));
 
-        if (Distance(tail, steal) >= QueueCapacity)
+        while (true)
         {
-            Debug.Fail("BoundedLocalQueue overflow — not yet implemented.");
+            var head = Volatile.Read(ref _head);
+            var (steal, real) = Unpack(head);
+
+            if (Distance(tail, steal) < QueueCapacity)
+                break;
+
+            // Ring buffer is full. Follow Tokio's overflow algorithm.
+            if (_onOverflow == null)
+            {
+                Debug.Fail("BoundedLocalQueue overflow — no overflow callback configured.");
+                return;
+            }
+
+            if (steal != real)
+            {
+                // A steal is in progress — it will free capacity soon. Just inject
+                // the single item to the global queue (matches Tokio's behavior).
+                _onOverflow(item);
+                return;
+            }
+
+            // Self-steal: CAS _head to advance both steal and real by half the
+            // capacity, claiming the oldest half of the ring buffer.
+            var next = Pack(steal + OverflowBatchSize, real + OverflowBatchSize);
+            if (Interlocked.CompareExchange(ref _head, next, head) != head)
+                continue;
+
+            // Successfully claimed OverflowBatchSize items from [steal, steal + N).
+            // The overflow CAS serializes with steal CASes, so these slots are
+            // exclusively ours. Read each and inject to the global queue.
+            for (var i = 0; i < OverflowBatchSize; i++)
+            {
+                var idx = (steal + i) & Mask;
+                _onOverflow(_buffer[idx]!);
+            }
+
+            // Also inject the incoming item (it does not go to the ring buffer).
+            _onOverflow(item);
             return;
         }
 
@@ -170,11 +252,18 @@ internal sealed class BoundedLocalQueue<T> where T : class
                 ? Pack(nextReal, nextReal)
                 : Pack(steal, nextReal);
 
+            // Speculative read: must happen BEFORE the CAS. Once we CAS _head
+            // (freeing a slot at the head), the owner's push can immediately
+            // overwrite this physical slot (tail wraps to the same index).
+            // Reading first captures the value while it's still protected by
+            // the full ring invariant (Distance == QueueCapacity).
+            var value = _buffer[real & Mask]!;
+
             var prev = Interlocked.CompareExchange(ref _head, next, head);
             if (prev == head)
             {
-                item = _buffer[real & Mask]!;
                 _buffer[real & Mask] = null;
+                item = value;
                 return true;
             }
 
@@ -218,12 +307,14 @@ internal sealed class BoundedLocalQueue<T> where T : class
                 return false;
             }
 
+            // Speculative read before CAS — same rationale as TryPop.
+            var value = Volatile.Read(ref _buffer[real & Mask]);
+
             var next = Pack(real + 1, real + 1);
             var prev = Interlocked.CompareExchange(ref _head, next, head);
             if (prev == head)
             {
-                item = _buffer[real & Mask]!;
-                _buffer[real & Mask] = null;
+                item = value!;
                 return true;
             }
 
@@ -304,8 +395,7 @@ internal sealed class BoundedLocalQueue<T> where T : class
         {
             var srcIdx = (first + i) & Mask;
             var dstIdx = (dstTail + i) & Mask;
-            destination._buffer[dstIdx] = _buffer[srcIdx];
-            _buffer[srcIdx] = null;
+            destination._buffer[dstIdx] = Volatile.Read(ref _buffer[srcIdx]);
         }
 
         // ── Phase 2: Complete ───────────────────────────────────────────────
