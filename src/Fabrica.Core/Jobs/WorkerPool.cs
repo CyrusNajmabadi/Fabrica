@@ -19,100 +19,89 @@ namespace Fabrica.Core.Jobs;
 ///
 ///   Two kinds of threads participate in work execution:
 ///
-///   - Background workers: managed by the pool, loop in <see cref="RunWorker"/>. When idle, they
-///     park on <see cref="_workSignal"/> (a <see cref="SemaphoreSlim"/>).
+///   - Background workers: managed by the pool, loop in <see cref="RunWorker"/> through a 3-phase
+///     idle strategy (HotSpin → WarmYield → Parked). When truly idle, they park on per-worker
+///     <see cref="ManualResetEventSlim"/> events.
 ///
 ///   - Coordinators: external threads (e.g. the game loop) that call <see cref="JobScheduler.Submit"/>.
 ///     They run <see cref="TryExecuteOne"/> in a spin loop (<see cref="JobScheduler"/>'s
-///     RunUntilComplete) and NEVER park on the semaphore. This is critical for progress — at least
-///     one coordinator is always runnable while a DAG is in flight.
+///     RunUntilComplete) and NEVER park. This is critical for progress — at least one coordinator
+///     is always runnable while a DAG is in flight.
 ///
-/// PARKING AND WAKE PROTOCOL
+/// ADAPTIVE PARKING (3-PHASE IDLE STRATEGY)
 ///
-///   The core invariant is: a background worker must never permanently sleep on the semaphore while
-///   stealable work exists. The protocol uses announce-then-recheck to prevent lost wakes, and
-///   batched notification to minimize contention.
+///   Adapted from Tokio's "notify then search" pattern (see idle.rs and worker.rs in
+///   <see href="https://github.com/tokio-rs/tokio/tree/master/tokio/src/runtime/scheduler/multi_thread"/>).
 ///
 ///   Background worker loop (<see cref="RunWorker"/>):
-///     (1) TryExecuteOne — attempt local pop, peer steal, injection dequeue.
-///     (2) If (1) fails: Interlocked.Increment(_parkedWorkers) — announce intent to park.
-///     (3) TryExecuteOne again — the recheck. This closes the race window between (1) and (2).
-///     (4) If (3) finds work: Interlocked.Decrement(_parkedWorkers), execute, go to (1).
-///     (5) If (3) finds nothing: _workSignal.Wait() — block until woken.
-///     (6) On wake: Interlocked.Decrement(_parkedWorkers), go to (1).
 ///
-///   Producer notification (<see cref="PropagateCompletion"/>):
-///     (a) Push all newly-readied dependents onto the completing worker's deque.
-///     (b) Read Volatile.Read(_parkedWorkers) to get a snapshot of how many workers are sleeping.
-///     (c) If parked > 0: _workSignal.Release(Min(readied, parked)) — wake up to one worker per
-///         readied job, but never more than are actually parked.
+///     Phase 0 — Running:
+///       <see cref="TryExecuteOne"/> — pop own deque, steal from peers, drain injection queue.
+///       If work is found, execute and repeat. If this worker was searching, transition out and
+///       potentially cascade-wake one parked worker (see CASCADE WAKE below).
 ///
-///   Single-job notification (<see cref="NotifyWorkAvailable"/>):
-///     Used by <see cref="Inject"/> and <see cref="JobScheduler.Submit"/>. Reads _parkedWorkers;
-///     if > 0, releases one permit.
+///     Phase 1 — HotSpin:
+///       Pure CPU spin via <see cref="SpinWait"/> for ~10 iterations (~sub-microsecond). Catches
+///       most inter-phase DAG gaps where the next batch of work arrives within microseconds.
+///       Worker is counted as "searching" in <see cref="_idleState"/>.
+///
+///     Phase 2 — WarmYield:
+///       <see cref="Thread.Yield()"/> loop for up to <see cref="KeepAliveMs"/> (1000ms default).
+///       Gives up the timeslice but stays on the OS run queue. Much cheaper than HotSpin but
+///       still responsive within one yield-reschedule cycle. During active gameplay (work every
+///       ~16ms), workers never leave this phase. Worker is still counted as "searching".
+///
+///     Phase 3 — Parked:
+///       Blocked on a per-worker <see cref="ManualResetEventSlim"/>. Zero CPU. For truly idle
+///       periods (loading screen, pause menu, low-demand game states). Once woken, the worker
+///       returns to Running and the full keepAlive window resets.
+///
+/// CASCADE WAKE POLICY
+///
+///   <see cref="_idleState"/> packs two counters: numUnparked (workers not in Parked state) and
+///   numSearching (workers in HotSpin or WarmYield, actively looking for work).
+///
+///   When new work arrives (<see cref="TryWakeOneWorker"/>, called by <see cref="PropagateCompletion"/>
+///   and <see cref="NotifyWorkAvailable"/>):
+///     - If numSearching > 0: do nothing. A searching worker will find the work on its next
+///       <see cref="TryExecuteOne"/> call.
+///     - If numSearching == 0 and numUnparked &lt; _backgroundWorkerCount: wake exactly ONE parked
+///       worker by popping from <see cref="_sleepers"/> and setting its event.
+///
+///   When a worker finds work and leaves searching (<see cref="TransitionFromSearching"/>):
+///     - If it was the last searcher (numSearching was 1), call <see cref="TryWakeOneWorker"/>
+///       to cascade-wake one more parked worker. This ensures at least one searcher exists while
+///       surplus work is available. The chain naturally stops when a woken worker searches and
+///       finds nothing.
 ///
 /// CORRECTNESS ARGUMENT (NO LOST WAKES)
 ///
-///   The safety argument rests on the interaction between work publication (deque Push / injection
-///   Enqueue) and the announce-then-recheck protocol. We enumerate all interleavings between a
-///   producer P making work visible and a worker W attempting to park.
+///   The announce-then-recheck pattern is preserved:
 ///
-///   W is in one of four states relative to its park cycle:
+///   Before parking, the worker decrements numUnparked in <see cref="_idleState"/> (announce) and
+///   pushes itself to <see cref="_sleepers"/>, then rechecks <see cref="TryExecuteOne"/>. If a
+///   producer published work before the recheck, the worker finds it and undoes the park. If a
+///   producer publishes work after the recheck, it sees numSearching == 0 and numUnparked &lt; total,
+///   pops from _sleepers, and wakes the worker via its event.
 ///
-///   Case 1 — W is in step (1), scanning for work:
-///     P pushes work onto a deque. W's TryExecuteOne scans all deques (own pop + peer steal +
-///     injection). If the push is visible by the time W scans that deque, W finds it. If not (W
-///     already passed that deque), W proceeds to (2)→(3), and the recheck at (3) will see it —
-///     the push happened-before the recheck because P's push precedes P's notification, and W's
-///     increment at (2) provides a full fence that orders W's subsequent reads after P's store.
-///
-///   Case 2 — W is between (1) and (2), about to announce:
-///     W hasn't incremented _parkedWorkers yet, so P's Volatile.Read(_parkedWorkers) may not
-///     count W. But W hasn't blocked yet — it will still execute (2)→(3), and the recheck at (3)
-///     sees the pushed work. W never reaches Wait().
-///
-///   Case 3 — W is between (2) and (3), announced but rechecking:
-///     W has incremented _parkedWorkers, so P's snapshot may or may not include W. Either way, W
-///     is about to run TryExecuteOne at (3). The pushed work is visible (it was pushed before P
-///     reads _parkedWorkers, and W's (3) runs after W's increment which is a full barrier). W
-///     finds the work and decrements _parkedWorkers at (4). No lost wake.
-///
-///   Case 4 — W is in (5), blocked on Wait():
-///     W already ran the recheck at (3) and found nothing — meaning the push had not yet happened
-///     at that point. P's push happens after W's recheck. P then reads _parkedWorkers and sees W
-///     (W incremented before (3), and W is still counted because decrement only happens at (4) or
-///     (6)). P releases a permit, waking W. No lost wake.
-///
-///   In all four cases, either W discovers work before parking, or P's notification wakes W after
-///   parking. There is no interleaving where W sleeps permanently with stealable work.
+///   Workers in HotSpin or WarmYield are counted as searching (numSearching > 0). A producer
+///   seeing numSearching > 0 does not wake anyone — the searching worker will find the work on
+///   its next TryExecuteOne call. This is safe because searching workers poll continuously.
 ///
 /// COORDINATOR PROGRESS GUARANTEE
 ///
 ///   Even if every background worker is parked, at least one coordinator thread is running the
-///   TryExecuteOne spin loop while its DAG has outstanding jobs (Volatile.Read(_outstandingJobs)
-///   > 0). The coordinator can pop, steal, and drain injection — it is a full participant in work
-///   execution. This means progress is guaranteed even if notification is delayed or under-counted;
-///   the coordinator will eventually steal every job that no background worker picks up.
-///
-/// SEMAPHORE PERMIT BOUNDS
-///
-///   Over-release is possible: P reads _parkedWorkers = K, but between the read and the Release
-///   call, some workers wake from other notifications and decrement _parkedWorkers. The excess
-///   permits cause spurious wakeups — a worker wakes, finds no work, and re-parks on the next
-///   loop iteration, consuming the permit. Permits do not accumulate unboundedly because:
-///   (a) Release is guarded by _parkedWorkers > 0 (no release when nobody is sleeping).
-///   (b) Each spurious wake consumes one permit (Wait + re-park).
-///   (c) Batched release caps at Min(readied, parked), reducing permit storms compared to
-///       per-job notification.
+///   TryExecuteOne spin loop while its DAG has outstanding jobs. The coordinator can pop, steal,
+///   and drain injection — it is a full participant in work execution.
 ///
 /// SHUTDOWN
 ///
-///   <see cref="Dispose"/> sets _shutdownRequested = true, then releases _backgroundWorkerCount
-///   permits to wake all parked workers, then Joins all threads. Workers check _shutdownRequested
-///   at the top of each loop iteration and exit. Shutdown permits do not interfere with work
-///   notifications because threads exit immediately after waking.
+///   <see cref="Dispose"/> sets _shutdownRequested = true, then sets all per-worker events to wake
+///   parked workers, then Joins all threads. Workers check _shutdownRequested at the top of each
+///   loop iteration and in the WarmYield phase, then exit.
 ///
 /// REFERENCE: D. Chase and Y. Lev, "Dynamic Circular Work-Stealing Deque," SPAA 2005.
+/// REFERENCE: Tokio scheduler, <see href="https://github.com/tokio-rs/tokio"/>, MIT License.
 /// </summary>
 public sealed class WorkerPool : IDisposable
 {
@@ -132,23 +121,33 @@ public sealed class WorkerPool : IDisposable
     private readonly int _totalWorkerCount;
 
     /// <summary>
-    /// Shared semaphore for parking idle background workers. Only released when
-    /// <see cref="_parkedWorkers"/> is positive, preventing unbounded permit accumulation.
+    /// Packed idle state: <c>(numUnparked &lt;&lt; 16) | numSearching</c>. Atomically tracks how many
+    /// background workers are unparked (Running + HotSpin + WarmYield) and how many are currently
+    /// searching (HotSpin + WarmYield). Adapted from Tokio's <c>idle::State</c>.
     /// </summary>
-    private readonly SemaphoreSlim _workSignal;
+    private int _idleState;
+
+    /// <summary>Per-worker park/wake events, one per background worker.</summary>
+    private readonly ManualResetEventSlim[] _workerEvents;
+
+    /// <summary>
+    /// Stack of background worker indices currently parked. Producers pop from here to wake a
+    /// specific worker. Lock-free via <see cref="ConcurrentStack{T}"/>.
+    /// </summary>
+    private readonly ConcurrentStack<int> _sleepers = new();
+
+    /// <summary>
+    /// How long (ms) a worker stays in WarmYield before parking. During active gameplay (work
+    /// every ~16ms), workers never leave this phase. Set to 1000ms so workers park after ~1s of
+    /// true idleness (loading screens, menus, low-demand game states).
+    /// </summary>
+    internal const int KeepAliveMs = 1000;
 
     /// <summary>Set to <c>true</c> during <see cref="Dispose"/> to break worker loops.</summary>
     private volatile bool _shutdownRequested;
 
     /// <summary>Guard for idempotent <see cref="Dispose"/>.</summary>
     private int _disposed;
-
-    /// <summary>
-    /// Number of background workers currently parked (blocked on <see cref="_workSignal"/>). Used
-    /// by <see cref="NotifyWorkAvailable"/> to avoid releasing the semaphore when no one is
-    /// waiting, which would cause unbounded permit accumulation. Updated via announce-then-recheck.
-    /// </summary>
-    private int _parkedWorkers;
 
     /// <summary>
     /// Top-level jobs injected via the test accessor's <see cref="JobScheduler.TestAccessor.Inject"/>
@@ -175,7 +174,10 @@ public sealed class WorkerPool : IDisposable
 
         _backgroundWorkerCount = workerCount;
         _totalWorkerCount = totalCount;
-        _workSignal = new SemaphoreSlim(0);
+
+        _workerEvents = new ManualResetEventSlim[workerCount];
+        for (var i = 0; i < workerCount; i++)
+            _workerEvents[i] = new ManualResetEventSlim(false);
 
         _allContexts = new WorkerContext[totalCount];
         for (var i = 0; i < totalCount; i++)
@@ -223,37 +225,184 @@ public sealed class WorkerPool : IDisposable
     }
 
     /// <summary>
-    /// Signals that work is available, waking at most one parked worker.
+    /// Signals that work is available. Wakes at most one parked worker, but only if no worker is
+    /// currently searching (HotSpin/WarmYield) — a searching worker will find the new work on its
+    /// next <see cref="TryExecuteOne"/> call.
     /// </summary>
-    internal void NotifyWorkAvailable()
-    {
-        // Only release when someone is parked so permits do not accumulate without bound.
-        if (Volatile.Read(ref _parkedWorkers) > 0)
-            _workSignal.Release();
-    }
+    internal void NotifyWorkAvailable() => this.TryWakeOneWorker();
 
     // ── Worker loop ─────────────────────────────────────────────────────────
 
     private void RunWorker(WorkerContext context)
     {
-        while (!_shutdownRequested)
+        this.IncrementUnparked(searching: false);
+        try
         {
-            if (this.TryExecuteOne(context))
-                continue;
-
-            // Announce-then-recheck: declare intent to park, then re-check for work. This closes
-            // the race where work arrives between our failed steal and the Wait call — the producer
-            // sees _parkedWorkers > 0 and releases, or our re-check finds the work directly.
-            Interlocked.Increment(ref _parkedWorkers);
-
-            if (this.TryExecuteOne(context))
+            while (!_shutdownRequested)
             {
-                Interlocked.Decrement(ref _parkedWorkers);
-                continue;
-            }
+                // ── Running: pop own deque / steal / injection ──
+                if (this.TryExecuteOne(context))
+                {
+                    this.TransitionFromSearching(context);
+                    continue;
+                }
 
-            _workSignal.Wait();
-            Interlocked.Decrement(ref _parkedWorkers);
+                // ── HotSpin: ~10 pure CPU spin iterations ──
+                this.EnterSearching(context);
+                var spinWait = new SpinWait();
+                var found = false;
+                while (!spinWait.NextSpinWillYield)
+                {
+                    spinWait.SpinOnce();
+                    if (this.TryExecuteOne(context))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found)
+                {
+                    this.TransitionFromSearching(context);
+                    continue;
+                }
+
+                // ── WarmYield: Thread.Yield() for up to KeepAliveMs ──
+                var deadline = Environment.TickCount64 + KeepAliveMs;
+                while (Environment.TickCount64 < deadline)
+                {
+                    Thread.Yield();
+                    if (_shutdownRequested)
+                        return;
+
+                    if (this.TryExecuteOne(context))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found)
+                {
+                    this.TransitionFromSearching(context);
+                    continue;
+                }
+
+                // ── Park: deep sleep until explicitly woken ──
+                this.LeaveSearching(context);
+                this.TransitionToParked(context);
+
+                // Announce-then-recheck: we just decremented numUnparked and pushed to _sleepers.
+                // Re-check for work to close the race with a concurrent producer.
+                if (this.TryExecuteOne(context))
+                {
+                    this.TransitionFromParked();
+                    continue;
+                }
+
+                _workerEvents[context.WorkerIndex].Wait();
+                _workerEvents[context.WorkerIndex].Reset();
+                this.TransitionFromParked();
+            }
+        }
+        finally
+        {
+            this.DecrementUnparked(searching: false);
+        }
+    }
+
+    // ── Idle state management ────────────────────────────────────────────────
+    //
+    //   _idleState packs two counters into a single int:
+    //     bits [31:16] = numUnparked (workers in Running, HotSpin, or WarmYield)
+    //     bits [15:0]  = numSearching (workers in HotSpin or WarmYield)
+    //
+    //   All transitions use Interlocked.Add on the packed value, which is safe because the two
+    //   halves never overflow their 16-bit range (MaxWorkerCount = 127).
+
+    private const int UnparkedBit = 1 << 16;
+    private const int SearchingBit = 1;
+    private const int UnparkedMask = unchecked((int)0xFFFF0000);
+    private const int SearchingMask = 0x0000FFFF;
+
+    private static int NumSearching(int state) => state & SearchingMask;
+    private static int NumUnparked(int state) => (state >> 16) & 0xFFFF;
+
+    private void IncrementUnparked(bool searching)
+    {
+        var delta = searching ? UnparkedBit | SearchingBit : UnparkedBit;
+        Interlocked.Add(ref _idleState, delta);
+    }
+
+    private void DecrementUnparked(bool searching)
+    {
+        var delta = searching ? UnparkedBit | SearchingBit : UnparkedBit;
+        Interlocked.Add(ref _idleState, -delta);
+    }
+
+    private void EnterSearching(WorkerContext context)
+    {
+        if (context.IsSearching)
+            return;
+
+        context.IsSearching = true;
+        Interlocked.Add(ref _idleState, SearchingBit);
+    }
+
+    private void LeaveSearching(WorkerContext context)
+    {
+        if (!context.IsSearching)
+            return;
+
+        context.IsSearching = false;
+        Interlocked.Add(ref _idleState, -SearchingBit);
+    }
+
+    /// <summary>
+    /// Transitions a worker from searching to running after finding work. If this worker was the
+    /// last searcher, cascade-wakes one parked worker to maintain the search chain.
+    /// </summary>
+    private void TransitionFromSearching(WorkerContext context)
+    {
+        if (!context.IsSearching)
+            return;
+
+        context.IsSearching = false;
+        var prev = Interlocked.Add(ref _idleState, -SearchingBit);
+        var wasLastSearcher = NumSearching(prev) == 1;
+
+        if (wasLastSearcher)
+            this.TryWakeOneWorker();
+    }
+
+    private void TransitionToParked(WorkerContext context)
+    {
+        Debug.Assert(!context.IsSearching);
+        _sleepers.Push(context.WorkerIndex);
+        Interlocked.Add(ref _idleState, -UnparkedBit);
+    }
+
+    private void TransitionFromParked() =>
+        Interlocked.Add(ref _idleState, UnparkedBit);
+
+    /// <summary>
+    /// Wakes at most one parked worker if no worker is currently searching. This is the core of
+    /// Tokio's "notify then search" pattern: a searching worker will find new work on its own, so
+    /// waking a parked worker would be wasteful.
+    /// </summary>
+    private void TryWakeOneWorker()
+    {
+        var state = Volatile.Read(ref _idleState);
+        if (NumSearching(state) > 0)
+            return;
+
+        if (NumUnparked(state) >= _backgroundWorkerCount)
+            return;
+
+        if (_sleepers.TryPop(out var workerIndex))
+        {
+            Interlocked.Add(ref _idleState, UnparkedBit | SearchingBit);
+            _workerEvents[workerIndex].Set();
         }
     }
 
@@ -362,11 +511,7 @@ public sealed class WorkerPool : IDisposable
         }
 
         if (readied > 0)
-        {
-            var parked = Volatile.Read(ref _parkedWorkers);
-            if (parked > 0)
-                _workSignal.Release(Math.Min(readied, parked));
-        }
+            this.TryWakeOneWorker();
     }
 
     // ── Disposal ────────────────────────────────────────────────────────────
@@ -377,12 +522,16 @@ public sealed class WorkerPool : IDisposable
             return;
 
         _shutdownRequested = true;
-        _workSignal.Release(_backgroundWorkerCount);
+
+        // Wake all parked workers so they observe _shutdownRequested and exit.
+        foreach (var evt in _workerEvents)
+            evt.Set();
 
         foreach (var thread in _workerThreads)
             thread.Join();
 
-        _workSignal.Dispose();
+        foreach (var evt in _workerEvents)
+            evt.Dispose();
     }
 
     // ── Test accessor ───────────────────────────────────────────────────────

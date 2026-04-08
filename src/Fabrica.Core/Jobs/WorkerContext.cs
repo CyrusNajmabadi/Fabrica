@@ -27,6 +27,13 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex)
     internal FastRand StealRand = new((ulong)workerIndex * 0x9E3779B97F4A7C15);
 
     /// <summary>
+    /// Whether this worker is currently in a searching state (HotSpin or WarmYield). Accessed only
+    /// by the owning thread — no synchronization needed. Used by <see cref="WorkerPool"/> to track
+    /// whether the worker's transition out of searching should cascade-wake a parked worker.
+    /// </summary>
+    internal bool IsSearching;
+
+    /// <summary>
     /// The scheduler that owns the currently executing job's DAG. Set by
     /// <see cref="WorkerPool.ExecuteJob"/> before calling <see cref="Job.Execute"/> and cleared
     /// after. Used by <see cref="Enqueue"/> to stamp sub-jobs with the correct scheduler.
