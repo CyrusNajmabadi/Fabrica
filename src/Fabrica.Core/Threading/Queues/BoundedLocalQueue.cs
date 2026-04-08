@@ -173,7 +173,7 @@ internal sealed class BoundedLocalQueue<T> where T : class
             var prev = Interlocked.CompareExchange(ref _head, next, head);
             if (prev == head)
             {
-                item = _buffer[real & Mask]!;
+                item = Volatile.Read(ref _buffer[real & Mask])!;
                 _buffer[real & Mask] = null;
                 return true;
             }
@@ -222,7 +222,7 @@ internal sealed class BoundedLocalQueue<T> where T : class
             var prev = Interlocked.CompareExchange(ref _head, next, head);
             if (prev == head)
             {
-                item = _buffer[real & Mask]!;
+                item = Volatile.Read(ref _buffer[real & Mask])!;
                 _buffer[real & Mask] = null;
                 return true;
             }
@@ -304,7 +304,7 @@ internal sealed class BoundedLocalQueue<T> where T : class
         {
             var srcIdx = (first + i) & Mask;
             var dstIdx = (dstTail + i) & Mask;
-            destination._buffer[dstIdx] = _buffer[srcIdx];
+            destination._buffer[dstIdx] = Volatile.Read(ref _buffer[srcIdx]);
             _buffer[srcIdx] = null;
         }
 
