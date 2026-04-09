@@ -388,6 +388,9 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         var ops = _nodeOps;
         while (_cascadePending.TryPop(out var current))
         {
+            if (current.Index == 0)
+                continue;
+
             ref readonly var node = ref this.Arena[current];
             ops.EnumerateChildren(in node, ref ops);
             this.Arena.Free(current);
