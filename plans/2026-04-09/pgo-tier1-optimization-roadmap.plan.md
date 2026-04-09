@@ -196,6 +196,83 @@ branch predictor should never take it (confirm with PGO counts).
 
 ---
 
+### 10. Convert UnsafeList<T> to a mutable struct
+
+**Problem**: `UnsafeList<T>` is currently a class. Every type that holds one
+(`UnsafeStack<T>`, `RefCountTable<T>`, `GlobalNodeStore` fields, etc.) pays an extra heap
+allocation and an extra pointer dereference to reach the backing `T[]` and `_count`. On hot
+paths that access list internals (e.g., `Push`/`Pop` on `UnsafeStack`, `Add`/`AddRange`),
+this adds a dependent load in every call.
+
+**Fix**: Convert `UnsafeList<T>` from a `class` to a `struct`. Unlike `UnsafeStack` and
+`RefCountTable` (which became `readonly struct`), `UnsafeList` must be a plain `struct`
+because it mutates `_count` and `_array`. This has cascading impacts:
+- `UnsafeStack<T>` can no longer be `readonly struct` (it mutates its `_list` field).
+- Other types holding `UnsafeList` fields directly (e.g., `_drainedHandles` in
+  `GlobalNodeStore`) cannot mark those fields `readonly`.
+- Pass-by-ref semantics must be used carefully to avoid accidental copies.
+
+**Verify (disasm)**: Methods like `UnsafeStack.Push`/`Pop`, `UnsafeList.Add` should show
+one fewer `ldr` in their pointer chain (no class header dereference). `RefCountTable`
+operations that go through the slab directory should also benefit.
+
+**Verify (perf)**: Eliminates heap allocations for every `UnsafeList` instance and removes
+one pointer hop on every access. Should compound with optimizations #1 and #2.
+
+**Files**: `UnsafeList.cs`, `UnsafeStack.cs`, `RefCountTable.cs`, `GlobalNodeStore.cs`,
+`UnsafeSlabArena.cs`, `ProducerConsumerQueue.cs`, `DagValidator.cs`, and all test/benchmark
+call sites.
+
+---
+
+### 11. Branchless handle operations via zero-sentinel index
+
+**Problem**: Every `IncrementChildRefCounts`, `EnumerateChildren`, and `EnumerateRefChildren`
+call checks `handle.IsValid` (or `handle != Handle.None`) before operating on each of the
+9 child slots. That's 9 conditional branches per call × tens of thousands of calls per tick.
+Branch mispredictions on partially-populated nodes are expensive, and the branches inflate
+code size.
+
+Currently `Handle<T>.None` uses index `-1`, and `IsValid` checks `Index >= 0`. This means
+every child slot requires a test-and-branch before the actual work.
+
+**Fix**: Change the sentinel from `-1` to `0`. `default(Handle<T>)` naturally produces
+`Index = 0`, so uninitialized handles are automatically invalid. All valid handles start at
+index 1. Tables (`RefCountTable`, `UnsafeSlabArena`, etc.) reserve slot 0 as a no-op
+sink — increments/decrements to slot 0 are harmless and ignored.
+
+This eliminates the `IsValid` check entirely from hot paths:
+
+```csharp
+// Before (9 branches):
+if (node.Child0.IsValid) refCounts.Increment(node.Child0);
+if (node.Child1.IsValid) refCounts.Increment(node.Child1);
+...
+
+// After (0 branches):
+refCounts.Increment(node.Child0);
+refCounts.Increment(node.Child1);
+...
+```
+
+The 0-slot absorbs operations on invalid handles with no correctness impact.
+
+**Verify (disasm)**: `IncrementChildRefCounts` should drop from 564 bytes to ~200 bytes
+(9 straight-line increments, no `tbnz`/`cbz` branches). `EnumerateChildren` and
+`EnumerateRefChildren` should see similar reductions.
+
+**Verify (perf)**: Eliminates ~9 branches × 48K calls/tick = ~432K branches/tick. Should
+be measurable from both branch prediction and I-cache improvement.
+
+**Files**: `Handle.cs`, `RefCountTable.cs`, `UnsafeSlabArena.cs`, `BenchNodeOps.cs`,
+`GlobalNodeStore.cs`, `ThreadLocalBuffer.cs`, and all code that checks `IsValid` or
+compares against `Handle.None`.
+
+**NOTE**: This is a large cross-cutting change. Do it last, after all other optimizations
+are landed.
+
+---
+
 ## Not Planned (Architectural / Future)
 
 These were identified but require larger design changes. Documenting for future reference:
