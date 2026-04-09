@@ -6,6 +6,10 @@
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="'$(Configuration)' == 'Release' AND '$(UnsafeOptimizations)' != 'false'">
+		<DefineConstants>$(DefineConstants);UNSAFE_OPT</DefineConstants>
+	</PropertyGroup>
+
 	<PropertyGroup Condition="'$(UnsafeOptimizations)' == 'true'">
 		<DefineConstants>$(DefineConstants);UNSAFE_OPT</DefineConstants>
 	</PropertyGroup>

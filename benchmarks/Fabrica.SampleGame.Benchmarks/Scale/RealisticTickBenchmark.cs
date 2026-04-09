@@ -58,6 +58,8 @@ public class RealisticTickBenchmark
     [GlobalSetup]
     public void GlobalSetup()
     {
+        Console.WriteLine($"UNSAFE_OPT (BuildConfig.UnsafeOptimizations): {Fabrica.Core.BuildConfig.UnsafeOptimizations}");
+
         _pool = new WorkerPool(coordinatorCount: 1);
         _scheduler = new JobScheduler(_pool);
         _store = new GlobalNodeStore<BenchNode, BenchNodeOps>(_pool.WorkerCount);
