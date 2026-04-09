@@ -234,6 +234,7 @@ public sealed class WorkerPool : IDisposable
 
     // ── Worker loop ─────────────────────────────────────────────────────────
 
+    [SkipLocalsInit]
     private void RunWorker(WorkerContext context)
     {
         this.IncrementUnparked(searching: false);
@@ -413,6 +414,7 @@ public sealed class WorkerPool : IDisposable
     /// Attempts to find and execute one job. Tries local deque, then steals from peers, then
     /// checks the injection queue. Called by both background workers and coordinator threads.
     /// </summary>
+    [SkipLocalsInit]
     internal bool TryExecuteOne(WorkerContext context)
     {
         // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
@@ -433,6 +435,7 @@ public sealed class WorkerPool : IDisposable
         return this.TryDequeueInjected(context);
     }
 
+    [SkipLocalsInit]
     private bool TryStealAndExecute(WorkerContext context)
     {
         var count = _allContexts.Length;
