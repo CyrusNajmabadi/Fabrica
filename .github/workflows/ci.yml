@@ -43,7 +43,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        configuration: [Debug, Release]
+        include:
+          - configuration: Debug
+            unsafe: false
+            name: Debug
+          - configuration: Release
+            unsafe: false
+            name: Release
+          - configuration: Release
+            unsafe: true
+            name: Release-Unsafe
+    name: test (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +61,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - run: dotnet test -c ${{ matrix.configuration }} --results-directory ./test-results --coverage --coverage-output-format cobertura --report-junit
+      - run: dotnet test -c ${{ matrix.configuration }} -p:UnsafeOptimizations=${{ matrix.unsafe }} --results-directory ./test-results --coverage --coverage-output-format cobertura --report-junit
 
       - name: Make coverage paths relative
         if: always()

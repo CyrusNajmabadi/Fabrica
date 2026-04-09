@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
-#if !DEBUG
+#if UNSAFE_OPT
 using System.Runtime.InteropServices;
 #endif
 using Fabrica.Core.Collections.Unsafe;
@@ -23,13 +23,13 @@ internal readonly struct ReadOnlyRemapTable(NonCopyableUnsafeList<int> data, int
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal int Resolve(int threadId, int localIndex)
     {
-#if DEBUG
-        var span = data.WrittenSpan;
-        return span[span[threadId] + localIndex];
-#else
+#if UNSAFE_OPT
         ref var r0 = ref MemoryMarshal.GetArrayDataReference(data.UnsafeBackingArray);
         var baseOffset = Unsafe.Add(ref r0, threadId);
         return Unsafe.Add(ref r0, baseOffset + localIndex);
+#else
+        var span = data.WrittenSpan;
+        return span[span[threadId] + localIndex];
 #endif
     }
 

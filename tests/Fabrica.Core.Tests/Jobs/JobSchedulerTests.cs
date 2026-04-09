@@ -268,20 +268,26 @@ public class JobSchedulerTests
             Assert.Equal(i, result[i]);
     }
 
-    [Fact]
-    public void Stress_WideFanOut()
+    [Theory]
+    [MemberData(nameof(FanOutWidths))]
+    public void Stress_WideFanOut(int fanWidth)
     {
-        const int FanWidth = 50;
         using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
         var executionCount = 0;
 
-        var join = new TestJob();
+        var join = new TestJob
+        {
+            OnExecute = _ => Interlocked.Increment(ref executionCount),
+        };
 
-        var root = new TestJob();
-        for (var i = 0; i < FanWidth; i++)
+        var root = new TestJob
+        {
+            OnExecute = _ => Interlocked.Increment(ref executionCount),
+        };
+        for (var i = 0; i < fanWidth; i++)
         {
             var child = new TestJob
             {
@@ -290,9 +296,283 @@ public class JobSchedulerTests
             child.DependsOn(root);
             join.DependsOn(child);
         }
+
         accessor.Submit(root);
 
-        Assert.Equal(FanWidth, executionCount);
+        // root + fanWidth children + join (join only executes if fanWidth > 0)
+        var expected = fanWidth == 0 ? 1 : fanWidth + 2;
+        Assert.Equal(expected, executionCount);
+    }
+
+    public static TheoryData<int> FanOutWidths()
+    {
+        var set = new HashSet<int>();
+        var data = new TheoryData<int>();
+
+        void Add(int v)
+        {
+            if (v >= 0 && set.Add(v))
+                data.Add(v);
+        }
+
+        // Every value 0–257 (covers first four long boundaries exhaustively)
+        for (var i = 0; i <= 257; i++)
+            Add(i);
+
+        // Long-boundary ±1 for higher ranges up to 16 longs
+        for (var boundary = 320; boundary <= 1024; boundary += 64)
+        {
+            Add(boundary - 1);
+            Add(boundary);
+            Add(boundary + 1);
+        }
+
+        // First and last bit of each long: counts that place the final
+        // readied dependent at bit 0 or bit 63 of some long word.
+        for (var longIdx = 0; longIdx <= 16; longIdx++)
+        {
+            Add((longIdx * 64) + 1);  // bit 0 of long[longIdx] is the last set bit
+            Add((longIdx * 64) + 63); // bit 62 of long[longIdx] is the last set bit
+            Add((longIdx * 64) + 64); // bit 63 of long[longIdx] is the last set bit
+        }
+
+        // Both sides of a long boundary: count lands so that bits 63 and 0
+        // of adjacent longs are both set (i.e. exactly N*64 + 1 dependents).
+        for (var n = 1; n <= 16; n++)
+            Add((n * 64) + 1);
+
+        // Power-of-two counts (stress doubling patterns)
+        for (var p = 1; p <= 1024; p *= 2)
+        {
+            Add(p - 1);
+            Add(p);
+            Add(p + 1);
+        }
+
+        return data;
+    }
+
+    // ── Bitfield pattern tests ──────────────────────────────────────────────
+
+    [Theory]
+    [MemberData(nameof(BitPatternCases))]
+    public void Stress_WideFanOut_BitPatterns(int totalDependents, string pattern)
+    {
+        using var pool = new WorkerPool(workerCount: 4, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        var executionCount = 0;
+        var trigger = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+        var blocker = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+        var expectedReadied = 0;
+        for (var i = 0; i < totalDependents; i++)
+        {
+            var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            child.DependsOn(trigger);
+            if (IsReadiedByTrigger(i, pattern))
+                expectedReadied++;
+            else
+                child.DependsOn(blocker);
+        }
+
+        accessor.Submit(trigger);
+        Assert.Equal(1 + expectedReadied, executionCount);
+
+        if (expectedReadied < totalDependents)
+        {
+            accessor.Submit(blocker);
+            Assert.Equal(2 + totalDependents, executionCount);
+        }
+    }
+
+    private static bool IsReadiedByTrigger(int index, string pattern) => pattern switch
+    {
+        "all_ones" => true,
+        "all_zeros" => false,
+        "even_bits" => index % 2 == 0,
+        "odd_bits" => index % 2 == 1,
+        "even_longs" => (index >> 6) % 2 == 0,
+        "odd_longs" => (index >> 6) % 2 == 1,
+        "first_bit_per_long" => (index & 63) == 0,
+        "last_bit_per_long" => (index & 63) == 63,
+        "first_half_per_long" => (index & 63) < 32,
+        "second_half_per_long" => (index & 63) >= 32,
+        _ => throw new ArgumentException($"Unknown pattern: {pattern}"),
+    };
+
+    public static TheoryData<int, string> BitPatternCases()
+    {
+        var data = new TheoryData<int, string>();
+        string[] patterns =
+        [
+            "all_ones", "all_zeros",
+            "even_bits", "odd_bits",
+            "even_longs", "odd_longs",
+            "first_bit_per_long", "last_bit_per_long",
+            "first_half_per_long", "second_half_per_long",
+        ];
+
+        // Exact multiples of 64 (clean long boundaries)
+        int[] exactSizes = [64, 128, 192, 256, 320, 512];
+
+        // Non-multiples of 64 (partial last long)
+        int[] partialSizes = [1, 32, 63, 65, 127, 129, 255, 257];
+
+        foreach (var pattern in patterns)
+        {
+            foreach (var size in exactSizes)
+                data.Add(size, pattern);
+            foreach (var size in partialSizes)
+                data.Add(size, pattern);
+        }
+
+        return data;
+    }
+
+    // ── Concurrency stress for batched increment + deferred push ────────────
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(12)]
+    public void Stress_WideDiamond_Repeated(int workerCount)
+    {
+        const int Iterations = 50;
+        const int FanWidth = 200;
+
+        using var pool = new WorkerPool(workerCount: workerCount, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+            var root = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+            for (var i = 0; i < FanWidth; i++)
+            {
+                var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                child.DependsOn(root);
+                join.DependsOn(child);
+            }
+
+            accessor.Submit(root);
+            Assert.Equal(FanWidth + 2, executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
+    }
+
+    [Fact]
+    public void Stress_MultiRootSharedJoin()
+    {
+        const int RootCount = 10;
+        const int ChildrenPerRoot = 20;
+        const int Iterations = 50;
+
+        using var pool = new WorkerPool(workerCount: 8, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+            var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+            var roots = new TestJob[RootCount];
+            for (var r = 0; r < RootCount; r++)
+            {
+                roots[r] = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                for (var c = 0; c < ChildrenPerRoot; c++)
+                {
+                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    child.DependsOn(roots[r]);
+                    join.DependsOn(child);
+                }
+            }
+
+            foreach (var root in roots)
+                accessor.Inject(root);
+            accessor.WaitForCompletion();
+
+            Assert.Equal(RootCount + (RootCount * ChildrenPerRoot) + 1, executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
+    }
+
+    [Fact]
+    public void Stress_CascadingFanOutFanIn()
+    {
+        const int Stages = 5;
+        const int FanWidth = 50;
+        const int Iterations = 50;
+
+        using var pool = new WorkerPool(workerCount: 8, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+            var source = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var current = source;
+
+            for (var stage = 0; stage < Stages; stage++)
+            {
+                var stageJoin = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                for (var i = 0; i < FanWidth; i++)
+                {
+                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    child.DependsOn(current);
+                    stageJoin.DependsOn(child);
+                }
+
+                current = stageJoin;
+            }
+
+            accessor.Submit(source);
+            Assert.Equal(1 + (Stages * (FanWidth + 1)), executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
+    }
+
+    [Fact]
+    public void Stress_InterleavedDiamonds()
+    {
+        const int DiamondCount = 20;
+        const int FanWidth = 30;
+        const int Iterations = 30;
+
+        using var pool = new WorkerPool(workerCount: 8, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+
+            for (var d = 0; d < DiamondCount; d++)
+            {
+                var root = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+                for (var i = 0; i < FanWidth; i++)
+                {
+                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    child.DependsOn(root);
+                    join.DependsOn(child);
+                }
+
+                accessor.Inject(root);
+            }
+
+            accessor.WaitForCompletion();
+            Assert.Equal(DiamondCount * (FanWidth + 2), executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
     }
 
     // ── Two schedulers sharing one pool ──────────────────────────────────────

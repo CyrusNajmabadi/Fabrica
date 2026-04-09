@@ -5,4 +5,8 @@
 		<Nullable>enable</Nullable>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(UnsafeOptimizations)' == 'true'">
+		<DefineConstants>$(DefineConstants);UNSAFE_OPT</DefineConstants>
+	</PropertyGroup>
 </Project>
