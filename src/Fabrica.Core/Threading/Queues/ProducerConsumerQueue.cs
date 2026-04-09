@@ -82,7 +82,7 @@ public sealed partial class ProducerConsumerQueue<T>
 
     /// <summary>LIFO stack of slabs whose items have been fully cleaned. The producer pops from here before allocating a fresh
     /// slab, giving recently-returned slabs the best chance of still being in CPU cache.</summary>
-    private readonly UnsafeStack<Slab> _freeSlabs = new();
+    private readonly UnsafeStack<Slab> _freeSlabs = UnsafeStack<Slab>.Create();
 
     // ═══════════════════════════ CONSTRUCTORS ════════════════════════════════
 

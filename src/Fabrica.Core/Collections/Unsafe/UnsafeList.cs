@@ -17,6 +17,11 @@ namespace Fabrica.Core.Collections.Unsafe;
 ///
 /// THREAD MODEL
 ///   Single-threaded. No synchronization is provided.
+///
+/// WARNING: This is a reference type with mutable state. Do not share a single instance across
+/// multiple owners without synchronization. When held via <see cref="UnsafeStack{T}"/> (a struct),
+/// copies of the struct will alias this instance — mutations through one copy are visible through
+/// all others.
 /// </summary>
 internal sealed class UnsafeList<T>(int initialCapacity = 16)
 {
@@ -61,6 +66,28 @@ internal sealed class UnsafeList<T>(int initialCapacity = 16)
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void EnsureCapacity(int additionalCount)
+    {
+        var needed = _count + additionalCount;
+        if (needed > _array.Length)
+            this.Grow(needed);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void AddRange(ReadOnlySpan<T> items)
+    {
+        var count = _count;
+        var needed = count + items.Length;
+        var array = _array;
+
+        if (needed > array.Length)
+            array = this.Grow(needed);
+
+        items.CopyTo(array.AsSpan(count));
+        _count = needed;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void RemoveLast()
     {
         Debug.Assert(_count > 0, "RemoveLast called on empty list.");
@@ -87,9 +114,12 @@ internal sealed class UnsafeList<T>(int initialCapacity = 16)
     public void Reset() => _count = 0;
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private T[] Grow()
+    private T[] Grow() => this.Grow(0);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private T[] Grow(int minCapacity)
     {
-        var newArray = new T[Math.Max(_array.Length * 2, 4)];
+        var newArray = new T[Math.Max(Math.Max(_array.Length * 2, minCapacity), 4)];
         Array.Copy(_array, newArray, _array.Length);
         _array = newArray;
         return newArray;

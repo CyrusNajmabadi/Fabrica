@@ -45,7 +45,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     private readonly UnsafeSlabDirectory<T> _directory;
     private int _highWater;
     private int _count;
-    private readonly UnsafeStack<Handle<T>> _freeList = new();
+    private readonly UnsafeStack<Handle<T>> _freeList = UnsafeStack<Handle<T>>.Create();
 
     private SingleThreadedOwner _owner;
 

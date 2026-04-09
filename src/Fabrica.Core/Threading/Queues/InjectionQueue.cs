@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
 
 namespace Fabrica.Core.Threading.Queues;
@@ -17,7 +18,7 @@ namespace Fabrica.Core.Threading.Queues;
 internal readonly struct InjectionQueue<T>() where T : class
 {
     private readonly Lock _lock = new();
-    private readonly UnsafeStack<T> _stack = new();
+    private readonly UnsafeStack<T> _stack = UnsafeStack<T>.Create();
 
     /// <summary>Injects an item into the global queue. Called from the overflow path.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -26,6 +27,32 @@ internal readonly struct InjectionQueue<T>() where T : class
         using (_lock.EnterScope())
             _stack.Push(item);
     }
+
+    /// <summary>
+    /// Injects items from up to two contiguous ring-buffer segments plus one extra item,
+    /// all under a single lock acquisition. The two segments handle circular-buffer wrap-around.
+    /// Allocates space once in the backing stack and uses bulk <see cref="ReadOnlySpan{T}.CopyTo"/>
+    /// instead of per-element pushes.
+    /// </summary>
+    public void EnqueueBatch(ReadOnlySpan<T?> segment1, ReadOnlySpan<T?> segment2, T extraItem)
+    {
+        using (_lock.EnterScope())
+        {
+            _stack.EnsureCapacity(segment1.Length + segment2.Length + 1);
+            _stack.PushRange(AsNonNull(segment1));
+            _stack.PushRange(AsNonNull(segment2));
+            _stack.Push(extraItem);
+        }
+    }
+
+    /// <summary>
+    /// Zero-cost reinterpret of <c>ReadOnlySpan&lt;T?&gt;</c> as <c>ReadOnlySpan&lt;T&gt;</c>.
+    /// Safe because <c>T : class</c> guarantees identical runtime representation.
+    /// </summary>
+    private static ReadOnlySpan<T> AsNonNull(ReadOnlySpan<T?> span)
+        => MemoryMarshal.CreateReadOnlySpan(
+            ref Unsafe.As<T?, T>(ref MemoryMarshal.GetReference(span)),
+            span.Length);
 
     /// <summary>Tries to dequeue an item. Returns <c>null</c> if the queue is empty.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
