@@ -28,4 +28,3 @@ G_M000_IG03:                ;; offset=0x0020
        tail.jmp [TreeDecrementVisitor:Visit[TreeNode](Fabrica.Core.Memory.Handle`1[TreeNode]):this]
  
 ; Total bytes of code 44
- 

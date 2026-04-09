@@ -27,4 +27,3 @@ G_M000_IG03:                ;; offset=0x001B
        tail.jmp [MixedDecrementVisitor:Visit[OtherNode](Fabrica.Core.Memory.Handle`1[OtherNode]):this]
  
 ; Total bytes of code 40
- 

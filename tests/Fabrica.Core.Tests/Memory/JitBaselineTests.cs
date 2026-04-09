@@ -168,7 +168,7 @@ public partial class JitBaselineTests
 
         foreach (var variant in variants)
         {
-            if (File.ReadAllText(variant) == normalized)
+            if (ReadAndNormalizeBaseline(variant) == normalized)
             {
                 if (File.Exists(actualFile))
                     File.Delete(actualFile);
@@ -326,8 +326,23 @@ public partial class JitBaselineTests
             return match.Value.Replace($"0x{hex}", "<addr>");
         });
 
-        return result;
+        return NormalizeWhitespace(result);
     }
+
+    private static string NormalizeWhitespace(string text)
+    {
+        text = text.Replace("\r\n", "\n");
+
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+            lines[i] = lines[i].TrimEnd();
+
+        var result = string.Join('\n', lines).TrimEnd('\n');
+        return result.Length > 0 ? result + "\n" : result;
+    }
+
+    private static string ReadAndNormalizeBaseline(string path)
+        => NormalizeWhitespace(File.ReadAllText(path));
 
     private static string FindBuiltDll()
     {
@@ -477,7 +492,7 @@ public partial class JitBaselineTests
 
             foreach (var variant in ResolveBaselineVariants(siblingDir, baselineName))
             {
-                if (File.ReadAllText(variant) == normalizedAsm)
+                if (ReadAndNormalizeBaseline(variant) == normalizedAsm)
                     return $"../{siblingDirName}/{Path.GetFileName(variant)}";
             }
         }
@@ -491,7 +506,7 @@ public partial class JitBaselineTests
 
         foreach (var variantPath in variants)
         {
-            var expected = File.ReadAllText(variantPath);
+            var expected = ReadAndNormalizeBaseline(variantPath);
             var diff = InlineDiffBuilder.Diff(expected, actual, ignoreWhiteSpace: false);
 
             sb.AppendLine();

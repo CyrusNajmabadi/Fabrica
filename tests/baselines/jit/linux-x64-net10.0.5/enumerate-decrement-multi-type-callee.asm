@@ -27,4 +27,3 @@ G_M000_IG03:                ;; offset=0x001B
        tail.jmp [ParentDecrementVisitor:Visit[ChildNode](Fabrica.Core.Memory.Handle`1[ChildNode]):this]
  
 ; Total bytes of code 40
- 
