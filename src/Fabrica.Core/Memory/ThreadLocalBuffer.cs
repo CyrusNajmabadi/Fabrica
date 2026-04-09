@@ -62,22 +62,6 @@ public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) whe
         get => _roots.WrittenSpan;
     }
 
-    /// <summary>
-    /// Returns a reference to the node for the given handle (which must be a local handle
-    /// belonging to this buffer). Decodes the local index internally.
-    /// </summary>
-    public ref T this[Handle<T> handle]
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
-    }
-
-    private ref T this[int localIndex]
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[localIndex];
-    }
-
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>
     public readonly ReadOnlySpan<T> WrittenSpan
     {
@@ -94,5 +78,13 @@ public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) whe
     {
         _list.Reset();
         _roots.Reset();
+    }
+
+    // ── Test accessor ─────────────────────────────────────────────────────
+
+    internal readonly ref T this[Handle<T> handle]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
     }
 }
