@@ -8,9 +8,8 @@ namespace Fabrica.Core.Memory;
 /// Each worker gets one <see cref="ThreadLocalBuffer{T}"/> per node type.
 ///
 /// ALLOCATION
-///   <see cref="Allocate"/> appends a default <typeparamref name="T"/> and returns a local
+///   <see cref="Allocate"/> appends the caller-supplied <typeparamref name="T"/> and returns a local
 ///   <see cref="Handle{T}"/> with the thread ID baked in via <see cref="TaggedHandle.EncodeLocal"/>.
-///   The caller writes the node data through the returned handle's index into <see cref="this[int]"/>.
 ///
 /// REUSE
 ///   <see cref="Reset"/> sets the count to zero without releasing the backing array, so
@@ -34,22 +33,15 @@ public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) whe
     }
 
     /// <summary>
-    /// Allocates a slot for a new node and returns a local <see cref="Handle{T}"/> encoding this
-    /// thread's ID and the local index. The caller must write the node data via <see cref="this[int]"/>
-    /// using the decoded local index.
+    /// Appends <paramref name="value"/> and returns a local <see cref="Handle{T}"/> encoding this
+    /// thread's ID and the local index. If <paramref name="isRoot"/> is true, the handle is also
+    /// recorded as a root.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Handle<T> Allocate() => this.Allocate(isRoot: false);
-
-    /// <summary>
-    /// Allocates a slot for a new node and returns a local <see cref="Handle{T}"/>. If
-    /// <paramref name="isRoot"/> is true, the returned handle is also recorded as a root.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Handle<T> Allocate(bool isRoot)
+    public Handle<T> Allocate(T value, bool isRoot = false)
     {
         var localIndex = _list.Count;
-        _list.Add(default);
+        _list.Add(value);
         var handle = new Handle<T>(TaggedHandle.EncodeLocal(_threadId, localIndex));
         if (isRoot)
             _roots.Add(handle);
@@ -70,22 +62,6 @@ public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) whe
         get => _roots.WrittenSpan;
     }
 
-    /// <summary>
-    /// Returns a reference to the node for the given handle (which must be a local handle
-    /// belonging to this buffer). Decodes the local index internally.
-    /// </summary>
-    public ref T this[Handle<T> handle]
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
-    }
-
-    private ref T this[int localIndex]
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref _list[localIndex];
-    }
-
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>
     public readonly ReadOnlySpan<T> WrittenSpan
     {
@@ -102,5 +78,13 @@ public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) whe
     {
         _list.Reset();
         _roots.Reset();
+    }
+
+    // ── Test accessor ─────────────────────────────────────────────────────
+
+    internal readonly ref T this[Handle<T> handle]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ref _list[TaggedHandle.DecodeLocalIndex(handle.Index)];
     }
 }

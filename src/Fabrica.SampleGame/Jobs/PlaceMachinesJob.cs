@@ -28,14 +28,13 @@ internal sealed class PlaceMachinesJob : Job
     protected override void Execute(JobContext context)
     {
         ref var threadLocalBuffer = ref MachineThreadLocalBuffers![context.WorkerIndex];
-        var handle = threadLocalBuffer.Allocate(isRoot: true);
-        threadLocalBuffer[handle] = new MachineNode
+        threadLocalBuffer.Allocate(new MachineNode
         {
             InputBelt = _beltJob!.ChainHead,
             OutputBelt = _beltJob.ChainTail,
             RecipeId = 1,
             Progress = 0,
-        };
+        }, isRoot: true);
     }
 
     protected override void ResetState()

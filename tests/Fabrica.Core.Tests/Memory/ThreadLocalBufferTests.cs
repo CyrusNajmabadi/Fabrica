@@ -23,9 +23,9 @@ public class ThreadLocalBufferTests
     public void Allocate_IncrementsCount()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        threadLocalBuffer.Allocate();
+        threadLocalBuffer.Allocate(default);
         Assert.Equal(1, threadLocalBuffer.Count);
-        threadLocalBuffer.Allocate();
+        threadLocalBuffer.Allocate(default);
         Assert.Equal(2, threadLocalBuffer.Count);
     }
 
@@ -35,7 +35,7 @@ public class ThreadLocalBufferTests
     public void Allocate_ReturnsLocalHandle()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 5);
-        var handle = threadLocalBuffer.Allocate();
+        var handle = threadLocalBuffer.Allocate(default);
 
         Assert.True(TaggedHandle.IsLocal(handle.Index));
         Assert.Equal(5, TaggedHandle.DecodeThreadId(handle.Index));
@@ -46,9 +46,9 @@ public class ThreadLocalBufferTests
     public void Allocate_SequentialLocalIndices()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 3);
-        var firstHandle = threadLocalBuffer.Allocate();
-        var secondHandle = threadLocalBuffer.Allocate();
-        var thirdHandle = threadLocalBuffer.Allocate();
+        var firstHandle = threadLocalBuffer.Allocate(default);
+        var secondHandle = threadLocalBuffer.Allocate(default);
+        var thirdHandle = threadLocalBuffer.Allocate(default);
 
         Assert.Equal(0, TaggedHandle.DecodeLocalIndex(firstHandle.Index));
         Assert.Equal(1, TaggedHandle.DecodeLocalIndex(secondHandle.Index));
@@ -65,9 +65,7 @@ public class ThreadLocalBufferTests
     public void Indexer_WriteAndRead()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        var handle = threadLocalBuffer.Allocate();
-
-        threadLocalBuffer[handle] = new TestNode { Value = 42, Child = Handle<TestNode>.None };
+        var handle = threadLocalBuffer.Allocate(new TestNode { Value = 42, Child = Handle<TestNode>.None });
 
         Assert.Equal(42, threadLocalBuffer[handle].Value);
         Assert.Equal(Handle<TestNode>.None, threadLocalBuffer[handle].Child);
@@ -77,7 +75,7 @@ public class ThreadLocalBufferTests
     public void Indexer_MutateByRef()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        var handle = threadLocalBuffer.Allocate();
+        var handle = threadLocalBuffer.Allocate(default);
 
         ref var node = ref threadLocalBuffer[handle];
         node.Value = 99;
@@ -91,10 +89,8 @@ public class ThreadLocalBufferTests
     public void WrittenSpan_ReflectsAllocations()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        var h0 = threadLocalBuffer.Allocate();
-        threadLocalBuffer[h0] = new TestNode { Value = 10 };
-        var h1 = threadLocalBuffer.Allocate();
-        threadLocalBuffer[h1] = new TestNode { Value = 20 };
+        threadLocalBuffer.Allocate(new TestNode { Value = 10 });
+        threadLocalBuffer.Allocate(new TestNode { Value = 20 });
 
         var span = threadLocalBuffer.WrittenSpan;
         Assert.Equal(2, span.Length);
@@ -115,9 +111,9 @@ public class ThreadLocalBufferTests
     public void Reset_ClearsCount()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        threadLocalBuffer.Allocate();
-        threadLocalBuffer.Allocate();
-        threadLocalBuffer.Allocate();
+        threadLocalBuffer.Allocate(default);
+        threadLocalBuffer.Allocate(default);
+        threadLocalBuffer.Allocate(default);
 
         threadLocalBuffer.Reset();
 
@@ -129,10 +125,10 @@ public class ThreadLocalBufferTests
     public void Reset_AllowsReuse()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 7);
-        threadLocalBuffer.Allocate();
+        threadLocalBuffer.Allocate(default);
         threadLocalBuffer.Reset();
 
-        var handle = threadLocalBuffer.Allocate();
+        var handle = threadLocalBuffer.Allocate(default);
         Assert.Equal(1, threadLocalBuffer.Count);
         Assert.Equal(0, TaggedHandle.DecodeLocalIndex(handle.Index));
         Assert.Equal(7, TaggedHandle.DecodeThreadId(handle.Index));
@@ -148,8 +144,7 @@ public class ThreadLocalBufferTests
         var handles = new Handle<TestNode>[100];
         for (var i = 0; i < 100; i++)
         {
-            handles[i] = threadLocalBuffer.Allocate();
-            threadLocalBuffer[handles[i]] = new TestNode { Value = i };
+            handles[i] = threadLocalBuffer.Allocate(new TestNode { Value = i });
         }
 
         Assert.Equal(100, threadLocalBuffer.Count);
@@ -166,11 +161,9 @@ public class ThreadLocalBufferTests
         var threadLocalBufferA = new ThreadLocalBuffer<TestNode>(threadId: 0);
         var threadLocalBufferB = new ThreadLocalBuffer<TestNode>(threadId: 1);
 
-        var handleB = threadLocalBufferB.Allocate();
-        threadLocalBufferB[handleB] = new TestNode { Value = 42 };
+        var handleB = threadLocalBufferB.Allocate(new TestNode { Value = 42 });
 
-        var handleA = threadLocalBufferA.Allocate();
-        threadLocalBufferA[handleA] = new TestNode { Value = 1, Child = handleB };
+        var handleA = threadLocalBufferA.Allocate(new TestNode { Value = 1, Child = handleB });
 
         Assert.Equal(1, TaggedHandle.DecodeThreadId(threadLocalBufferA[handleA].Child.Index));
         Assert.Equal(0, TaggedHandle.DecodeLocalIndex(threadLocalBufferA[handleA].Child.Index));
@@ -182,7 +175,7 @@ public class ThreadLocalBufferTests
     public void RootHandles_EmptyByDefault()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        threadLocalBuffer.Allocate();
+        threadLocalBuffer.Allocate(default);
         Assert.True(threadLocalBuffer.RootHandles.IsEmpty);
     }
 
@@ -190,8 +183,8 @@ public class ThreadLocalBufferTests
     public void MarkRoot_AppearsInRootHandles()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        var firstHandle = threadLocalBuffer.Allocate();
-        var secondHandle = threadLocalBuffer.Allocate();
+        var firstHandle = threadLocalBuffer.Allocate(default);
+        var secondHandle = threadLocalBuffer.Allocate(default);
 
         threadLocalBuffer.MarkRoot(firstHandle);
 
@@ -203,9 +196,9 @@ public class ThreadLocalBufferTests
     public void MarkRoot_MultipleRoots()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        var firstHandle = threadLocalBuffer.Allocate();
-        var secondHandle = threadLocalBuffer.Allocate();
-        var thirdHandle = threadLocalBuffer.Allocate();
+        var firstHandle = threadLocalBuffer.Allocate(default);
+        var secondHandle = threadLocalBuffer.Allocate(default);
+        var thirdHandle = threadLocalBuffer.Allocate(default);
 
         threadLocalBuffer.MarkRoot(firstHandle);
         threadLocalBuffer.MarkRoot(thirdHandle);
@@ -219,9 +212,9 @@ public class ThreadLocalBufferTests
     public void Allocate_IsRoot_RecordsRoot()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        var firstHandle = threadLocalBuffer.Allocate(isRoot: true);
-        var secondHandle = threadLocalBuffer.Allocate(isRoot: false);
-        var thirdHandle = threadLocalBuffer.Allocate(isRoot: true);
+        var firstHandle = threadLocalBuffer.Allocate(default, isRoot: true);
+        var secondHandle = threadLocalBuffer.Allocate(default, isRoot: false);
+        var thirdHandle = threadLocalBuffer.Allocate(default, isRoot: true);
 
         Assert.Equal(3, threadLocalBuffer.Count);
         Assert.Equal(2, threadLocalBuffer.RootHandles.Length);
@@ -233,8 +226,8 @@ public class ThreadLocalBufferTests
     public void Allocate_DefaultOverload_IsNotRoot()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        threadLocalBuffer.Allocate();
-        threadLocalBuffer.Allocate();
+        threadLocalBuffer.Allocate(default);
+        threadLocalBuffer.Allocate(default);
         Assert.True(threadLocalBuffer.RootHandles.IsEmpty);
     }
 
@@ -242,8 +235,8 @@ public class ThreadLocalBufferTests
     public void Reset_ClearsRoots()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        threadLocalBuffer.Allocate(isRoot: true);
-        threadLocalBuffer.Allocate(isRoot: true);
+        threadLocalBuffer.Allocate(default, isRoot: true);
+        threadLocalBuffer.Allocate(default, isRoot: true);
         Assert.Equal(2, threadLocalBuffer.RootHandles.Length);
 
         threadLocalBuffer.Reset();
@@ -255,10 +248,10 @@ public class ThreadLocalBufferTests
     public void Reset_RootsReuseAfterReset()
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TestNode>(threadId: 0);
-        threadLocalBuffer.Allocate(isRoot: true);
+        threadLocalBuffer.Allocate(default, isRoot: true);
         threadLocalBuffer.Reset();
 
-        var rootHandle = threadLocalBuffer.Allocate(isRoot: true);
+        var rootHandle = threadLocalBuffer.Allocate(default, isRoot: true);
         Assert.Equal(1, threadLocalBuffer.RootHandles.Length);
         Assert.Equal(rootHandle, threadLocalBuffer.RootHandles[0]);
     }
@@ -269,7 +262,7 @@ public class ThreadLocalBufferTests
         var threadLocalBufferA = new ThreadLocalBuffer<TestNode>(threadId: 0);
         var threadLocalBufferB = new ThreadLocalBuffer<TestNode>(threadId: 1);
 
-        var handleB = threadLocalBufferB.Allocate();
+        var handleB = threadLocalBufferB.Allocate(default);
 
         threadLocalBufferA.MarkRoot(handleB);
 

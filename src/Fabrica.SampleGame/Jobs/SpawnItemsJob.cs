@@ -22,9 +22,7 @@ internal sealed class SpawnItemsJob : Job
             AllocatedItems = new Handle<ItemNode>[Count];
         for (var i = 0; i < Count; i++)
         {
-            var handle = threadLocalBuffer.Allocate();
-            threadLocalBuffer[handle] = new ItemNode { ItemTypeId = i % 4 };
-            AllocatedItems[i] = handle;
+            AllocatedItems[i] = threadLocalBuffer.Allocate(new ItemNode { ItemTypeId = i % 4 });
         }
     }
 

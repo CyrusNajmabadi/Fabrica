@@ -37,21 +37,10 @@ internal sealed class SpineUpdateJob : Job
         var oldL3Handle = GetChild(in oldL2, PathIndex2);
         var oldL3 = Arena[oldL3Handle];
 
-        var newL3 = ReplaceChild(in oldL3, PathIndex3, newChainHead);
-        var newL3Handle = buf.Allocate();
-        buf[newL3Handle] = newL3;
-
-        var newL2 = ReplaceChild(in oldL2, PathIndex2, newL3Handle);
-        var newL2Handle = buf.Allocate();
-        buf[newL2Handle] = newL2;
-
-        var newL1 = ReplaceChild(in oldL1, PathIndex1, newL2Handle);
-        var newL1Handle = buf.Allocate();
-        buf[newL1Handle] = newL1;
-
-        var newL0 = ReplaceChild(in oldL0, PathIndex0, newL1Handle);
-        var newL0Handle = buf.Allocate(isRoot: true);
-        buf[newL0Handle] = newL0;
+        var newL3Handle = buf.Allocate(ReplaceChild(in oldL3, PathIndex3, newChainHead));
+        var newL2Handle = buf.Allocate(ReplaceChild(in oldL2, PathIndex2, newL3Handle));
+        var newL1Handle = buf.Allocate(ReplaceChild(in oldL1, PathIndex1, newL2Handle));
+        var newL0Handle = buf.Allocate(ReplaceChild(in oldL0, PathIndex0, newL1Handle), isRoot: true);
 
         NewRoot = newL0Handle;
     }
@@ -61,8 +50,7 @@ internal sealed class SpineUpdateJob : Job
         var next = Handle<BenchNode>.None;
         for (var i = length - 1; i >= 0; i--)
         {
-            var h = buf.Allocate();
-            buf[h] = new BenchNode { Next = next, Value = startValue + i };
+            var h = buf.Allocate(new BenchNode { Next = next, Value = startValue + i });
             next = h;
         }
 

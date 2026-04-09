@@ -59,8 +59,7 @@ internal sealed class SnapshotJob : Job
         var next = Handle<BenchNode>.None;
         for (var i = NodeCount - 1; i >= 0; i--)
         {
-            var h = buf.Allocate(isRoot: IsRoot && i == 0);
-            buf[h] = new BenchNode { Next = next, Value = seed + i };
+            var h = buf.Allocate(new BenchNode { Next = next, Value = seed + i }, isRoot: IsRoot && i == 0);
             next = h;
         }
 

@@ -39,9 +39,8 @@ internal sealed class BuildBeltChainJob : Job
 
         for (var i = ChainLength - 1; i >= 0; i--)
         {
-            var handle = threadLocalBuffer.Allocate();
             var payload = i < items.Length ? items[i] : Handle<ItemNode>.None;
-            threadLocalBuffer[handle] = new BeltSegmentNode { Next = next, Payload = payload };
+            var handle = threadLocalBuffer.Allocate(new BeltSegmentNode { Next = next, Payload = payload });
 
             if (i == ChainLength - 1) ChainTail = handle;
             next = handle;

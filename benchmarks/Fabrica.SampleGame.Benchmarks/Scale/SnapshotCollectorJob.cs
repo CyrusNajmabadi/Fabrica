@@ -21,7 +21,6 @@ internal sealed class SnapshotCollectorJob : Job
     {
         if (Instrument) StartTimestamp = Stopwatch.GetTimestamp();
         var buf = Buffers![context.WorkerIndex];
-        var h = buf.Allocate(isRoot: true);
         var node = new BenchNode();
 
         if (Sources.Length > 0) node.Child0 = Sources[0].ResultHead;
@@ -38,15 +37,14 @@ internal sealed class SnapshotCollectorJob : Job
             var next = Handle<BenchNode>.None;
             for (var i = Sources.Length - 1; i >= 8; i--)
             {
-                var overflow = buf.Allocate();
-                buf[overflow] = new BenchNode { Child0 = Sources[i].ResultHead, Next = next };
+                var overflow = buf.Allocate(new BenchNode { Child0 = Sources[i].ResultHead, Next = next });
                 next = overflow;
             }
 
             node.Next = next;
         }
 
-        buf[h] = node;
+        var h = buf.Allocate(node, isRoot: true);
         ResultHead = h;
         if (Instrument) EndTimestamp = Stopwatch.GetTimestamp();
     }
