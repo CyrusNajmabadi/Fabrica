@@ -486,7 +486,8 @@ public sealed class WorkerPool : IDisposable
 #endif
 
         var scheduler = job.Scheduler!;
-        context.CurrentScheduler = scheduler;
+        if (context.CurrentScheduler != scheduler)
+            context.CurrentScheduler = scheduler;
 
 #if DEBUG
         job.State = JobState.Executing;
