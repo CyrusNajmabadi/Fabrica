@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
@@ -156,7 +155,7 @@ public sealed class WorkerPool : IDisposable
     /// via <see cref="JobScheduler.TestAccessor.Inject"/>. The coordinator fast-path
     /// (<see cref="JobScheduler.Submit"/>) pushes directly onto the coordinator's deque instead.
     /// </summary>
-    private readonly StrongBox<InjectionQueue<Job>> _injectionQueue = new(new InjectionQueue<Job>());
+    private readonly InjectionQueue<Job> _injectionQueue = new();
 
     /// <summary>Next coordinator slot index to hand out via <see cref="AttachCoordinator"/>.</summary>
     private int _nextCoordinatorSlot;
@@ -221,7 +220,7 @@ public sealed class WorkerPool : IDisposable
     /// </summary>
     internal void Inject(Job job)
     {
-        _injectionQueue.Value.Enqueue(job);
+        _injectionQueue.Enqueue(job);
         this.NotifyWorkAvailable();
     }
 
@@ -462,7 +461,7 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        var job = _injectionQueue.Value.TryDequeue();
+        var job = _injectionQueue.TryDequeue();
         if (job != null)
         {
             context.LastJobSource = JobSource.Injection;

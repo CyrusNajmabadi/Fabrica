@@ -175,16 +175,15 @@ public class InjectionQueueTests
             Assert.Contains(i.ToString(), all);
     }
 
-    // ═══════════════════════════ STRUCT COPY SAFETY ══════════════════════════
+    // ═══════════════════════════ REFERENCE SHARING ══════════════════════════
 
     [Fact]
-    public void StructCopy_DoesNotShareState()
+    public void Alias_SharesState()
     {
         var original = new InjectionQueue<string>();
-        var copy = original;
+        var alias = original;
 
         original.Enqueue("from-original");
-        Assert.Null(copy.TryDequeue());
-        Assert.Equal("from-original", original.TryDequeue());
+        Assert.Equal("from-original", alias.TryDequeue());
     }
 }

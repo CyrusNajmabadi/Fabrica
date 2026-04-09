@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
@@ -15,8 +14,11 @@ namespace Fabrica.Core.Threading.Queues;
 /// Contention is expected to be low — this queue is only touched when a worker's local ring
 /// buffer overflows (rare) or when a worker drains global work (periodic). A simple lock is
 /// cheaper and simpler than a lock-free structure for this access pattern.
+///
+/// Heap-allocated (class) so that multiple <see cref="BoundedLocalQueue{T}"/> instances can share
+/// a single queue by reference without wrapper types.
 /// </summary>
-internal struct InjectionQueue<T>() where T : class
+internal sealed class InjectionQueue<T> where T : class
 {
     private readonly Lock _lock = new();
     private NonCopyableUnsafeStack<T> _stack = NonCopyableUnsafeStack<T>.Create();
@@ -64,7 +66,7 @@ internal struct InjectionQueue<T>() where T : class
     }
 
     /// <summary>Approximate item count. Acquires the lock for an exact snapshot.</summary>
-    public readonly int Count
+    public int Count
     {
         get
         {
@@ -74,7 +76,7 @@ internal struct InjectionQueue<T>() where T : class
     }
 
     /// <summary>Approximate emptiness check.</summary>
-    public readonly bool IsEmpty
+    public bool IsEmpty
     {
         get
         {
@@ -83,24 +85,19 @@ internal struct InjectionQueue<T>() where T : class
         }
     }
 
-    [UnscopedRef]
-    internal TestAccessor GetTestAccessor() => new(ref this);
+    internal TestAccessor GetTestAccessor() => new(this);
 
-    internal ref struct TestAccessor
+    internal class TestAccessor(InjectionQueue<T> queue)
     {
-        private ref InjectionQueue<T> _queue;
-
-        internal TestAccessor(ref InjectionQueue<T> queue) => _queue = ref queue;
-
         /// <summary>
         /// Drains all items into a list (LIFO order — most recently enqueued first).
         /// </summary>
         public List<T> DrainToList()
         {
             var result = new List<T>();
-            using (_queue._lock.EnterScope())
+            using (queue._lock.EnterScope())
             {
-                while (_queue._stack.TryPop(out var item))
+                while (queue._stack.TryPop(out var item))
                     result.Add(item);
             }
 

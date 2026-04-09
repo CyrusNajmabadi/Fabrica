@@ -6,7 +6,7 @@ namespace Fabrica.Core.Tests.Collections;
 
 public class BoundedLocalQueueTests
 {
-    private static StrongBox<InjectionQueue<T>> MakeOverflow<T>() where T : class => new(new InjectionQueue<T>());
+    private static InjectionQueue<T> MakeOverflow<T>() where T : class => new();
 
     // ═══════════════════════════ LAYOUT VERIFICATION ═════════════════════════
 
@@ -395,7 +395,7 @@ public class BoundedLocalQueueTests
             Assert.True(all.Add(item));
 
         Assert.Equal(BoundedLocalQueue<string>.QueueCapacity, all.Count);
-        Assert.True(overflow.Value.IsEmpty);
+        Assert.True(overflow.IsEmpty);
     }
 
     // ═══════════════════════════ LIFO SLOT DETAILS ══════════════════════════
@@ -472,16 +472,16 @@ public class BoundedLocalQueueTests
         for (var i = 0; i <= cap; i++)
             queue.Push($"item-{i}");
 
-        Assert.True(overflow.Value.IsEmpty);
+        Assert.True(overflow.IsEmpty);
 
         queue.Push("trigger");
 
-        Assert.Equal((cap / 2) + 1, overflow.Value.Count);
+        Assert.Equal((cap / 2) + 1, overflow.Count);
 
         // DrainToList returns LIFO order (most recently pushed first).
         // The overflow path pushes: item-0, item-1, ..., item-127, item-{cap}.
         // So drain yields: item-{cap}, item-127, ..., item-0.
-        var overflowed = overflow.Value.GetTestAccessor().DrainToList();
+        var overflowed = overflow.GetTestAccessor().DrainToList();
         Assert.Equal($"item-{cap}", overflowed[0]);
         for (var i = 1; i < overflowed.Count; i++)
             Assert.Equal($"item-{(cap / 2) - i}", overflowed[i]);
@@ -524,7 +524,7 @@ public class BoundedLocalQueueTests
         for (var item = queue.TryPop(); item != null; item = queue.TryPop())
             popped.Add(item);
 
-        var all = new HashSet<string>(overflow.Value.GetTestAccessor().DrainToList());
+        var all = new HashSet<string>(overflow.GetTestAccessor().DrainToList());
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 
@@ -552,7 +552,7 @@ public class BoundedLocalQueueTests
         for (var remaining = queue.TryPop(); remaining != null; remaining = queue.TryPop())
             popped.Add(remaining);
 
-        var all = new HashSet<string>(overflow.Value.GetTestAccessor().DrainToList());
+        var all = new HashSet<string>(overflow.GetTestAccessor().DrainToList());
         foreach (var p in popped)
             Assert.True(all.Add(p), $"Duplicate item: {p}");
 

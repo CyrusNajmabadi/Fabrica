@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Fabrica.Core.Threading;
 using Fabrica.Core.Threading.Queues;
 
@@ -15,7 +14,7 @@ namespace Fabrica.Core.Jobs;
 ///   operation. This is safe because <see cref="Enqueue"/> is only called during
 ///   <see cref="Job.Execute"/>, which runs on the thread that owns this context's queue.
 /// </summary>
-internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<InjectionQueue<Job>> overflow)
+internal sealed class WorkerContext(WorkerPool pool, int workerIndex, InjectionQueue<Job> overflow)
 {
     internal readonly int WorkerIndex = workerIndex;
     internal BoundedLocalQueue<Job> Deque = new(overflow);
