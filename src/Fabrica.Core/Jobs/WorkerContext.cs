@@ -35,9 +35,9 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
     internal bool IsSearching;
 
     /// <summary>
-    /// The scheduler that owns the currently executing job's DAG. Set by
-    /// <see cref="WorkerPool.ExecuteJob"/> before calling <see cref="Job.Execute"/> and cleared
-    /// after. Used by <see cref="Enqueue"/> to stamp sub-jobs with the correct scheduler.
+    /// Set by <see cref="WorkerPool.ExecuteJob"/> before calling <see cref="Job.Execute"/>. Remains set to the last scheduler
+    /// between job executions — this avoids a GC write barrier on every job completion. Only read
+    /// during <see cref="Job.Execute"/> (via <see cref="Enqueue"/>), where it is always valid.
     /// </summary>
     internal JobScheduler? CurrentScheduler;
 
@@ -59,7 +59,8 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
     /// </summary>
     internal void Enqueue(Job job)
     {
-        var scheduler = CurrentScheduler!;
+        Debug.Assert(CurrentScheduler != null, "Enqueue is only valid during Job.Execute.");
+        var scheduler = CurrentScheduler;
 
 #if DEBUG
         Debug.Assert(job.State == JobState.Pending);
