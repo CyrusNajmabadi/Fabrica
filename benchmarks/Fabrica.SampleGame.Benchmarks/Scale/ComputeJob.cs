@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if !DEBUG
 using System.Runtime.InteropServices;
+#endif
 using Fabrica.Core.Jobs;
 
 namespace Fabrica.SampleGame.Benchmarks.Scale;
