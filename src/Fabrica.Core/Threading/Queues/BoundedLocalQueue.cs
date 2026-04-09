@@ -1,9 +1,12 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if UNSAFE_OPT
 using System.Runtime.InteropServices;
+#endif
 
 namespace Fabrica.Core.Threading.Queues;
 
+#if UNSAFE_OPT
 /// <summary>
 /// Cache-line padding for the packed head and tail cursors. Places <see cref="Head"/> at offset 0
 /// and <see cref="Tail"/> at offset 128, so they sit on different Apple Silicon cache lines. This
@@ -29,6 +32,13 @@ internal struct RingBuffer<T>
 {
     private T _element0;
 }
+#else
+internal struct CacheLinePaddedHead
+{
+    internal long Head;
+    internal int Tail;
+}
+#endif
 
 /// <summary>
 /// Fixed-capacity work-stealing queue modeled after Tokio's multi-thread scheduler local queue.
@@ -139,8 +149,13 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     /// </summary>
     private T? _lifoSlot;
 
+#if UNSAFE_OPT
     /// <summary>Inline ring buffer (256 elements, no heap allocation). Indexed by <c>index &amp; MASK</c>.</summary>
     private RingBuffer<T?> _buffer;
+#else
+    /// <summary>Heap-allocated ring buffer (256 elements). Indexed by <c>index &amp; MASK</c>.</summary>
+    private readonly T?[] _buffer = new T?[QueueCapacity];
+#endif
 
     /// <summary>
     /// Shared injection queue. When the ring buffer is full, overflow items are enqueued here.

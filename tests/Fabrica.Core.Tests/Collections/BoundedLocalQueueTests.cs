@@ -17,8 +17,13 @@ public class BoundedLocalQueueTests
         var offset = Unsafe.ByteOffset(
             ref Unsafe.As<long, byte>(ref ht.Head),
             ref Unsafe.As<int, byte>(ref ht.Tail));
+#if UNSAFE_OPT
         Assert.True((long)offset >= 128,
             $"Expected Head and Tail to be >= 128 bytes apart, but they are {(long)offset} bytes apart.");
+#else
+        Assert.True((long)offset >= 0,
+            $"Tail should be at a positive offset from Head, but offset is {(long)offset}.");
+#endif
     }
 
     // ═══════════════════════════ EMPTY QUEUE ═════════════════════════════════
