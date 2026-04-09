@@ -3,11 +3,18 @@
 Captures JIT disassembly for all scheduling hot-path methods in Fabrica.
 
 Usage:
-    python3 tools/JitDisasm/dump-jit-disasm.py [output_file]
+    python3 tools/JitDisasm/dump-jit-disasm.py [output_dir]
 
-Builds the JitDisasm harness in Release, then runs it once per method with
-DOTNET_TieredCompilation=0 and DOTNET_JitDisasm set to each method name.
-Methods that are inlined (no standalone disasm) are reported but skipped.
+Two passes:
+  1. No-PGO (TieredCompilation=0) — one standalone FullOpts compilation per
+     method, easy to read individually.  Saved as <output_dir>/no-pgo.txt.
+  2. PGO (tiered compilation ON, DOTNET_JitDisasmOnlyOptimized=1) — captures
+     the Tier1-OSR compilations with synthesized PGO, matching what
+     BenchmarkDotNet actually executes.  Most hot methods are inlined into the
+     RunWorker OSR body.  Saved as <output_dir>/pgo.txt.
+
+The harness runs 100 ticks to give the tiering system enough data to promote
+hot methods.
 
 Requires: dotnet CLI on PATH, the JitDisasm project to build successfully.
 """
@@ -61,14 +68,23 @@ def build():
     print("Build succeeded.\n")
 
 
-def capture(method: str) -> list[str]:
+def capture(method: str, pgo: bool) -> list[str]:
     env = os.environ.copy()
-    env["DOTNET_TieredCompilation"] = "0"
+
+    if pgo:
+        # Tiered compilation ON (default) + only optimized output.
+        # Hot methods are inlined into RunWorker via Tier1-OSR.
+        env["DOTNET_JitDisasmOnlyOptimized"] = "1"
+    else:
+        # Tiered compilation OFF: FullOpts without PGO, one compilation
+        # per method (easier to read individual methods).
+        env["DOTNET_TieredCompilation"] = "0"
+
     env["DOTNET_JitDisasm"] = method
 
     result = subprocess.run(
         ["dotnet", DLL],
-        capture_output=True, text=True, env=env, timeout=30,
+        capture_output=True, text=True, env=env, timeout=60,
     )
 
     lines = result.stdout.strip().split("\n")
@@ -90,31 +106,64 @@ def capture(method: str) -> list[str]:
     return asm_lines
 
 
+PGO_METHODS = [
+    "RunWorker",
+    "RunUntilComplete",
+    "PropagateCompletion",
+    "Execute",
+]
+
+
 def main():
-    output_path = sys.argv[1] if len(sys.argv) > 1 else None
+    output_dir = sys.argv[1] if len(sys.argv) > 1 else None
 
     build()
 
-    all_lines: list[str] = []
+    # ── Pass 1: No-PGO (TieredCompilation=0), per-method ─────────────
+    print("=== No-PGO pass (TieredCompilation=0, FullOpts) ===")
+    nopgo_lines: list[str] = []
 
     for method in METHODS:
-        asm = capture(method)
+        asm = capture(method, pgo=False)
         if asm:
-            all_lines.extend(asm)
-            all_lines.append("")
+            nopgo_lines.extend(asm)
+            nopgo_lines.append("")
             print(f"  {method}: {len(asm)} lines")
         else:
-            print(f"  {method}: (inlined, no standalone disasm)")
+            print(f"  {method}: (inlined)")
 
-    text = "\n".join(all_lines) + "\n"
+    # ── Pass 2: PGO (tiered ON, only optimized) ──────────────────────
+    print("\n=== PGO pass (Tier1-OSR with PGO) ===")
+    pgo_lines: list[str] = []
 
-    if output_path:
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        with open(output_path, "w") as f:
-            f.write(text)
-        print(f"\nWrote {len(all_lines)} lines to {output_path}")
+    for method in PGO_METHODS:
+        asm = capture(method, pgo=True)
+        if asm:
+            pgo_lines.extend(asm)
+            pgo_lines.append("")
+            headers = [l for l in asm if "; Assembly listing" in l]
+            print(f"  {method}: {len(asm)} lines ({len(headers)} compilation(s))")
+        else:
+            print(f"  {method}: (no optimized disasm — inlined into caller)")
+
+    # ── Write output ──────────────────────────────────────────────────
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+        nopgo_path = os.path.join(output_dir, "no-pgo.txt")
+        with open(nopgo_path, "w") as f:
+            f.write("\n".join(nopgo_lines) + "\n")
+        print(f"\nWrote {len(nopgo_lines)} lines to {nopgo_path}")
+
+        pgo_path = os.path.join(output_dir, "pgo.txt")
+        with open(pgo_path, "w") as f:
+            f.write("\n".join(pgo_lines) + "\n")
+        print(f"Wrote {len(pgo_lines)} lines to {pgo_path}")
     else:
-        print(text)
+        print("\n=== No-PGO disasm ===")
+        print("\n".join(nopgo_lines))
+        print("\n=== PGO disasm ===")
+        print("\n".join(pgo_lines))
 
 
 if __name__ == "__main__":
