@@ -179,6 +179,25 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     private static int Distance(int from, int to)
         => (int)((uint)from - (uint)to);
 
+    /// <summary>
+    /// Ring slot by logical index. After <c>rawIndex &amp; Mask</c> the offset is always in
+    /// <c>[0, 255]</c>. Under <c>UNSAFE_OPT</c>, <see cref="Unsafe.Add"/> avoids redundant JIT bounds
+    /// checks on the inline buffer; otherwise plain array indexing (bounds-checked).
+    /// </summary>
+    /// <remarks>
+    /// Static <c>ref</c> helper: struct instance methods cannot return <c>ref</c> to instance fields
+    /// (CS8170).
+    /// </remarks>
+#if UNSAFE_OPT
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ref T? BufferAt(ref BoundedLocalQueue<T> queue, int rawIndex) =>
+        ref Unsafe.Add(ref Unsafe.As<RingBuffer<T?>, T?>(ref queue._buffer), rawIndex & Mask);
+#else
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ref T? BufferAt(ref BoundedLocalQueue<T> queue, int rawIndex) =>
+        ref queue._buffer[rawIndex & Mask];
+#endif
+
     // ═══════════════════════════ OWNER OPERATIONS ════════════════════════════
 
     /// <summary>
@@ -239,7 +258,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
         // Plain write: this slot is beyond what any thief can see — thieves read up to
         // _headTail.Tail, which hasn't been advanced yet. No concurrent reader can access this index.
-        _buffer[tail & Mask] = item;
+        BufferAt(ref this, tail) = item;
         // Volatile.Write: release fence ensures the buffer write above is globally visible
         // before thieves see the new tail. Without this, a thief could read the new tail
         // via Volatile.Read(_headTail.Tail) but see a stale/null buffer slot.
@@ -310,7 +329,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
             // After the CAS frees this slot, a concurrent push could immediately reuse
             // the physical index (ring wraps). Reading first captures the value while
             // the full-ring invariant still protects the slot.
-            var value = _buffer[real & Mask];
+            var value = BufferAt(ref this, real);
 
             // CAS: atomically advance real (and steal if no steal in progress).
             // Serializes with thieves' CAS on the same _headTail.Head. If a thief moved _headTail.Head
@@ -321,7 +340,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
                 // Plain null: owner-only; safe because we just advanced head past this
                 // slot. No thief can read it (they'd need to CAS _headTail.Head which now
                 // points beyond this index). Next push will overwrite it anyway.
-                _buffer[real & Mask] = null;
+                BufferAt(ref this, real) = null;
                 return value;
             }
 
@@ -453,8 +472,9 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
         // destination._headTail.Tail hasn't been advanced, so no other thread can see these slots.
         n -= 1;
         var retIdx = (dstTail + n) & Mask;
-        var firstItem = destination._buffer[retIdx];
-        destination._buffer[retIdx] = null;
+        ref var retSlot = ref BufferAt(ref destination, retIdx);
+        var firstItem = retSlot;
+        retSlot = null;
 
         if (n > 0)
             // Volatile.Write: release fence ensures all buffer writes in the copy loop
