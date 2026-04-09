@@ -11,5 +11,6 @@
 		<InternalsVisibleTo Include="Fabrica.SampleGame.Benchmarks" />
 		<InternalsVisibleTo Include="Fabrica.SampleGame.Tests" />
 		<InternalsVisibleTo Include="Fabrica.JitBaseline" />
+		<InternalsVisibleTo Include="JitDisasm" />
 	</ItemGroup>
 </Project>

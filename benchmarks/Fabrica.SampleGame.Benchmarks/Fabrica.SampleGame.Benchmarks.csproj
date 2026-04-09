@@ -4,6 +4,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<InternalsVisibleTo Include="JitDisasm" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\..\src\Fabrica.SampleGame\Fabrica.SampleGame.csproj" />
 	</ItemGroup>
 
