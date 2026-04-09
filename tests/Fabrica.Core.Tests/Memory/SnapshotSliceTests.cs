@@ -72,7 +72,7 @@ public class SnapshotSliceTests
         var leaf = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
         var root = AllocNode(store, leaf, Handle<TreeNode>.None, 0);
 
-        var roots = UnsafeList<Handle<TreeNode>>.Create();
+        var roots = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         roots.Add(root);
         var slice = store.GetTestAccessor().BuildSnapshotSlice(roots);
         Assert.Equal(1, slice.Count);
@@ -94,7 +94,7 @@ public class SnapshotSliceTests
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
         var c = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 3);
 
-        var roots = UnsafeList<Handle<TreeNode>>.Create();
+        var roots = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         roots.Add(a);
         roots.Add(b);
         roots.Add(c);
@@ -118,7 +118,7 @@ public class SnapshotSliceTests
         var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
 
-        var rootList = UnsafeList<Handle<TreeNode>>.Create();
+        var rootList = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         rootList.Add(a);
         rootList.Add(b);
         var slice = store.GetTestAccessor().BuildSnapshotSlice(rootList);
@@ -138,7 +138,7 @@ public class SnapshotSliceTests
         var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
 
-        var list = UnsafeList<Handle<TreeNode>>.Create();
+        var list = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         list.Add(a);
         list.Add(b);
         var slice = store.GetTestAccessor().BuildSnapshotSlice(list);
@@ -159,7 +159,7 @@ public class SnapshotSliceTests
         var a = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 1);
         var b = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 2);
 
-        var sharedList = UnsafeList<Handle<TreeNode>>.Create();
+        var sharedList = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         sharedList.Add(a);
         var slice1 = store.GetTestAccessor().BuildSnapshotSlice(sharedList);
         Assert.Equal(1, slice1.Count);
@@ -189,10 +189,10 @@ public class SnapshotSliceTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        var roots1 = UnsafeList<Handle<TreeNode>>.Create();
+        var roots1 = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         roots1.Add(root1);
         var slice1 = store.GetTestAccessor().BuildSnapshotSlice(roots1);
-        var roots2 = UnsafeList<Handle<TreeNode>>.Create();
+        var roots2 = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         roots2.Add(root2);
         var slice2 = store.GetTestAccessor().BuildSnapshotSlice(roots2);
         Assert.Equal(2, store.RefCounts.GetCount(a));
@@ -220,10 +220,10 @@ public class SnapshotSliceTests
         var root1 = AllocNode(store, a, Handle<TreeNode>.None, 10);
         var root2 = AllocNode(store, a, Handle<TreeNode>.None, 20);
 
-        var roots1 = UnsafeList<Handle<TreeNode>>.Create();
+        var roots1 = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         roots1.Add(root1);
         var slice1 = store.GetTestAccessor().BuildSnapshotSlice(roots1);
-        var roots2 = UnsafeList<Handle<TreeNode>>.Create();
+        var roots2 = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         roots2.Add(root2);
         var slice2 = store.GetTestAccessor().BuildSnapshotSlice(roots2);
         store.ReleaseSnapshotSlice(slice2);
@@ -257,7 +257,7 @@ public class SnapshotSliceTests
         var b = AllocNode(store, e, f, 2);
         var root = AllocNode(store, a, b, 0);
 
-        var rootsOld = UnsafeList<Handle<TreeNode>>.Create();
+        var rootsOld = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         rootsOld.Add(root);
         var slice1 = store.GetTestAccessor().BuildSnapshotSlice(rootsOld);
         // Path-copy: change leaf c → c'. New spine: a' → (c', d), root' → (a', b).
@@ -265,7 +265,7 @@ public class SnapshotSliceTests
         var aPrime = AllocNode(store, cPrime, d, 1);
         var rootPrime = AllocNode(store, aPrime, b, 0);
 
-        var rootsNew = UnsafeList<Handle<TreeNode>>.Create();
+        var rootsNew = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
         rootsNew.Add(rootPrime);
         var slice2 = store.GetTestAccessor().BuildSnapshotSlice(rootsNew);
         // d has 2 parents (a, a'), b has 2 parents (root, root')
@@ -323,7 +323,7 @@ public class SnapshotSliceTests
         for (var i = 0; i < 3; i++)
         {
             rootHandles[i] = AllocNode(store, shared, Handle<TreeNode>.None, i);
-            var list = UnsafeList<Handle<TreeNode>>.Create();
+            var list = NonCopyableUnsafeList<Handle<TreeNode>>.Create();
             list.Add(rootHandles[i]);
             slices[i] = store.GetTestAccessor().BuildSnapshotSlice(list);
         }

@@ -32,7 +32,7 @@ public abstract class Job
     /// Downstream jobs notified on completion. Default-initialized (backing array is null);
     /// lazily allocated on first <see cref="DependsOn"/> call.
     /// </summary>
-    internal UnsafeList<Job> Dependents;
+    internal NonCopyableUnsafeList<Job> Dependents;
 
     // Owning scheduler for this job's DAG: set by JobScheduler.Submit for root jobs and by WorkerPool for
     // sub-jobs and propagated dependents; read by WorkerPool to route completion signals; cleared by
@@ -61,7 +61,7 @@ public abstract class Job
         // The scheduler decrements counts when prerequisites complete; the thread that brings a job to zero
         // enqueues it.
         if (!prerequisite.Dependents.IsInitialized)
-            prerequisite.Dependents = new UnsafeList<Job>(4);
+            prerequisite.Dependents = new NonCopyableUnsafeList<Job>(4);
         prerequisite.Dependents.Add(this);
         RemainingDependencies++;
     }

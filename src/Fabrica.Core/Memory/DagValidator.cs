@@ -127,7 +127,7 @@ internal static class DagValidator
 
         // DFS from each root
         var childBuffer = new List<NodeRef>();
-        var dfsStack = UnsafeStack<(NodeRef node, bool entering)>.Create();
+        var dfsStack = NonCopyableUnsafeStack<(NodeRef node, bool entering)>.Create();
 
         for (var i = 0; i < roots.Length; i++)
         {

@@ -89,7 +89,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Handles whose refcount reached zero during a decrement cascade, pending processing.
     /// Reused across cascade operations to avoid allocation.
     /// </summary>
-    private UnsafeStack<Handle<TNode>> _cascadePending = UnsafeStack<Handle<TNode>>.Create();
+    private NonCopyableUnsafeStack<Handle<TNode>> _cascadePending = NonCopyableUnsafeStack<Handle<TNode>>.Create();
 
     /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
@@ -97,7 +97,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>Pool of raw backing arrays for root handle collection during
     /// <see cref="BuildSnapshotSlice"/>. Arrays are returned by <see cref="ReleaseSnapshotSlice"/>,
     /// so backing memory is retained across ticks for zero steady-state allocation.</summary>
-    private UnsafeStack<Handle<TNode>[]> _rootArrayPool = UnsafeStack<Handle<TNode>[]>.Create();
+    private NonCopyableUnsafeStack<Handle<TNode>[]> _rootArrayPool = NonCopyableUnsafeStack<Handle<TNode>[]>.Create();
 
     /// <summary>Per-worker append buffers for nodes created during the parallel work phase.
     /// Empty array when the store has no merge infrastructure (test-only parameterless constructor).</summary>
@@ -110,7 +110,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>Handles allocated during the most recent <see cref="Drain"/>. Reset each tick by
     /// <see cref="ResetMergeState"/>, retaining backing memory for zero steady-state allocation.
     /// Used by <see cref="RewriteAndIncrementRefCounts"/> to iterate the newly drained nodes.</summary>
-    private UnsafeList<Handle<TNode>> _drainedHandles = UnsafeList<Handle<TNode>>.Create();
+    private NonCopyableUnsafeList<Handle<TNode>> _drainedHandles = NonCopyableUnsafeList<Handle<TNode>>.Create();
 
 #if DEBUG
     /// <summary>Running root-handle reference counts for debug validation. Each
@@ -303,8 +303,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     {
         this.AssertMergeActive();
         var roots = _rootArrayPool.TryPop(out var pooled)
-            ? UnsafeList<Handle<TNode>>.Wrap(pooled)
-            : UnsafeList<Handle<TNode>>.Create();
+            ? NonCopyableUnsafeList<Handle<TNode>>.Wrap(pooled)
+            : NonCopyableUnsafeList<Handle<TNode>>.Create();
         this.CollectAndRemapRoots(ref roots);
         this.IncrementRoots(roots.WrittenSpan);
         return new SnapshotSlice<TNode, TNodeOps>(this, roots.AsReadOnly());
@@ -314,7 +314,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Collects root handles from all thread-local buffers into <paramref name="destination"/>,
     /// remapping local handles to global indices. Global handles pass through unchanged.
     /// </summary>
-    private void CollectAndRemapRoots(ref UnsafeList<Handle<TNode>> destination)
+    private void CollectAndRemapRoots(ref NonCopyableUnsafeList<Handle<TNode>> destination)
     {
         for (var i = 0; i < _threadLocalBuffers.Length; i++)
         {
@@ -499,7 +499,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         [Conditional("DEBUG")]
         public void EnableValidation() => store.EnableValidation();
 
-        public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice(UnsafeList<Handle<TNode>> roots)
+        public SnapshotSlice<TNode, TNodeOps> BuildSnapshotSlice(NonCopyableUnsafeList<Handle<TNode>> roots)
         {
             store.IncrementRoots(roots.WrittenSpan);
             return new SnapshotSlice<TNode, TNodeOps>(store, roots.AsReadOnly());
@@ -508,7 +508,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         public void IncrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.IncrementRoots(roots);
         public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
 
-        public void CollectAndRemapRoots(ref UnsafeList<Handle<TNode>> destination) => store.CollectAndRemapRoots(ref destination);
+        public void CollectAndRemapRoots(ref NonCopyableUnsafeList<Handle<TNode>> destination) => store.CollectAndRemapRoots(ref destination);
         public RemapTable Remap => store._remap;
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;

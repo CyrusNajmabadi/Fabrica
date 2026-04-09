@@ -48,7 +48,7 @@ public class PersistentTreeBenchmarks
 
     private void ReleaseRootsBatch(ReadOnlySpan<Handle<TreeNode>> roots)
     {
-        var hitZero = new UnsafeStack<Handle<TreeNode>>(roots.Length + 1);
+        var hitZero = new NonCopyableUnsafeStack<Handle<TreeNode>>(roots.Length + 1);
         _refCounts.DecrementBatch(roots, ref hitZero);
         var pending = new Stack<Handle<TreeNode>>();
         while (hitZero.TryPop(out var h))

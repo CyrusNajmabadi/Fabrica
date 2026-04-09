@@ -291,7 +291,7 @@ public class JobMergePipelineTests : IDisposable
 
         // ── Root collection ──────────────────────────────────────────────
 
-        var rootList = UnsafeList<Handle<ParentNode>>.Create();
+        var rootList = NonCopyableUnsafeList<Handle<ParentNode>>.Create();
         parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");

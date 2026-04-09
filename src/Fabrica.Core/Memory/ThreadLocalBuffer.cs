@@ -22,8 +22,8 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
 {
-    private UnsafeList<T> _list = new(initialCapacity);
-    private UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
+    private NonCopyableUnsafeList<T> _list = new(initialCapacity);
+    private NonCopyableUnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
     private readonly int _threadId = threadId;
 
     /// <summary>Number of nodes allocated in this buffer during the current work phase.</summary>

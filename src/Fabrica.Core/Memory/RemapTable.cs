@@ -15,14 +15,14 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 internal readonly struct RemapTable
 {
-    private readonly UnsafeList<int>[] _perThreadMappings;
+    private readonly NonCopyableUnsafeList<int>[] _perThreadMappings;
 
     public RemapTable(int threadCount)
     {
         Debug.Assert(threadCount > 0, $"RemapTable requires at least 1 thread, got {threadCount}.");
-        _perThreadMappings = new UnsafeList<int>[threadCount];
+        _perThreadMappings = new NonCopyableUnsafeList<int>[threadCount];
         for (var i = 0; i < threadCount; i++)
-            _perThreadMappings[i] = UnsafeList<int>.Create();
+            _perThreadMappings[i] = NonCopyableUnsafeList<int>.Create();
     }
 
     /// <summary>Number of threads this remap table supports.</summary>

@@ -3,18 +3,18 @@ using Xunit;
 
 namespace Fabrica.Core.Tests.Memory;
 
-public class UnsafeListTests
+public class NonCopyableUnsafeListTests
 {
     // ═══════════════════════════ Basic operations ═════════════════════════
 
     [Fact]
     public void Empty_CountIsZero()
-        => Assert.Equal(0, UnsafeList<int>.Create().Count);
+        => Assert.Equal(0, NonCopyableUnsafeList<int>.Create().Count);
 
     [Fact]
     public void Add_IncrementsCount()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(1);
         Assert.Equal(1, list.Count);
         list.Add(2);
@@ -24,7 +24,7 @@ public class UnsafeListTests
     [Fact]
     public void Indexer_ReturnsAddedItems()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(10);
         list.Add(20);
         list.Add(30);
@@ -37,7 +37,7 @@ public class UnsafeListTests
     [Fact]
     public void Indexer_ReturnsByRef()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(42);
 
         ref var item = ref list[0];
@@ -51,7 +51,7 @@ public class UnsafeListTests
     [Fact]
     public void WrittenSpan_ReflectsAdds()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
         list.Add(3);
@@ -66,7 +66,7 @@ public class UnsafeListTests
     [Fact]
     public void WrittenSpanMutable_AllowsInPlaceMutation()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(10);
         list.Add(20);
 
@@ -81,7 +81,7 @@ public class UnsafeListTests
     [Fact]
     public void WrittenSpan_EmptyList_ReturnsEmpty()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         Assert.True(list.WrittenSpan.IsEmpty);
     }
 
@@ -90,7 +90,7 @@ public class UnsafeListTests
     [Fact]
     public void Reset_ClearsCount()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
         list.Add(3);
@@ -104,7 +104,7 @@ public class UnsafeListTests
     [Fact]
     public void Reset_AllowsReuse()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
         list.Reset();
@@ -124,7 +124,7 @@ public class UnsafeListTests
     [Fact]
     public void RemoveLast_DecrementsCount()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
 
@@ -137,7 +137,7 @@ public class UnsafeListTests
     [Fact]
     public void RemoveLast_ThenAdd_Overwrites()
     {
-        var list = UnsafeList<int>.Create();
+        var list = NonCopyableUnsafeList<int>.Create();
         list.Add(10);
         list.Add(20);
         list.RemoveLast();
@@ -153,7 +153,7 @@ public class UnsafeListTests
     [Fact]
     public void GrowsBeyondInitialCapacity()
     {
-        var list = new UnsafeList<int>(initialCapacity: 4);
+        var list = new NonCopyableUnsafeList<int>(initialCapacity: 4);
 
         for (var i = 0; i < 100; i++)
             list.Add(i);
@@ -167,7 +167,7 @@ public class UnsafeListTests
     [Fact]
     public void GrowPreservesExistingItems()
     {
-        var list = new UnsafeList<int>(initialCapacity: 2);
+        var list = new NonCopyableUnsafeList<int>(initialCapacity: 2);
         list.Add(1);
         list.Add(2);
         list.Add(3);
@@ -180,7 +180,7 @@ public class UnsafeListTests
     [Fact]
     public void MultipleGrows()
     {
-        var list = new UnsafeList<int>(initialCapacity: 1);
+        var list = new NonCopyableUnsafeList<int>(initialCapacity: 1);
 
         for (var i = 0; i < 1024; i++)
             list.Add(i);
@@ -196,7 +196,7 @@ public class UnsafeListTests
     [Fact]
     public void WorksWithReferenceTypes()
     {
-        var list = UnsafeList<string>.Create();
+        var list = NonCopyableUnsafeList<string>.Create();
         list.Add("hello");
         list.Add("world");
 
@@ -210,7 +210,7 @@ public class UnsafeListTests
     [Fact]
     public void StructByRef_MutatesInPlace()
     {
-        var list = UnsafeList<Point>.Create();
+        var list = NonCopyableUnsafeList<Point>.Create();
         list.Add(new Point { X = 1, Y = 2 });
 
         ref var point = ref list[0];

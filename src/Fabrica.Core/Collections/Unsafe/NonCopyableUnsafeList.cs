@@ -23,15 +23,15 @@ namespace Fabrica.Core.Collections.Unsafe;
 /// one leaves the other pointing at the old (smaller) array. Never copy this struct. Always
 /// store in a single location and pass by reference.
 /// </summary>
-internal struct UnsafeList<T>(int initialCapacity)
+internal struct NonCopyableUnsafeList<T>(int initialCapacity)
 {
     private T[] _array = new T[initialCapacity];
     private int _count;
 
-    public static UnsafeList<T> Create() => new(initialCapacity: 16);
+    public static NonCopyableUnsafeList<T> Create() => new(initialCapacity: 16);
 
     /// <summary>Wraps an existing array with count = 0, for reuse from a pool.</summary>
-    internal static UnsafeList<T> Wrap(T[] array) => new(0) { _array = array };
+    internal static NonCopyableUnsafeList<T> Wrap(T[] array) => new(0) { _array = array };
 
     /// <summary>Returns an immutable snapshot of the current array and count.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

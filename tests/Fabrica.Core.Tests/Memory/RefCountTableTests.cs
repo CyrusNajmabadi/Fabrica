@@ -414,7 +414,7 @@ public class RefCountTableTests
         var batchHandles = new Handle<DummyNode>[batch.Length];
         for (var i = 0; i < batch.Length; i++)
             batchHandles[i] = new Handle<DummyNode>(batch[i]);
-        var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
+        var hitZero = NonCopyableUnsafeStack<Handle<DummyNode>>.Create();
         table.DecrementBatch(batchHandles, ref hitZero);
         while (hitZero.TryPop(out var freedHandle))
             freed.Add(freedHandle.Index);
@@ -454,7 +454,7 @@ public class RefCountTableTests
     public void DecrementBatch_Empty_DoesNothing()
     {
         var table = CreateTinyTable();
-        var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
+        var hitZero = NonCopyableUnsafeStack<Handle<DummyNode>>.Create();
         table.DecrementBatch([], ref hitZero);
         Assert.Equal(0, hitZero.Count);
     }
@@ -533,7 +533,7 @@ public class RefCountTableTests
             table.Increment(handles[i]);
         }
 
-        var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
+        var hitZero = NonCopyableUnsafeStack<Handle<DummyNode>>.Create();
         table.DecrementBatch(handles, ref hitZero);
         while (hitZero.TryPop(out var freedHandle))
             freed.Add(freedHandle.Index);

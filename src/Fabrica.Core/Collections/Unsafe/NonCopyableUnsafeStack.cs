@@ -3,18 +3,18 @@ using System.Runtime.CompilerServices;
 namespace Fabrica.Core.Collections.Unsafe;
 
 /// <summary>
-/// Minimal LIFO stack backed by an <see cref="UnsafeList{T}"/>. Provides push/pop semantics
+/// Minimal LIFO stack backed by an <see cref="NonCopyableUnsafeList{T}"/>. Provides push/pop semantics
 /// with the same unchecked-access performance characteristics.
 ///
 /// WARNING: This is a mutable struct. Copies share the same backing array but have independent
 /// counts — mutations to one copy are NOT visible through the other. Never copy this struct.
 /// Always store in a single location and pass by reference.
 /// </summary>
-internal struct UnsafeStack<T>(int initialCapacity)
+internal struct NonCopyableUnsafeStack<T>(int initialCapacity)
 {
-    private UnsafeList<T> _list = new(initialCapacity);
+    private NonCopyableUnsafeList<T> _list = new(initialCapacity);
 
-    public static UnsafeStack<T> Create() => new(initialCapacity: 16);
+    public static NonCopyableUnsafeStack<T> Create() => new(initialCapacity: 16);
 
     public readonly int Count
     {
