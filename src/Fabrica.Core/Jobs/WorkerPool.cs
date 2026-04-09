@@ -151,6 +151,13 @@ public sealed class WorkerPool : IDisposable
     private int _disposed;
 
     /// <summary>
+    /// Max readied dependents kept on the completing worker's local deque in
+    /// <see cref="PropagateCompletion"/>; additional readied jobs go to <see cref="_injectionQueue"/>
+    /// so other workers can drain them in parallel instead of all stealing from one deque.
+    /// </summary>
+    private const int LocalBatchSize = 8;
+
+    /// <summary>
     /// Shared injection queue. Serves dual purpose: (1) overflow target when a worker's local
     /// <see cref="BoundedLocalQueue{T}"/> is full, and (2) landing zone for top-level jobs injected
     /// via <see cref="JobScheduler.TestAccessor.Inject"/>. The coordinator fast-path
@@ -569,10 +576,21 @@ public sealed class WorkerPool : IDisposable
         // Single atomic increment for all readied dependents, before any are pushed.
         scheduler.IncrementOutstandingBy(readied);
 
+        var localPushed = 0;
         for (var i = 0; i < count; i++)
         {
-            if ((readiedBits[i >> 6] & (1L << (i & 63))) != 0)
+            if ((readiedBits[i >> 6] & (1L << (i & 63))) == 0)
+                continue;
+
+            if (localPushed < LocalBatchSize)
+            {
                 context.Deque.Push(dependents[i]);
+                localPushed++;
+            }
+            else
+            {
+                _injectionQueue.Value.Enqueue(dependents[i]);
+            }
         }
 
         this.TryWakeOneWorker();
