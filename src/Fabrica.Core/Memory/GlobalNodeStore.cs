@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory.Nodes;
+using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
 
@@ -71,7 +72,7 @@ public abstract class GlobalNodeStore
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from the coordinator thread. Debug builds assert via
-///   the underlying <see cref="RefCountTable{T}"/>'s <see cref="Threading.SingleThreadedOwner"/>.
+///   the underlying <see cref="RefCountTable{T}"/>'s <see cref="SingleThreadedOwner"/>.
 ///
 /// PORTABILITY
 ///   No GC reliance. In Rust: a struct holding the arena, refcount table, and a handler function
@@ -120,6 +121,8 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>Delegate that runs <see cref="DagValidator.AssertValid"/> against the current
     /// tracked roots. Null until <see cref="TestAccessor.EnableValidation"/> is called.</summary>
     private Action? _runValidation;
+
+    private SingleThreadedOwner _owner;
 #endif
 
     /// <summary>
@@ -164,11 +167,14 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>Parallel refcount array — index <c>i</c> holds the refcount for the node at arena index <c>i</c>.</summary>
     internal RefCountTable<TNode> RefCounts { get; }
 
-    /// <summary>Debug-only assertion that the caller is on the owner thread. Delegates to the
-    /// underlying <see cref="RefCountTable{T}"/> which holds the sole <see cref="Threading.SingleThreadedOwner"/>.</summary>
+    /// <summary>Debug-only assertion that the caller is on the owner thread.</summary>
     [Conditional("DEBUG")]
     internal void AssertOwnerThread()
-        => this.RefCounts.AssertOwnerThread();
+    {
+#if DEBUG
+        _owner.AssertOwnerThread();
+#endif
+    }
 
     /// <summary>Per-worker thread-local buffers for this node type.</summary>
     public ThreadLocalBuffer<TNode>[] ThreadLocalBuffers => _threadLocalBuffers;
@@ -194,7 +200,10 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>Increments the refcount for a single handle.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void IncrementRefCount(Handle<TNode> handle)
-        => this.RefCounts.Increment(handle);
+    {
+        this.AssertOwnerThread();
+        this.RefCounts.Increment(handle);
+    }
 
     /// <summary>
     /// Decrements the refcount for a single handle. If it reaches zero, cascades to free the node and its children.
@@ -202,6 +211,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void DecrementRefCount(Handle<TNode> handle)
     {
+        this.AssertOwnerThread();
         if (!this.RefCounts.Decrement(handle))
             return;
 

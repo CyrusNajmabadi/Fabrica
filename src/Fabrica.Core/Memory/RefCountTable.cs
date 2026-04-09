@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Collections.Unsafe;
-using Fabrica.Core.Threading;
 
 namespace Fabrica.Core.Memory;
 
@@ -24,7 +23,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// THREAD MODEL
 ///   Single-threaded. All operations must come from one thread (the coordinator). Debug builds assert via
-///   <see cref="SingleThreadedOwner"/>.
+///   <see cref="GlobalNodeStore{TNode,TNodeOps}.AssertOwnerThread"/>.
 ///
 /// PORTABILITY
 ///   No GC reliance. Storage is <c>int[][]</c> via the directory. In Rust/C++ this maps to <c>Vec&lt;Box&lt;[i32]&gt;&gt;</c>.
@@ -32,16 +31,17 @@ namespace Fabrica.Core.Memory;
 /// PERFORMANCE (Apple M4 Max, .NET 10, Release)
 ///   Sequential increment: ~0.8 ns/op. Cascade-free (binary tree): ~2.4 ns/op. Steady-state inc/dec: ~2.5 ns/op.
 ///   See benchmarks/results/ for full tables.
+///
+/// WARNING: This is a readonly struct wrapping a mutable reference-type backing store.
+/// Copies of this struct share the same underlying <see cref="UnsafeSlabDirectory{T}"/>, so mutations
+/// through one copy are visible through all others. Do not copy instances — always pass by
+/// reference or store in a single location. Accidental copies will silently alias state.
 /// </summary>
-internal sealed class RefCountTable<T> where T : struct
+internal readonly struct RefCountTable<T> where T : struct
 {
     private const int DefaultDirectoryLength = 65_536;
 
     private readonly UnsafeSlabDirectory<int> _directory;
-
-#if DEBUG
-    private SingleThreadedOwner _owner;
-#endif
 
     // ── Constructors ──────────────────────────────────────────────────────
 
@@ -54,19 +54,6 @@ internal sealed class RefCountTable<T> where T : struct
     private RefCountTable(int directoryLength, int slabShift)
         => _directory = new UnsafeSlabDirectory<int>(directoryLength, slabShift);
 
-    // ── Thread ownership ──────────────────────────────────────────────────
-
-    /// <summary>Debug-only assertion that the caller is on the owner thread. Types that wrap a
-    /// <see cref="RefCountTable{T}"/> (e.g., <see cref="GlobalNodeStore{TNode, TNodeOps}"/>) delegate
-    /// here rather than maintaining their own <see cref="SingleThreadedOwner"/>.</summary>
-    [Conditional("DEBUG")]
-    internal void AssertOwnerThread()
-    {
-#if DEBUG
-        _owner.AssertOwnerThread();
-#endif
-    }
-
     // ── Capacity management ──────────────────────────────────────────────
 
     /// <summary>
@@ -76,7 +63,6 @@ internal sealed class RefCountTable<T> where T : struct
     /// </summary>
     public void EnsureCapacity(int highWater)
     {
-        this.AssertOwnerThread();
         for (var slabStart = 0; slabStart < highWater; slabStart += _directory.SlabLength)
             _directory.EnsureSlab(slabStart);
     }
@@ -92,10 +78,7 @@ internal sealed class RefCountTable<T> where T : struct
     /// for this index range beforehand.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Increment(Handle<T> handle)
-    {
-        this.AssertOwnerThread();
-        _directory[handle.Index]++;
-    }
+        => _directory[handle.Index]++;
 
     /// <summary>
     /// Decrements the refcount at the given handle. Returns <c>true</c> if the refcount reached zero,
@@ -105,9 +88,7 @@ internal sealed class RefCountTable<T> where T : struct
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Decrement(Handle<T> handle)
     {
-        this.AssertOwnerThread();
         Debug.Assert(_directory[handle.Index] > 0, $"Decrement on index {handle.Index} with refcount already at {_directory[handle.Index]}.");
-
         return --_directory[handle.Index] == 0;
     }
 
@@ -117,7 +98,6 @@ internal sealed class RefCountTable<T> where T : struct
     /// <see cref="EnsureCapacity"/> for the full range beforehand.</summary>
     public void IncrementBatch(ReadOnlySpan<Handle<T>> handles)
     {
-        this.AssertOwnerThread();
         for (var i = 0; i < handles.Length; i++)
             _directory[handles[i].Index]++;
     }
@@ -129,8 +109,6 @@ internal sealed class RefCountTable<T> where T : struct
     /// </summary>
     public void DecrementBatch(ReadOnlySpan<Handle<T>> handles, UnsafeStack<Handle<T>> hitZero)
     {
-        this.AssertOwnerThread();
-
         for (var i = 0; i < handles.Length; i++)
         {
             var index = handles[i].Index;

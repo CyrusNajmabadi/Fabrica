@@ -547,8 +547,8 @@ public class RefCountTableTests
 
     private sealed class TwoTableContext
     {
-        public RefCountTable<DummyNode> TableA { get; set; } = null!;
-        public RefCountTable<DummyNode> TableB { get; set; } = null!;
+        public RefCountTable<DummyNode> TableA { get; set; }
+        public RefCountTable<DummyNode> TableB { get; set; }
         public CascadeRunner RunnerA { get; set; } = null!;
         public CascadeRunner RunnerB { get; set; } = null!;
         public List<int> FreedA { get; } = [];
@@ -1835,33 +1835,6 @@ public class RefCountTableTests
     // ═══════════════════════════ Debug assertions ═════════════════════════
 
 #if DEBUG
-    [Fact]
-    public void Debug_MutatingFromDifferentThread_TriggersAssert()
-    {
-        var table = CreateTinyTable();
-        table.EnsureCapacity(2);
-        table.Increment(new Handle<DummyNode>(0));
-
-        Exception? caught = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                using var listener = new AssertThrowsListener();
-                table.Increment(new Handle<DummyNode>(1));
-            }
-            catch (Exception ex)
-            {
-                caught = ex;
-            }
-        });
-        thread.Start();
-        thread.Join();
-
-        Assert.NotNull(caught);
-        Assert.Contains("owner is thread", caught.Message);
-    }
-
     [Fact]
     public void Debug_DecrementBelowZero_TriggersAssert()
     {

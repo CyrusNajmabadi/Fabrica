@@ -17,7 +17,6 @@ G_M000_IG02:                ;; offset=0x0008
  
 G_M000_IG03:                ;; offset=0x0010
             ldr     x3, [x2]
-            ldr     x3, [x3, #0x08]
             ldp     w4, w5, [x3, #0x14]
             asr     w4, w0, w4
             and     w0, w0, w5
@@ -31,13 +30,13 @@ G_M000_IG03:                ;; offset=0x0010
             sub     w3, w3, #1
             str     w3, [x0]
  
-G_M000_IG04:                ;; offset=0x0048
+G_M000_IG04:                ;; offset=0x0044
             ldr     w0, [x1, #0x04]
             tbnz    w0, #31, G_M000_IG06
  
-G_M000_IG05:                ;; offset=0x0050
-            ldr     x1, [x2, #0x08]
-            ldr     x1, [x1, #0x08]
+G_M000_IG05:                ;; offset=0x004C
+            add     x1, x2, #8
+            ldr     x1, [x1]
             ldp     w2, w3, [x1, #0x14]
             asr     w2, w0, w2
             and     w0, w0, w3
@@ -51,9 +50,9 @@ G_M000_IG05:                ;; offset=0x0050
             sub     w1, w1, #1
             str     w1, [x0]
  
-G_M000_IG06:                ;; offset=0x0088
+G_M000_IG06:                ;; offset=0x0084
             ldp     fp, lr, [sp], #0x10
             ret     lr
  
-; Total bytes of code 144
+; Total bytes of code 140
 
