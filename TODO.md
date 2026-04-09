@@ -21,9 +21,9 @@ Tracked work items for Fabrica. Roughly prioritized within each section.
   job system for simulation
 - [ ] Multi-threaded rendering — wire real per-worker render computation into `RenderExecutor.Execute()`
   (`RenderCoordinator`/`WorkerGroup` infrastructure is in place; consumption loop dispatches through it when provided)
-- [ ] Re-enable Linux thread pinning — `sched_setaffinity` call disabled to rule out as source of intermittent
-  `AccessViolationException` on CI. If CI stabilizes, the P/Invoke was the culprit and needs a proper fix.
-  If AVs continue, re-enable and investigate the real cause (likely a race in BoundedLocalQueue)
+- [x] Re-enable Linux thread pinning — `sched_setaffinity` was temporarily disabled to rule out as source of
+  intermittent `AccessViolationException` on CI. Root cause was an ABA bug in `JobPool` (fixed in PR #200).
+  Pinning re-enabled
 - [ ] Thread pinning on macOS — current `ThreadPinning` supports Windows only; macOS needs `thread_policy_set` with
   `THREAD_AFFINITY_POLICY` for hint-based co-location
 - [ ] Thread pinning for >64 cores (low priority) — workers beyond index 63 simply run unpinned; would need

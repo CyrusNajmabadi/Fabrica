@@ -9,13 +9,13 @@ public sealed class ThreadPinningTests
     [Fact]
     public void TryPinCurrentThread_CoreZero_SucceedsOnSupportedPlatform()
     {
-        if (!OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
         {
-            Assert.False(ThreadPinningNative.TryPinCurrentThread(0));
+            Assert.True(ThreadPinningNative.TryPinCurrentThread(0));
             return;
         }
 
-        Assert.True(ThreadPinningNative.TryPinCurrentThread(0));
+        Assert.False(ThreadPinningNative.TryPinCurrentThread(0));
     }
 
     [Fact]
@@ -26,8 +26,6 @@ public sealed class ThreadPinningTests
         Assert.False(ThreadPinningNative.TryPinCurrentThread(int.MaxValue));
     }
 
-    // Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
-#if false
     [Fact]
     public void TryPinCurrentThread_Linux_AffinityMaskReflectsPin()
     {
@@ -59,7 +57,6 @@ public sealed class ThreadPinningTests
 
         Assert.NotEqual(mask0, mask1);
     }
-#endif
 
     /// <summary>
     /// Verifies that <see cref="ThreadPinningNative.StartNativeThreadWithHighQos"/> creates a thread
@@ -89,8 +86,6 @@ public sealed class ThreadPinningTests
         Assert.Equal(ThreadPinningNative.QOS_CLASS_USER_INITIATED, observedQos);
     }
 
-    // Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
-#if false
     /// <summary>
     /// Verifies that <see cref="ThreadPinningNative.StartNativeThreadWithHighQos"/> creates threads with
     /// proper pinning on Linux.
@@ -117,7 +112,6 @@ public sealed class ThreadPinningTests
         Assert.True(done.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         Assert.Equal(1UL << 0, observedMask);
     }
-#endif
 
     /// <summary>
     /// End-to-end: creates a <see cref="WorkerPool"/> and verifies that background worker threads
@@ -165,8 +159,6 @@ public sealed class ThreadPinningTests
         Assert.Equal(WorkerCount, bgCount);
     }
 
-    // Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
-#if false
     /// <summary>
     /// End-to-end: creates a <see cref="WorkerPool"/> and verifies that background worker threads
     /// are pinned to their expected cores on Linux. Uses blocking rendezvous to force all threads
@@ -213,7 +205,6 @@ public sealed class ThreadPinningTests
 
         Assert.Equal(WorkerCount, bgCount);
     }
-#endif
 
     private static bool IsSingleBit(ulong v) => v != 0 && (v & (v - 1)) == 0;
 

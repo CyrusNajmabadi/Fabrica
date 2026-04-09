@@ -7,9 +7,7 @@ namespace Fabrica.Core.Threading.Queues;
 
 /// <summary>
 /// Thread-safe global injection queue used as the overflow target for <see cref="BoundedLocalQueue{T}"/>.
-/// Backed by a monitor lock and an <see cref="NonCopyableUnsafeStack{T}"/> (LIFO).
-/// NOTE: Uses plain object+lock instead of System.Threading.Lock to rule out a suspected
-/// runtime bug on Linux x64. Revisit when investigating the AV — see TODO.md.
+/// Backed by a <see cref="Lock"/> and an <see cref="NonCopyableUnsafeStack{T}"/> (LIFO).
 ///
 /// LIFO ordering is intentional: recently overflowed items are likely cache-hot, so draining
 /// them first improves locality. This matches Tokio's injection queue behavior.
@@ -20,7 +18,7 @@ namespace Fabrica.Core.Threading.Queues;
 /// </summary>
 internal struct InjectionQueue<T>() where T : class
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private NonCopyableUnsafeStack<T> _stack = NonCopyableUnsafeStack<T>.Create();
 
     /// <summary>Injects an item into the global queue. Called from the overflow path.</summary>
