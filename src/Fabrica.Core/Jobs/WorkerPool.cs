@@ -236,6 +236,7 @@ public sealed class WorkerPool : IDisposable
 
     private void RunWorker(WorkerContext context)
     {
+        var workerEvent = _workerEvents[context.WorkerIndex];
         this.IncrementUnparked(searching: false);
         try
         {
@@ -301,8 +302,8 @@ public sealed class WorkerPool : IDisposable
                     continue;
                 }
 
-                _workerEvents[context.WorkerIndex].Wait();
-                _workerEvents[context.WorkerIndex].Reset();
+                workerEvent.Wait();
+                workerEvent.Reset();
                 this.TransitionFromParked();
             }
         }
