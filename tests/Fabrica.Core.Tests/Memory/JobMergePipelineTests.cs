@@ -319,7 +319,7 @@ public class JobMergePipelineTests : IDisposable
     /// remap tables.
     /// </summary>
     [Fact]
-    public void WorkStealing_ProducesValidRemapTables()
+    public void WorkStealing_ProducesValidNonCopyableRemapTables()
     {
         var (_, childStore) = CreateStores(_pool.WorkerCount);
 

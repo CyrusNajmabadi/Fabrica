@@ -270,6 +270,7 @@ public class RealisticTickBenchmark
 
         Console.WriteLine("  └─────────────────────────────┴────────┴────────┴────────┘");
 
+        const int Cores = 12;
         var p50Idx = (int)(records.Length * 0.50);
         var r50 = records[p50Idx];
         var overheadUs = r50.PreTriggerUs + r50.TriggerToP1FirstUs + r50.P1EndToB1Us
@@ -278,8 +279,14 @@ public class RealisticTickBenchmark
             + r50.CollectorUs + r50.PostCollectorUs;
         var workUs = r50.P1SpanUs + r50.P2SpanUs + r50.P3SpanUs + r50.P4SpanUs;
 
+        var totalJobWorkUs = r50.P1TotalWorkUs + r50.P2TotalWorkUs + r50.P3TotalWorkUs + r50.P4TotalWorkUs;
+        var optimalUs = totalJobWorkUs / Cores;
+        var gapUs = r50.TotalUs - optimalUs;
+
         Console.WriteLine();
         Console.WriteLine($"  P50 total: {r50.TotalUs:F1} μs  =  {workUs:F1} μs work  +  {overheadUs:F1} μs overhead ({overheadUs / r50.TotalUs * 100:F1}%)");
+        Console.WriteLine($"  Theoretical optimal (total job work / {Cores} cores): {optimalUs:F1} μs");
+        Console.WriteLine($"  Gap to optimal: {gapUs:F1} μs  ({gapUs / optimalUs * 100:F1}% above optimal)");
         Console.WriteLine("═══════════════════════════════════════════════════════════════");
     }
 
