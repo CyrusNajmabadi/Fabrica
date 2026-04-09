@@ -1,3 +1,8 @@
+// Algorithm ported from moodycamel::ConcurrentQueue by Cameron Desrochers.
+// Original: https://github.com/cameron314/concurrentqueue
+// License: Simplified BSD / Boost Software License 1.0 (dual-licensed).
+// See THIRD-PARTY-NOTICES.md at the repository root for the full license text.
+
 namespace Fabrica.Core.Jobs;
 
 /// <summary>

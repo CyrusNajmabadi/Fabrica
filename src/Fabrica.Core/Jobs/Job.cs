@@ -55,6 +55,7 @@ public abstract class Job
     /// <see cref="Interlocked.CompareExchange(ref int, int, int)"/>, avoiding the race between
     /// refcount reaching zero and the flag being checked separately.
     /// Algorithm: cameron314's ABA-safe lock-free free list (moodycamel/concurrentqueue).
+    /// See THIRD-PARTY-NOTICES.md for license details.
     /// </summary>
     internal int FreeListRefs;
 
