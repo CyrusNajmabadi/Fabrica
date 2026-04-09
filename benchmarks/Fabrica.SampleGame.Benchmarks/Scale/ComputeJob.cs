@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-#if !DEBUG
+#if UNSAFE_OPT
 using System.Runtime.InteropServices;
 #endif
 using Fabrica.Core.Jobs;
@@ -37,13 +37,7 @@ internal sealed class ComputeJob : Job
         var iterations = Iterations;
         var seed = Seed;
 
-#if DEBUG
-        for (var i = 0; i < iterations; i++)
-        {
-            var idx = (i + seed) & mask;
-            arr[idx] = HashMix(arr[idx], i);
-        }
-#else
+#if UNSAFE_OPT
         Debug.Assert(arr.Length is ArrayLength && (arr.Length & mask) == 0);
         ref var r0 = ref MemoryMarshal.GetArrayDataReference(arr);
 
@@ -52,6 +46,12 @@ internal sealed class ComputeJob : Job
             var idx = (i + seed) & mask;
             ref var slot = ref Unsafe.Add(ref r0, idx);
             slot = HashMix(slot, i);
+        }
+#else
+        for (var i = 0; i < iterations; i++)
+        {
+            var idx = (i + seed) & mask;
+            arr[idx] = HashMix(arr[idx], i);
         }
 #endif
 

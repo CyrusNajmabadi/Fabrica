@@ -63,6 +63,8 @@ jobs:
           dotnet-version: '10.0.x'
 
       - run: dotnet test -c ${{ matrix.configuration }} -p:UnsafeOptimizations=${{ matrix.unsafe }} --results-directory ./test-results --coverage --coverage-output-format cobertura --report-junit
+        env:
+          DOTNET_TieredCompilation: 0
 
       - name: Make coverage paths relative
         if: always()

@@ -2,11 +2,20 @@ namespace Fabrica.Core.Jobs;
 
 /// <summary>
 /// Lock-free thread-safe object pool for <see cref="Job"/> instances, implemented as an intrusive
-/// Treiber stack.
+/// free list with per-node reference counting to solve the ABA problem.
+///
+/// ALGORITHM
+///   Based on cameron314's ABA-safe lock-free free list from moodycamel/concurrentqueue.
+///   Each node carries a <see cref="Job.FreeListRefs"/> int32 that packs a 31-bit reference
+///   count (low bits) and a 1-bit SHOULD_BE_ON_FREELIST flag (sign bit). The reference count
+///   prevents the classic ABA: a thread increments the refcount before reading PoolNext, ensuring
+///   no other thread can modify PoolNext while the refcount is non-zero. The flag handles the
+///   case where Return wants to add a node whose refcount is still non-zero — it defers the
+///   actual list insertion to whichever thread decrements the refcount to zero.
 ///
 /// THREAD SAFETY
-///   Any thread may call <see cref="Rent"/> or <see cref="Return"/> concurrently. Both operations
-///   use a single <see cref="Interlocked.CompareExchange{T}"/> on the stack head — no locks, no
+///   Any thread may call <see cref="Rent"/> or <see cref="Return"/> concurrently. All operations
+///   use atomic CAS on the stack head and atomic fetch-add on per-node refcounts — no locks, no
 ///   kernel transitions.
 ///
 /// DESIGN
@@ -21,34 +30,19 @@ namespace Fabrica.Core.Jobs;
 ///   <c>new()</c> constraint. The pool never pre-allocates — it warms up naturally as jobs
 ///   complete and are returned.
 ///
-/// CONTENTION
-///   In the typical pattern, renting happens on one or a few threads (coordinator and parent
-///   jobs) while returning is done by the coordinator during the sweep. The CAS loop rarely
-///   retries because operations are temporally dispersed relative to the cost of job execution.
-///
 /// UNBOUNDED
 ///   The pool grows without bound. In steady state, the pool size stabilizes at the maximum
 ///   number of concurrently live jobs of this type. If this becomes a concern, a bounded variant
 ///   can cap the pool size and let excess items fall to GC.
-///
-/// PORTABILITY
-///   Uses <see cref="Interlocked.CompareExchange{T}"/> for the CAS. In Rust: an intrusive
-///   <c>AtomicPtr</c> stack. In C++: <c>std::atomic&lt;Node*&gt;</c> with compare_exchange_weak.
 /// </summary>
 internal sealed class JobPool<TJob> where TJob : Job, new()
 {
+    // Sign bit used as "this node should be on the free list" flag.
+    // Low 31 bits are the reference count.
+    private const int SHOULD_BE_ON_FREELIST = unchecked((int)0x80000000); // int.MinValue
+    private const int REFS_MASK = 0x7FFFFFFF; // int.MaxValue
+
     private TJob? _head;
-
-#if DEBUG
-    /// <summary>Called in <see cref="Rent"/> after reading head but before the CAS that pops it.
-    /// Tests can inject a concurrent operation here to force the CAS-lost retry path.</summary>
-    private Action? _debugBeforeRentCas;
-
-    /// <summary>Called in <see cref="Return"/> after setting PoolNext but before the CAS that
-    /// pushes the item. Tests can inject a concurrent operation here to force the CAS-lost
-    /// retry path.</summary>
-    private Action? _debugBeforeReturnCas;
-#endif
 
     /// <summary>
     /// Returns a pooled instance if available, or allocates a new one. The returned job is in a
@@ -58,27 +52,49 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// </summary>
     public TJob Rent()
     {
-        var spinner = new SpinWait();
-
         while (true)
         {
             var head = Volatile.Read(ref _head);
             if (head is null)
                 return new TJob();
 
-            var next = (TJob?)head.PoolNext;
+            var prevHead = head;
 
-#if DEBUG
-            _debugBeforeRentCas?.Invoke();
-#endif
+            // Try to increment the refcount via CAS (not fetch-add) so we can check that the
+            // refcount is non-zero before committing. If zero, the node is being moved between
+            // threads and we must not touch its PoolNext.
+            var refs = Volatile.Read(ref head.FreeListRefs);
+            if ((refs & REFS_MASK) == 0 ||
+                Interlocked.CompareExchange(ref head.FreeListRefs, refs + 1, refs) != refs)
+            {
+                continue;
+            }
+
+            // Refcount is now ≥2 (1 for the list + 1 for us). PoolNext is stable — no other
+            // thread can modify it while refcount > 0.
+            var next = (TJob?)head.PoolNext;
 
             if (Interlocked.CompareExchange(ref _head, next, head) == head)
             {
+                // Successfully popped. Decrement refcount by 2: once for our ref, once for the
+                // list's ref. The SHOULD_BE_ON_FREELIST flag must be clear since nobody else
+                // knows it's been taken off yet.
+                Interlocked.Add(ref head.FreeListRefs, -2);
+
                 head.PoolNext = null;
                 return head;
             }
 
-            spinner.SpinOnce();
+            // Head CAS failed — another thread changed the head. Release our ref.
+            // If after release the refcount hits zero AND the SHOULD_BE_ON_FREELIST flag is set,
+            // we are responsible for adding this node back to the list.
+            // Interlocked.Add returns the value AFTER the add. Before: SHOULD_BE_ON_FREELIST + 1,
+            // after: SHOULD_BE_ON_FREELIST + 0.
+            var after = Interlocked.Add(ref prevHead.FreeListRefs, -1);
+            if (after == SHOULD_BE_ON_FREELIST)
+            {
+                this.AddKnowingRefcountIsZero(prevHead);
+            }
         }
     }
 
@@ -95,21 +111,51 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
 #endif
         item.Reset();
 
-        var spinner = new SpinWait();
+        // Set the SHOULD_BE_ON_FREELIST flag via fetch-add. If the refcount was zero before
+        // (i.e. the result equals just the flag), we can add immediately. Otherwise, whichever
+        // thread drops the refcount to zero will see the flag and do the add.
+        var after = Interlocked.Add(ref item.FreeListRefs, SHOULD_BE_ON_FREELIST);
+        if (after == SHOULD_BE_ON_FREELIST)
+        {
+            this.AddKnowingRefcountIsZero(item);
+        }
+    }
 
+    /// <summary>
+    /// Adds a node to the free list, knowing that its refcount is currently zero (so we have
+    /// exclusive write access to its PoolNext). Sets refcount to 1 (the list's reference) and
+    /// attempts a CAS. If the CAS fails, decrements back and sets the SHOULD_BE_ON_FREELIST
+    /// flag, deferring the add to whichever thread next brings the refcount to zero.
+    /// </summary>
+    private void AddKnowingRefcountIsZero(TJob node)
+    {
+        var head = Volatile.Read(ref _head);
         while (true)
         {
-            var head = Volatile.Read(ref _head);
-            item.PoolNext = head;
+            node.PoolNext = head;
 
-#if DEBUG
-            _debugBeforeReturnCas?.Invoke();
-#endif
+            // Set refcount to 1 (the list's reference). Must be visible before the CAS publishes
+            // the node as head.
+            Volatile.Write(ref node.FreeListRefs, 1);
 
-            if (Interlocked.CompareExchange(ref _head, item, head) == head)
+            var prev = Interlocked.CompareExchange(ref _head, node, head);
+            if (prev == head)
                 return;
 
-            spinner.SpinOnce();
+            // CAS failed — head changed. Another thread may have already incremented our
+            // refcount (saw it at 1, CAS'd to 2). We set SHOULD_BE_ON_FREELIST and subtract 1
+            // in one step: fetch_add(SHOULD_BE_ON_FREELIST - 1). If the result is just the flag
+            // (refcount portion zero), nobody else holds a ref and we can retry immediately.
+            head = prev;
+            var after = Interlocked.Add(ref node.FreeListRefs, unchecked(SHOULD_BE_ON_FREELIST - 1));
+            if (after == SHOULD_BE_ON_FREELIST)
+            {
+                head = Volatile.Read(ref _head);
+                continue;
+            }
+
+            // Another thread holds a reference — they will add the node when they release it.
+            return;
         }
     }
 
@@ -126,6 +172,8 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
             while (current is not null)
             {
                 count++;
+                if (count > 1_000_000)
+                    break; // Safety valve against cycles during debugging
                 current = (TJob?)current.PoolNext;
             }
 
@@ -141,19 +189,5 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     internal struct TestAccessor(JobPool<TJob> pool)
     {
         public readonly TJob? Head => Volatile.Read(ref pool._head);
-
-#if DEBUG
-        public readonly Action? DebugBeforeRentCas
-        {
-            get => pool._debugBeforeRentCas;
-            set => pool._debugBeforeRentCas = value;
-        }
-
-        public readonly Action? DebugBeforeReturnCas
-        {
-            get => pool._debugBeforeReturnCas;
-            set => pool._debugBeforeReturnCas = value;
-        }
-#endif
     }
 }

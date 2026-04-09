@@ -45,6 +45,19 @@ public abstract class Job
     /// </summary>
     internal Job? PoolNext;
 
+    /// <summary>
+    /// Combined reference-count and should-be-on-freelist flag for <see cref="JobPool{TJob}"/>.
+    /// Low 31 bits: reference count (number of threads currently reading this node's PoolNext
+    /// during a try_get, plus 1 while the node is on the list). High bit (sign bit):
+    /// SHOULD_BE_ON_FREELIST flag, set when a Return wants to add the node but the refcount is
+    /// non-zero. Packing both into a single int32 makes updates fully atomic via
+    /// <see cref="Interlocked.Add(ref int, int)"/> and
+    /// <see cref="Interlocked.CompareExchange(ref int, int, int)"/>, avoiding the race between
+    /// refcount reaching zero and the flag being checked separately.
+    /// Algorithm: cameron314's ABA-safe lock-free free list (moodycamel/concurrentqueue).
+    /// </summary>
+    internal int FreeListRefs;
+
 #if DEBUG
     internal JobState State;
 #endif
