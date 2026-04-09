@@ -326,21 +326,27 @@ public sealed class WorkerPool : IDisposable
     private const int UnparkedMask = unchecked((int)0xFFFF0000);
     private const int SearchingMask = 0x0000FFFF;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int NumSearching(int state) => state & SearchingMask;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int NumUnparked(int state) => (state >> 16) & 0xFFFF;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void IncrementUnparked(bool searching)
     {
         var delta = searching ? UnparkedBit | SearchingBit : UnparkedBit;
         Interlocked.Add(ref _idleState, delta);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DecrementUnparked(bool searching)
     {
         var delta = searching ? UnparkedBit | SearchingBit : UnparkedBit;
         Interlocked.Add(ref _idleState, -delta);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnterSearching(WorkerContext context)
     {
         if (context.IsSearching)
@@ -350,6 +356,7 @@ public sealed class WorkerPool : IDisposable
         Interlocked.Add(ref _idleState, SearchingBit);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void LeaveSearching(WorkerContext context)
     {
         if (!context.IsSearching)
@@ -363,6 +370,7 @@ public sealed class WorkerPool : IDisposable
     /// Transitions a worker from searching to running after finding work. If this worker was the
     /// last searcher, cascade-wakes one parked worker to maintain the search chain.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void TransitionFromSearching(WorkerContext context)
     {
         if (!context.IsSearching)
