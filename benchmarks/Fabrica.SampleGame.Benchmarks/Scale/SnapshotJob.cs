@@ -32,10 +32,18 @@ internal sealed class SnapshotJob : Job
         if (Instrument) StartTimestamp = Stopwatch.GetTimestamp();
         var arr = _localArray;
         var mask = arr.Length - 1;
-        Debug.Assert(arr.Length is ArrayLength && (arr.Length & mask) == 0);
-        ref var r0 = ref MemoryMarshal.GetArrayDataReference(arr);
         var iterations = Iterations;
         var seed = Seed;
+
+#if DEBUG
+        for (var i = 0; i < iterations; i++)
+        {
+            var idx = (i + seed) & mask;
+            arr[idx] = HashMix(arr[idx], i);
+        }
+#else
+        Debug.Assert(arr.Length is ArrayLength && (arr.Length & mask) == 0);
+        ref var r0 = ref MemoryMarshal.GetArrayDataReference(arr);
 
         for (var i = 0; i < iterations; i++)
         {
@@ -43,6 +51,7 @@ internal sealed class SnapshotJob : Job
             ref var slot = ref Unsafe.Add(ref r0, idx);
             slot = HashMix(slot, i);
         }
+#endif
 
         var buf = Buffers![context.WorkerIndex];
         var next = Handle<BenchNode>.None;
