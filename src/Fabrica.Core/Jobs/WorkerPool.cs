@@ -63,12 +63,14 @@ namespace Fabrica.Core.Jobs;
 ///   <see cref="_idleState"/> packs two counters: numUnparked (workers not in Parked state) and
 ///   numSearching (workers in HotSpin or WarmYield, actively looking for work).
 ///
-///   When new work arrives (<see cref="TryWakeOneWorker"/>, called by <see cref="PropagateCompletion"/>
-///   and <see cref="NotifyWorkAvailable"/>):
-///     - If numSearching > 0: do nothing. A searching worker will find the work on its next
-///       <see cref="TryExecuteOne"/> call.
-///     - If numSearching == 0 and numUnparked &lt; _backgroundWorkerCount: wake exactly ONE parked
-///       worker by popping from <see cref="_sleepers"/> and setting its event.
+///   When new work arrives (<see cref="TryWakeOneWorker"/> for <see cref="NotifyWorkAvailable"/>,
+///   <see cref="TryWakeWorkers"/> for large <see cref="PropagateCompletion"/> fan-outs):
+///     - <see cref="TryWakeOneWorker"/>: If numSearching > 0: do nothing. A searching worker will find
+///       the work on its next <see cref="TryExecuteOne"/> call. If numSearching == 0 and
+///       numUnparked &lt; _backgroundWorkerCount: wake exactly ONE parked worker by popping from
+///       <see cref="_sleepers"/> and setting its event.
+///     - <see cref="TryWakeWorkers"/>: Wakes up to N parked workers (capped by readied job count and
+///       available sleepers) so many dependents do not rely solely on the cascade chain.
 ///
 ///   When a worker finds work and leaves searching (<see cref="TransitionFromSearching"/>):
 ///     - If it was the last searcher (numSearching was 1), call <see cref="TryWakeOneWorker"/>
@@ -149,6 +151,13 @@ public sealed class WorkerPool : IDisposable
 
     /// <summary>Guard for idempotent <see cref="Dispose"/>.</summary>
     private int _disposed;
+
+    /// <summary>
+    /// Max readied dependents kept on the completing worker's local deque in
+    /// <see cref="PropagateCompletion"/>; additional readied jobs go to <see cref="_injectionQueue"/>
+    /// so other workers can drain them in parallel instead of all stealing from one deque.
+    /// </summary>
+    private const int LocalBatchSize = 8;
 
     /// <summary>
     /// Shared injection queue. Serves dual purpose: (1) overflow target when a worker's local
@@ -407,6 +416,28 @@ public sealed class WorkerPool : IDisposable
         }
     }
 
+    /// <summary>
+    /// Wakes up to <paramref name="count"/> parked background workers. Used when many jobs become
+    /// runnable at once (<see cref="PropagateCompletion"/>): unlike <see cref="TryWakeOneWorker"/>,
+    /// does not stop after one wake when <c>numSearching &gt; 0</c>, so parallel stealers can attach
+    /// immediately instead of waiting on the cascade chain (last searcher wakes one more).
+    /// </summary>
+    private void TryWakeWorkers(int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var state = Volatile.Read(ref _idleState);
+            if (NumUnparked(state) >= _backgroundWorkerCount)
+                return;
+
+            if (!_sleepers.TryPop(out var workerIndex))
+                return;
+
+            Interlocked.Add(ref _idleState, UnparkedBit | SearchingBit);
+            _workerEvents[workerIndex].Set();
+        }
+    }
+
     // ── Core execution ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -575,7 +606,7 @@ public sealed class WorkerPool : IDisposable
                 context.Deque.Push(dependents[i]);
         }
 
-        this.TryWakeOneWorker();
+        this.TryWakeWorkers(readied);
     }
 
     // ── Disposal ────────────────────────────────────────────────────────────
