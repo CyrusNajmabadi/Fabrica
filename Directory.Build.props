@@ -6,7 +6,8 @@
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(UnsafeOptimizations)' == 'true'">
+	<!-- UNSAFE_OPT is on by default in Release. Pass -p:UnsafeOptimizations=false to disable. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release' AND '$(UnsafeOptimizations)' != 'false'">
 		<DefineConstants>$(DefineConstants);UNSAFE_OPT</DefineConstants>
 	</PropertyGroup>
 </Project>
