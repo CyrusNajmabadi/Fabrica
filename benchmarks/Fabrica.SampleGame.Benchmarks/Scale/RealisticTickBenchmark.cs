@@ -55,18 +55,10 @@ public class RealisticTickBenchmark
     private SnapshotSlice<BenchNode, BenchNodeOps> _previousSlice;
     private bool _hasPreviousSlice;
 
-    /// <summary>
-    /// 0 = use default (P-core count on heterogeneous CPUs), 16 = all cores including E-cores.
-    /// </summary>
-    [Params(0, 16)]
-    public int WorkerCountOverride { get; set; }
-
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _pool = this.WorkerCountOverride > 0
-            ? new WorkerPool(workerCount: this.WorkerCountOverride - 1, coordinatorCount: 1)
-            : new WorkerPool(coordinatorCount: 1);
+        _pool = new WorkerPool(coordinatorCount: 1);
         _scheduler = new JobScheduler(_pool);
         _store = new GlobalNodeStore<BenchNode, BenchNodeOps>(_pool.WorkerCount);
         var ops = new BenchNodeOps { Store = _store };
