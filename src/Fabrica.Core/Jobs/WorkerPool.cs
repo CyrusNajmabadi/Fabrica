@@ -509,7 +509,9 @@ public sealed class WorkerPool : IDisposable
 #endif
 
         scheduler.DecrementOutstanding();
-        context.CurrentScheduler = null;
+        // CurrentScheduler is intentionally NOT nulled here. The next ExecuteJob will overwrite it,
+        // and nulling would cost a GC write barrier (~2ns) on every job for no functional benefit.
+        // Enqueue() is only called during Job.Execute, where CurrentScheduler is always valid.
     }
 
 #if INSTRUMENT
