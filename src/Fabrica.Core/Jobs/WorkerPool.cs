@@ -539,12 +539,12 @@ public sealed class WorkerPool : IDisposable
         var dependents = job.Dependents;
         var count = dependents.Count;
         var scheduler = context.CurrentScheduler!;
+        // Dense indices of dependents this thread readied (decrement hit zero). Second pass is O(readied)
+        // instead of scanning all dependents. Concurrent threads may still decrement other dependents.
+        var readiedIndices = count <= 256
+            ? stackalloc int[count]
+            : new int[count];
         var readied = 0;
-
-        // Bitfield tracking which dependents this thread readied (decremented to 0), so
-        // the second pass pushes exactly the right set. Necessary because concurrent
-        // threads may also be decrementing shared dependents.
-        Span<long> readiedBits = stackalloc long[(count + 63) >> 6];
 
         for (var i = 0; i < count; i++)
         {
@@ -559,8 +559,7 @@ public sealed class WorkerPool : IDisposable
             dependent.State = JobState.Queued;
 #endif
             dependent.Scheduler = scheduler;
-            readiedBits[i >> 6] |= 1L << (i & 63);
-            readied++;
+            readiedIndices[readied++] = i;
         }
 
         if (readied == 0)
@@ -569,11 +568,8 @@ public sealed class WorkerPool : IDisposable
         // Single atomic increment for all readied dependents, before any are pushed.
         scheduler.IncrementOutstandingBy(readied);
 
-        for (var i = 0; i < count; i++)
-        {
-            if ((readiedBits[i >> 6] & (1L << (i & 63))) != 0)
-                context.Deque.Push(dependents[i]);
-        }
+        for (var j = 0; j < readied; j++)
+            context.Deque.Push(dependents[readiedIndices[j]]);
 
         this.TryWakeOneWorker();
     }
