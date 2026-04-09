@@ -178,15 +178,13 @@ public class InjectionQueueTests
     // ═══════════════════════════ STRUCT COPY SAFETY ══════════════════════════
 
     [Fact]
-    public void StructCopy_SharesSameBackingState()
+    public void StructCopy_DoesNotShareState()
     {
         var original = new InjectionQueue<string>();
         var copy = original;
 
         original.Enqueue("from-original");
-        Assert.Equal("from-original", copy.TryDequeue());
-
-        copy.Enqueue("from-copy");
-        Assert.Equal("from-copy", original.TryDequeue());
+        Assert.Null(copy.TryDequeue());
+        Assert.Equal("from-original", original.TryDequeue());
     }
 }

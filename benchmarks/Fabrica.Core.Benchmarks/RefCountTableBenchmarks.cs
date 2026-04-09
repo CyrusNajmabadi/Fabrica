@@ -196,7 +196,7 @@ public class RefCountTableBenchmarks
             handles[i] = new Handle<DummyNode>(i);
 
         var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
-        table.DecrementBatch(handles, hitZero);
+        table.DecrementBatch(handles, ref hitZero);
         return hitZero.Count;
     }
 

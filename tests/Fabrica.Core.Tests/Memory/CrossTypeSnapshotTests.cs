@@ -210,7 +210,7 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childRoot);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(parentRoot);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         Assert.Equal(1, parentStore.RefCounts.GetCount(parentRoot));
@@ -247,10 +247,10 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childLeaf);
 
-        var roots1 = new UnsafeList<Handle<ParentNode>>();
+        var roots1 = UnsafeList<Handle<ParentNode>>.Create();
         roots1.Add(parent1);
         var slice1 = parentStore.GetTestAccessor().BuildSnapshotSlice(roots1);
-        var roots2 = new UnsafeList<Handle<ParentNode>>();
+        var roots2 = UnsafeList<Handle<ParentNode>>.Create();
         roots2.Add(parent2);
         var slice2 = parentStore.GetTestAccessor().BuildSnapshotSlice(roots2);
         Assert.Equal(2, childStore.RefCounts.GetCount(childLeaf));
@@ -276,11 +276,11 @@ public class CrossTypeSnapshotTests
             childNode);
 
         // Parent holds childNode via cross-type reference
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(parentNode);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         // Child is ALSO a direct root in a child snapshot
-        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        var childRoots = UnsafeList<Handle<ChildNode>>.Create();
         childRoots.Add(childNode);
         var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(childNode));
@@ -310,10 +310,10 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             childRoot);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(parentNode);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
-        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        var childRoots = UnsafeList<Handle<ChildNode>>.Create();
         childRoots.Add(childRoot);
         var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(childRoot));
@@ -366,10 +366,10 @@ public class CrossTypeSnapshotTests
         var cStandalone = AllocChild(childStore, Handle<ChildNode>.None, Handle<ChildNode>.None, 99);
 
         // Composite snapshot: parent slice has pRoot, child slice has cRoot + cStandalone
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(pRoot);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
-        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        var childRoots = UnsafeList<Handle<ChildNode>>.Create();
         childRoots.Add(cRoot);
         childRoots.Add(cStandalone);
         var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
@@ -405,10 +405,10 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             cLeaf);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(pNode);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
-        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        var childRoots = UnsafeList<Handle<ChildNode>>.Create();
         childRoots.Add(cLeaf);
         var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
         Assert.Equal(2, childStore.RefCounts.GetCount(cLeaf));
@@ -469,7 +469,7 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             exclusive);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(pRoot1);
         parentRoots.Add(pRoot2);
         parentRoots.Add(pRoot3);
@@ -524,11 +524,11 @@ public class CrossTypeSnapshotTests
                 Handle<ParentNode>.None,
                 sharedChild);
 
-            var parentList = new UnsafeList<Handle<ParentNode>>();
+            var parentList = UnsafeList<Handle<ParentNode>>.Create();
             parentList.Add(parentRootHandles[i]);
             parentSlices[i] = parentStore.GetTestAccessor().BuildSnapshotSlice(parentList);
             // Each snapshot also directly roots the shared child
-            var childList = new UnsafeList<Handle<ChildNode>>();
+            var childList = UnsafeList<Handle<ChildNode>>.Create();
             childList.Add(sharedChild);
             childSlices[i] = childStore.GetTestAccessor().BuildSnapshotSlice(childList);
         }
@@ -578,7 +578,7 @@ public class CrossTypeSnapshotTests
         var pMid = AllocParent(parentStore, childStore, pLeaf, Handle<ParentNode>.None, cMid);
         var pRoot = AllocParent(parentStore, childStore, pMid, Handle<ParentNode>.None, cRoot);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(pRoot);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         // cRoot: 1 (from pRoot.ChildRef)
@@ -620,10 +620,10 @@ public class CrossTypeSnapshotTests
             Handle<ParentNode>.None,
             cMid);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(pRoot);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
-        var childRoots = new UnsafeList<Handle<ChildNode>>();
+        var childRoots = UnsafeList<Handle<ChildNode>>.Create();
         childRoots.Add(cRoot);
         childRoots.Add(cLeaf);
         var childSlice = childStore.GetTestAccessor().BuildSnapshotSlice(childRoots);
@@ -756,7 +756,7 @@ public class CrossTypeSnapshotTests
         var pRoot = AllocParent(parentStore, childStore,
             Handle<ParentNode>.None, Handle<ParentNode>.None, cLeaf);
 
-        var parentRoots = new UnsafeList<Handle<ParentNode>>();
+        var parentRoots = UnsafeList<Handle<ParentNode>>.Create();
         parentRoots.Add(pRoot);
         var parentSlice = parentStore.GetTestAccessor().BuildSnapshotSlice(parentRoots);
         // Valid while alive

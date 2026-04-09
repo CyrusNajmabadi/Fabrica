@@ -45,7 +45,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     private readonly UnsafeSlabDirectory<T> _directory;
     private int _highWater;
     private int _count;
-    private readonly UnsafeStack<Handle<T>> _freeList = UnsafeStack<Handle<T>>.Create();
+    private UnsafeStack<Handle<T>> _freeList = UnsafeStack<Handle<T>>.Create();
 
     private SingleThreadedOwner _owner;
 
@@ -116,7 +116,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     /// then bump-allocating the remainder contiguously. This gives steady-state zero allocation (freed slots are
     /// recycled) while preserving the fast sequential-write path when the free-list is exhausted.
     /// </summary>
-    public void AllocateBatch(int count, UnsafeList<Handle<T>> destination)
+    public void AllocateBatch(int count, ref UnsafeList<Handle<T>> destination)
     {
         _owner.AssertOwnerThread();
         Debug.Assert(count >= 0, $"AllocateBatch called with negative count {count}.");

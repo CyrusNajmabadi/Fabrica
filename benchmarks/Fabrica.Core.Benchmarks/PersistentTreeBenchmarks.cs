@@ -49,7 +49,7 @@ public class PersistentTreeBenchmarks
     private void ReleaseRootsBatch(ReadOnlySpan<Handle<TreeNode>> roots)
     {
         var hitZero = new UnsafeStack<Handle<TreeNode>>(roots.Length + 1);
-        _refCounts.DecrementBatch(roots, hitZero);
+        _refCounts.DecrementBatch(roots, ref hitZero);
         var pending = new Stack<Handle<TreeNode>>();
         while (hitZero.TryPop(out var h))
             pending.Push(h);
@@ -80,7 +80,7 @@ public class PersistentTreeBenchmarks
     // ── State ────────────────────────────────────────────────────────────
 
     private UnsafeSlabArena<TreeNode> _arena = null!;
-    private RefCountTable<TreeNode> _refCounts = null!;
+    private RefCountTable<TreeNode> _refCounts = default!;
     private Handle<TreeNode> _root;
     private int _nodeCount;
 
@@ -280,7 +280,7 @@ public class SingleForkReleaseBenchmarks
 
     private struct TreeNodeOps : INodeOps<TreeNode>
     {
-        internal NodeStore<TreeNode, TreeNodeOps> Store;
+        internal GlobalNodeStore<TreeNode, TreeNodeOps> Store;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
@@ -326,8 +326,8 @@ public class SingleForkReleaseBenchmarks
     public int N { get; set; }
 
     private UnsafeSlabArena<TreeNode> _arena = null!;
-    private RefCountTable<TreeNode> _refCounts = null!;
-    private NodeStore<TreeNode, TreeNodeOps> _store = null!;
+    private RefCountTable<TreeNode> _refCounts = default!;
+    private GlobalNodeStore<TreeNode, TreeNodeOps> _store = null!;
     private Handle<TreeNode> _root;
     private int _nodeCount;
 
@@ -357,7 +357,7 @@ public class SingleForkReleaseBenchmarks
         _nodeCount = (1 << (this.TreeDepth + 1)) - 1;
         _arena = new UnsafeSlabArena<TreeNode>();
         _refCounts = new RefCountTable<TreeNode>();
-        _store = new NodeStore<TreeNode, TreeNodeOps>(_arena, _refCounts, default);
+        _store = GlobalNodeStore<TreeNode, TreeNodeOps>.TestAccessor.Create(_arena, _refCounts);
         _refCounts.EnsureCapacity(_nodeCount + (this.N * (this.TreeDepth + 1)) + 1024);
 
         for (var i = 0; i < _nodeCount; i++)

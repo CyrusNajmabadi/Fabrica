@@ -9,12 +9,12 @@ public class UnsafeListTests
 
     [Fact]
     public void Empty_CountIsZero()
-        => Assert.Equal(0, new UnsafeList<int>().Count);
+        => Assert.Equal(0, UnsafeList<int>.Create().Count);
 
     [Fact]
     public void Add_IncrementsCount()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(1);
         Assert.Equal(1, list.Count);
         list.Add(2);
@@ -24,7 +24,7 @@ public class UnsafeListTests
     [Fact]
     public void Indexer_ReturnsAddedItems()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(10);
         list.Add(20);
         list.Add(30);
@@ -37,7 +37,7 @@ public class UnsafeListTests
     [Fact]
     public void Indexer_ReturnsByRef()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(42);
 
         ref var item = ref list[0];
@@ -51,7 +51,7 @@ public class UnsafeListTests
     [Fact]
     public void WrittenSpan_ReflectsAdds()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
         list.Add(3);
@@ -66,7 +66,7 @@ public class UnsafeListTests
     [Fact]
     public void WrittenSpanMutable_AllowsInPlaceMutation()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(10);
         list.Add(20);
 
@@ -81,7 +81,7 @@ public class UnsafeListTests
     [Fact]
     public void WrittenSpan_EmptyList_ReturnsEmpty()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         Assert.True(list.WrittenSpan.IsEmpty);
     }
 
@@ -90,7 +90,7 @@ public class UnsafeListTests
     [Fact]
     public void Reset_ClearsCount()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
         list.Add(3);
@@ -104,7 +104,7 @@ public class UnsafeListTests
     [Fact]
     public void Reset_AllowsReuse()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
         list.Reset();
@@ -124,7 +124,7 @@ public class UnsafeListTests
     [Fact]
     public void RemoveLast_DecrementsCount()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(1);
         list.Add(2);
 
@@ -137,7 +137,7 @@ public class UnsafeListTests
     [Fact]
     public void RemoveLast_ThenAdd_Overwrites()
     {
-        var list = new UnsafeList<int>();
+        var list = UnsafeList<int>.Create();
         list.Add(10);
         list.Add(20);
         list.RemoveLast();
@@ -196,7 +196,7 @@ public class UnsafeListTests
     [Fact]
     public void WorksWithReferenceTypes()
     {
-        var list = new UnsafeList<string>();
+        var list = UnsafeList<string>.Create();
         list.Add("hello");
         list.Add("world");
 
@@ -210,7 +210,7 @@ public class UnsafeListTests
     [Fact]
     public void StructByRef_MutatesInPlace()
     {
-        var list = new UnsafeList<Point>();
+        var list = UnsafeList<Point>.Create();
         list.Add(new Point { X = 1, Y = 2 });
 
         ref var point = ref list[0];

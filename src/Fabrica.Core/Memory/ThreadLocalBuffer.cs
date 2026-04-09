@@ -20,14 +20,14 @@ namespace Fabrica.Core.Memory;
 ///   Single-threaded during the work phase (the owning worker). Single-threaded during
 ///   the merge phase (the coordinator or a merge-worker for this type). No synchronization.
 /// </summary>
-public readonly struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
+public struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 1024) where T : struct
 {
-    private readonly UnsafeList<T> _list = new(initialCapacity);
-    private readonly UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
+    private UnsafeList<T> _list = new(initialCapacity);
+    private UnsafeList<Handle<T>> _roots = new(initialCapacity: 64);
     private readonly int _threadId = threadId;
 
     /// <summary>Number of nodes allocated in this buffer during the current work phase.</summary>
-    public int Count
+    public readonly int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _list.Count;
@@ -64,7 +64,7 @@ public readonly struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 
     public void MarkRoot(Handle<T> handle) => _roots.Add(handle);
 
     /// <summary>All root handles recorded during the current work phase.</summary>
-    public ReadOnlySpan<Handle<T>> RootHandles
+    public readonly ReadOnlySpan<Handle<T>> RootHandles
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _roots.WrittenSpan;
@@ -87,7 +87,7 @@ public readonly struct ThreadLocalBuffer<T>(int threadId, int initialCapacity = 
     }
 
     /// <summary>All nodes written during the current work phase. Read by the coordinator after the join barrier.</summary>
-    public ReadOnlySpan<T> WrittenSpan
+    public readonly ReadOnlySpan<T> WrittenSpan
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _list.WrittenSpan;

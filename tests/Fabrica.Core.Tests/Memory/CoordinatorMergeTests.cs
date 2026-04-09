@@ -391,8 +391,8 @@ public class CoordinatorMergeTests
 
         // ── Root collection + remap + increment ──────────────────────────
 
-        var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
+        var rootList = UnsafeList<Handle<ParentNode>>.Create();
+        parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
@@ -440,8 +440,8 @@ public class CoordinatorMergeTests
         parentStore.RewriteAndIncrementRefCounts();
 
         // Root collection + remap + increment
-        var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
+        var rootList = UnsafeList<Handle<ParentNode>>.Create();
+        parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(0, roots[0].Index);
@@ -506,8 +506,8 @@ public class CoordinatorMergeTests
         Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
 
         // Collect + remap roots, then increment
-        var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
+        var rootList = UnsafeList<Handle<ParentNode>>.Create();
+        parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
         Assert.Equal(1, roots[0].Index);

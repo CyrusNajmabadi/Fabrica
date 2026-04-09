@@ -415,7 +415,7 @@ public class RefCountTableTests
         for (var i = 0; i < batch.Length; i++)
             batchHandles[i] = new Handle<DummyNode>(batch[i]);
         var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
-        table.DecrementBatch(batchHandles, hitZero);
+        table.DecrementBatch(batchHandles, ref hitZero);
         while (hitZero.TryPop(out var freedHandle))
             freed.Add(freedHandle.Index);
 
@@ -455,7 +455,7 @@ public class RefCountTableTests
     {
         var table = CreateTinyTable();
         var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
-        table.DecrementBatch([], hitZero);
+        table.DecrementBatch([], ref hitZero);
         Assert.Equal(0, hitZero.Count);
     }
 
@@ -534,7 +534,7 @@ public class RefCountTableTests
         }
 
         var hitZero = UnsafeStack<Handle<DummyNode>>.Create();
-        table.DecrementBatch(handles, hitZero);
+        table.DecrementBatch(handles, ref hitZero);
         while (hitZero.TryPop(out var freedHandle))
             freed.Add(freedHandle.Index);
 

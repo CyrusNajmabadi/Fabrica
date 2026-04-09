@@ -119,7 +119,7 @@ internal struct RingBuffer<T>
 /// REFERENCE
 ///   Tokio scheduler queue: tokio/src/runtime/scheduler/multi_thread/queue.rs
 /// </summary>
-internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
+internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) where T : class
 {
     internal const int QueueCapacity = 256;
     private const int Mask = QueueCapacity - 1;
@@ -145,7 +145,7 @@ internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
     /// <summary>
     /// Shared injection queue. When the ring buffer is full, overflow items are enqueued here.
     /// </summary>
-    private readonly InjectionQueue<T> _overflow = overflow;
+    private readonly StrongBox<InjectionQueue<T>> _overflow = overflow;
 
     private SingleThreadedOwner _owner;
 
@@ -203,7 +203,7 @@ internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
             {
                 // A steal is in progress — it will free capacity soon. Just inject
                 // the single item to the global queue (matches Tokio's behavior).
-                _overflow.Enqueue(item);
+                _overflow.Value.Enqueue(item);
                 return;
             }
 
@@ -248,7 +248,7 @@ internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
             ? span[..(OverflowBatchSize - firstLen)]
             : [];
 
-        _overflow.EnqueueBatch(seg1, seg2, item);
+        _overflow.Value.EnqueueBatch(seg1, seg2, item);
     }
 
     /// <summary>

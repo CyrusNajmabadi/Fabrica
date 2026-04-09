@@ -125,8 +125,8 @@ public class GamePipelineTests : IDisposable
         UnsafeList<Handle<MachineNode>> machineRoots;
         using (var merge = coordinator.MergeAll())
         {
-            machineRoots = new UnsafeList<Handle<MachineNode>>();
-            machineStore.GetTestAccessor().CollectAndRemapRoots(machineRoots);
+            machineRoots = UnsafeList<Handle<MachineNode>>.Create();
+            machineStore.GetTestAccessor().CollectAndRemapRoots(ref machineRoots);
             Assert.Equal(1, machineRoots.Count);
 
             machineStore.GetTestAccessor().IncrementRoots(machineRoots.WrittenSpan);

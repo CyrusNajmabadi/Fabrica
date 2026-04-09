@@ -6,18 +6,17 @@ namespace Fabrica.Core.Collections.Unsafe;
 /// Minimal LIFO stack backed by an <see cref="UnsafeList{T}"/>. Provides push/pop semantics
 /// with the same unchecked-access performance characteristics.
 ///
-/// WARNING: This is a readonly struct wrapping a mutable reference-type backing store.
-/// Copies of this struct share the same underlying <see cref="UnsafeList{T}"/>, so mutations
-/// through one copy are visible through all others. Do not copy instances — always pass by
-/// reference or store in a single location. Accidental copies will silently alias state.
+/// WARNING: This is a mutable struct. Copies share the same backing array but have independent
+/// counts — mutations to one copy are NOT visible through the other. Never copy this struct.
+/// Always store in a single location and pass by reference.
 /// </summary>
-internal readonly struct UnsafeStack<T>(int initialCapacity)
+internal struct UnsafeStack<T>(int initialCapacity)
 {
-    private readonly UnsafeList<T> _list = new(initialCapacity);
+    private UnsafeList<T> _list = new(initialCapacity);
 
     public static UnsafeStack<T> Create() => new(initialCapacity: 16);
 
-    public int Count
+    public readonly int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _list.Count;

@@ -157,7 +157,7 @@ public class JobMergePipelineTests : IDisposable
 
         protected internal override void Execute(JobContext context)
         {
-            var threadLocalBuffer = ChildThreadLocalBuffers[context.WorkerIndex];
+            ref var threadLocalBuffer = ref ChildThreadLocalBuffers[context.WorkerIndex];
             AllocatedHandles = new Handle<ChildNode>[ChildCount];
             for (var i = 0; i < ChildCount; i++)
             {
@@ -187,7 +187,7 @@ public class JobMergePipelineTests : IDisposable
 
         protected internal override void Execute(JobContext context)
         {
-            var threadLocalBuffer = ParentThreadLocalBuffers[context.WorkerIndex];
+            ref var threadLocalBuffer = ref ParentThreadLocalBuffers[context.WorkerIndex];
 
             var allChildHandles = new List<Handle<ChildNode>>();
             foreach (var source in ChildSources)
@@ -291,8 +291,8 @@ public class JobMergePipelineTests : IDisposable
 
         // ── Root collection ──────────────────────────────────────────────
 
-        var rootList = new UnsafeList<Handle<ParentNode>>();
-        parentStore.GetTestAccessor().CollectAndRemapRoots(rootList);
+        var rootList = UnsafeList<Handle<ParentNode>>.Create();
+        parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
         Assert.True(roots.Length >= 1, "Expected at least one root from parent job");
 

@@ -28,7 +28,7 @@ public sealed class ObjectPool<T, TAllocator>
     where T : class
     where TAllocator : struct, IAllocator<T>
 {
-    private readonly UnsafeStack<T> _items;
+    private UnsafeStack<T> _items;
     private SingleThreadedOwner _owner;
 
     public ObjectPool(int initialCapacity)

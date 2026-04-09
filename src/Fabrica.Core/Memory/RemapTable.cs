@@ -22,7 +22,7 @@ internal readonly struct RemapTable
         Debug.Assert(threadCount > 0, $"RemapTable requires at least 1 thread, got {threadCount}.");
         _perThreadMappings = new UnsafeList<int>[threadCount];
         for (var i = 0; i < threadCount; i++)
-            _perThreadMappings[i] = new UnsafeList<int>();
+            _perThreadMappings[i] = UnsafeList<int>.Create();
     }
 
     /// <summary>Number of threads this remap table supports.</summary>

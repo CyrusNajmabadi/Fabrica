@@ -102,13 +102,13 @@ public class SnapshotLifecycleTests
         var root = this.BuildPerfectTree(3);
         var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[snapshotCount];
 
-        var roots0 = new UnsafeList<Handle<TreeNode>>();
+        var roots0 = UnsafeList<Handle<TreeNode>>.Create();
         roots0.Add(root);
         slices[0] = _store.GetTestAccessor().BuildSnapshotSlice(roots0);
         for (var i = 1; i < snapshotCount; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var roots = new UnsafeList<Handle<TreeNode>>();
+            var roots = UnsafeList<Handle<TreeNode>>.Create();
             roots.Add(newRoot);
             slices[i] = _store.GetTestAccessor().BuildSnapshotSlice(roots);
             root = newRoot;
@@ -141,13 +141,13 @@ public class SnapshotLifecycleTests
         var root = this.BuildPerfectTree(3);
         var slices = new SnapshotSlice<TreeNode, TreeNodeOps>[snapshotCount];
 
-        var roots0 = new UnsafeList<Handle<TreeNode>>();
+        var roots0 = UnsafeList<Handle<TreeNode>>.Create();
         roots0.Add(root);
         slices[0] = _store.GetTestAccessor().BuildSnapshotSlice(roots0);
         for (var i = 1; i < snapshotCount; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var roots = new UnsafeList<Handle<TreeNode>>();
+            var roots = UnsafeList<Handle<TreeNode>>.Create();
             roots.Add(newRoot);
             slices[i] = _store.GetTestAccessor().BuildSnapshotSlice(roots);
             root = newRoot;
@@ -174,7 +174,7 @@ public class SnapshotLifecycleTests
     {
         var root = this.BuildPerfectTree(3);
 
-        var prevRoots = new UnsafeList<Handle<TreeNode>>();
+        var prevRoots = UnsafeList<Handle<TreeNode>>.Create();
         prevRoots.Add(root);
         var prevSlice = _store.GetTestAccessor().BuildSnapshotSlice(prevRoots);
         var initialAllocCount = _store.Arena.GetTestAccessor().Count;
@@ -182,7 +182,7 @@ public class SnapshotLifecycleTests
         for (var i = 0; i < 50; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var newRoots = new UnsafeList<Handle<TreeNode>>();
+            var newRoots = UnsafeList<Handle<TreeNode>>.Create();
             newRoots.Add(newRoot);
             var newSlice = _store.GetTestAccessor().BuildSnapshotSlice(newRoots);
             _store.ReleaseSnapshotSlice(prevSlice);
@@ -211,7 +211,7 @@ public class SnapshotLifecycleTests
         var root2 = this.BuildPerfectTree(2);
         var root3 = this.BuildPerfectTree(2);
 
-        var roots = new UnsafeList<Handle<TreeNode>>();
+        var roots = UnsafeList<Handle<TreeNode>>.Create();
         roots.Add(root1);
         roots.Add(root2);
         roots.Add(root3);
@@ -236,7 +236,7 @@ public class SnapshotLifecycleTests
         var root1 = this.AllocNode(shared, Handle<TreeNode>.None);
         var root2 = this.AllocNode(Handle<TreeNode>.None, shared);
 
-        var roots = new UnsafeList<Handle<TreeNode>>();
+        var roots = UnsafeList<Handle<TreeNode>>.Create();
         roots.Add(root1);
         roots.Add(root2);
         var slice = _store.GetTestAccessor().BuildSnapshotSlice(roots);
@@ -260,7 +260,7 @@ public class SnapshotLifecycleTests
         var root = this.BuildPerfectTree(3);
         var queue = new Queue<SnapshotSlice<TreeNode, TreeNodeOps>>();
 
-        var initialRoots = new UnsafeList<Handle<TreeNode>>();
+        var initialRoots = UnsafeList<Handle<TreeNode>>.Create();
         initialRoots.Add(root);
         var initialSlice = _store.GetTestAccessor().BuildSnapshotSlice(initialRoots);
         queue.Enqueue(initialSlice);
@@ -268,7 +268,7 @@ public class SnapshotLifecycleTests
         for (var i = 0; i < 30; i++)
         {
             var newRoot = this.PathCopyLeftSpine(root, 3);
-            var newRoots = new UnsafeList<Handle<TreeNode>>();
+            var newRoots = UnsafeList<Handle<TreeNode>>.Create();
             newRoots.Add(newRoot);
             var newSlice = _store.GetTestAccessor().BuildSnapshotSlice(newRoots);
             queue.Enqueue(newSlice);
@@ -310,7 +310,7 @@ public class SnapshotLifecycleTests
         var a = this.AllocNode(b, Handle<TreeNode>.None);
 
         // Snapshot 1: root = A
-        var snap1Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap1Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap1Roots.Add(a);
         var snap1 = _store.GetTestAccessor().BuildSnapshotSlice(snap1Roots);
         Assert.Equal(1, _store.RefCounts.GetCount(a)); // root pin
@@ -319,7 +319,7 @@ public class SnapshotLifecycleTests
         Assert.Equal(1, _store.RefCounts.GetCount(d)); // from B.Right
 
         // Snapshot 2: root = B (existing internal node, not A)
-        var snap2Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap2Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap2Roots.Add(b);
         var snap2 = _store.GetTestAccessor().BuildSnapshotSlice(snap2Roots);
         Assert.Equal(1, _store.RefCounts.GetCount(a)); // unchanged
@@ -354,11 +354,11 @@ public class SnapshotLifecycleTests
         var a = this.AllocNode(b, Handle<TreeNode>.None);
 
         // Snapshot 1: root = A (graph: A→B→C)
-        var snap1Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap1Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap1Roots.Add(a);
         var snap1 = _store.GetTestAccessor().BuildSnapshotSlice(snap1Roots);
         // Snapshot 2: root = B only — does NOT inherit A from snap1
-        var snap2Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap2Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap2Roots.Add(b);
         var snap2 = _store.GetTestAccessor().BuildSnapshotSlice(snap2Roots);
         Assert.Equal(1, snap1.Count);
@@ -394,13 +394,13 @@ public class SnapshotLifecycleTests
         var b = this.AllocNode(c, Handle<TreeNode>.None);
         var a = this.AllocNode(b, Handle<TreeNode>.None);
 
-        var snap1Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap1Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap1Roots.Add(a);
         var snap1 = _store.GetTestAccessor().BuildSnapshotSlice(snap1Roots);
-        var snap2Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap2Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap2Roots.Add(b);
         var snap2 = _store.GetTestAccessor().BuildSnapshotSlice(snap2Roots);
-        var snap3Roots = new UnsafeList<Handle<TreeNode>>();
+        var snap3Roots = UnsafeList<Handle<TreeNode>>.Create();
         snap3Roots.Add(c);
         var snap3 = _store.GetTestAccessor().BuildSnapshotSlice(snap3Roots);
         // A: RC=1(snap1), B: RC=3(A.Left + snap2 + ... wait)
@@ -451,7 +451,7 @@ public class SnapshotLifecycleTests
                 if (i > 0)
                     currentRoot = PathCopyLeftSpineInStore(store, currentRoot, 3);
 
-                var roots = new UnsafeList<Handle<TreeNode>>();
+                var roots = UnsafeList<Handle<TreeNode>>.Create();
                 roots.Add(currentRoot);
                 slices[i] = store.GetTestAccessor().BuildSnapshotSlice(roots);
             }
