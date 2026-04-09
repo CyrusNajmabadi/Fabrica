@@ -165,12 +165,12 @@ public class GamePipelineTests : IDisposable
         machineStore.GetTestAccessor().DecrementRoots(machineRoots.WrittenSpan);
 
         // All arenas should be empty (high water stays, but all slots freed).
-        // Verify refcounts are zero for all allocated nodes.
-        for (var i = 0; i < machineStore.Arena.HighWater; i++)
+        // Verify refcounts are zero for all allocated nodes (skip index 0: None sentinel).
+        for (var i = 1; i < machineStore.Arena.HighWater; i++)
             Assert.Equal(0, machineStore.RefCounts.GetCount(new Handle<MachineNode>(i)));
-        for (var i = 0; i < beltStore.Arena.HighWater; i++)
+        for (var i = 1; i < beltStore.Arena.HighWater; i++)
             Assert.Equal(0, beltStore.RefCounts.GetCount(new Handle<BeltSegmentNode>(i)));
-        for (var i = 0; i < itemStore.Arena.HighWater; i++)
+        for (var i = 1; i < itemStore.Arena.HighWater; i++)
             Assert.Equal(0, itemStore.RefCounts.GetCount(new Handle<ItemNode>(i)));
     }
 }

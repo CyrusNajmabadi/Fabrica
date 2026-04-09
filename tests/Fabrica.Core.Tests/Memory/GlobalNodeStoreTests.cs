@@ -23,8 +23,8 @@ public class GlobalNodeStoreTests
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
+            visitor.Visit(node.Left);
+            visitor.Visit(node.Right);
         }
 
         public readonly void Visit<T>(Handle<T> handle)
@@ -55,8 +55,8 @@ public class GlobalNodeStoreTests
     {
         var handle = store.Arena.Allocate();
         store.Arena[handle] = new TreeNode { Left = left, Right = right, Value = value };
-        if (left.IsValid) store.RefCounts.Increment(left);
-        if (right.IsValid) store.RefCounts.Increment(right);
+        store.RefCounts.Increment(left);
+        store.RefCounts.Increment(right);
         store.RefCounts.EnsureCapacity(handle.Index + 1);
         return handle;
     }

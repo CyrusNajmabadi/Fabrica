@@ -33,6 +33,10 @@ internal readonly struct ReadOnlyRemapTable(NonCopyableUnsafeList<int> data, int
 #endif
     }
 
+    /// <summary>
+    /// Rewrites a local (negative) handle to its global index via the remap table. Global handles
+    /// (positive) and <see cref="Handle{T}.None"/> (index 0) pass through unchanged.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Handle<T> Remap<T>(Handle<T> handle) where T : struct
     {

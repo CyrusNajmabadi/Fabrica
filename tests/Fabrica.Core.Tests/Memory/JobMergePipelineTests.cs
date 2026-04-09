@@ -40,8 +40,8 @@ public class JobMergePipelineTests : IDisposable
 
         readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+            visitor.Visit(node.LeftParent);
+            visitor.Visit(node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateChildren<TVisitor>(in ChildNode node, ref TVisitor visitor)
@@ -50,8 +50,8 @@ public class JobMergePipelineTests : IDisposable
 
         readonly void INodeOps<ParentNode>.EnumerateRefChildren<TVisitor>(ref ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent != Handle<ParentNode>.None) visitor.VisitRef(ref node.LeftParent);
-            if (node.ChildRef != Handle<ChildNode>.None) visitor.VisitRef(ref node.ChildRef);
+            visitor.VisitRef(ref node.LeftParent);
+            visitor.VisitRef(ref node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateRefChildren<TVisitor>(ref ChildNode node, ref TVisitor visitor)
@@ -60,8 +60,8 @@ public class JobMergePipelineTests : IDisposable
 
         readonly void INodeOps<ParentNode>.IncrementChildRefCounts(in ParentNode node)
         {
-            if (node.LeftParent.IsValid) ParentStore.IncrementRefCount(node.LeftParent);
-            if (node.ChildRef.IsValid) ChildStore.IncrementRefCount(node.ChildRef);
+            ParentStore.IncrementRefCount(node.LeftParent);
+            ChildStore.IncrementRefCount(node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.IncrementChildRefCounts(in ChildNode node)

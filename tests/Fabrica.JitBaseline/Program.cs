@@ -320,8 +320,8 @@ internal struct TreeChildEnumerator : INodeOps<TreeNode>
     public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
     {
-        if (node.Left.IsValid) visitor.Visit(node.Left);
-        if (node.Right.IsValid) visitor.Visit(node.Right);
+        visitor.Visit(node.Left);
+        visitor.Visit(node.Right);
     }
 }
 
@@ -331,8 +331,8 @@ internal struct MixedChildEnumerator : INodeOps<MixedNode>
     public readonly void EnumerateChildren<TVisitor>(in MixedNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
     {
-        if (node.SameChild.IsValid) visitor.Visit(node.SameChild);
-        if (node.CrossChild.IsValid) visitor.Visit(node.CrossChild);
+        visitor.Visit(node.SameChild);
+        visitor.Visit(node.CrossChild);
     }
 }
 
@@ -342,8 +342,8 @@ internal struct ParentChildEnumerator : INodeOps<ParentNode>
     public readonly void EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         where TVisitor : struct, INodeVisitor
     {
-        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef);
-        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+        visitor.Visit(node.ParentRef);
+        visitor.Visit(node.ChildRef);
     }
 }
 
@@ -414,15 +414,15 @@ internal struct MultiTypeOps(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
     {
-        if (node.ParentRef.IsValid) visitor.Visit(node.ParentRef);
-        if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+        visitor.Visit(node.ParentRef);
+        visitor.Visit(node.ChildRef);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     readonly void INodeOps<ChildNode>.EnumerateChildren<TVisitor>(in ChildNode node, ref TVisitor visitor)
     {
-        if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
-        if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
+        visitor.Visit(node.LeftChild);
+        visitor.Visit(node.RightChild);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

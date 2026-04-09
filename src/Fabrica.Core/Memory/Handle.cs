@@ -11,13 +11,13 @@ namespace Fabrica.Core.Memory;
 /// </summary>
 public readonly struct Handle<T> : IEquatable<Handle<T>> where T : struct
 {
-    public static readonly Handle<T> None = new(-1);
+    public static readonly Handle<T> None = default;
 
     internal Handle(int index) => this.Index = index;
 
     internal int Index { get; }
 
-    public bool IsValid => this.Index >= 0;
+    public bool IsValid => this.Index != 0;
 
     public bool Equals(Handle<T> other) => this.Index == other.Index;
 

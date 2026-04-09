@@ -20,28 +20,28 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
 
     readonly void INodeOps<MachineNode>.EnumerateChildren<TVisitor>(in MachineNode node, ref TVisitor visitor)
     {
-        if (node.InputBelt.IsValid) visitor.Visit(node.InputBelt);
-        if (node.OutputBelt.IsValid) visitor.Visit(node.OutputBelt);
+        visitor.Visit(node.InputBelt);
+        visitor.Visit(node.OutputBelt);
     }
 
     readonly void INodeOps<MachineNode>.EnumerateRefChildren<TVisitor>(ref MachineNode node, ref TVisitor visitor)
     {
-        if (node.InputBelt != Handle<BeltSegmentNode>.None) visitor.VisitRef(ref node.InputBelt);
-        if (node.OutputBelt != Handle<BeltSegmentNode>.None) visitor.VisitRef(ref node.OutputBelt);
+        visitor.VisitRef(ref node.InputBelt);
+        visitor.VisitRef(ref node.OutputBelt);
     }
 
     // ── BeltSegmentNode ─────────────────────────────────────────────────
 
     readonly void INodeOps<BeltSegmentNode>.EnumerateChildren<TVisitor>(in BeltSegmentNode node, ref TVisitor visitor)
     {
-        if (node.Next.IsValid) visitor.Visit(node.Next);
-        if (node.Payload.IsValid) visitor.Visit(node.Payload);
+        visitor.Visit(node.Next);
+        visitor.Visit(node.Payload);
     }
 
     readonly void INodeOps<BeltSegmentNode>.EnumerateRefChildren<TVisitor>(ref BeltSegmentNode node, ref TVisitor visitor)
     {
-        if (node.Next != Handle<BeltSegmentNode>.None) visitor.VisitRef(ref node.Next);
-        if (node.Payload != Handle<ItemNode>.None) visitor.VisitRef(ref node.Payload);
+        visitor.VisitRef(ref node.Next);
+        visitor.VisitRef(ref node.Payload);
     }
 
     // ── ItemNode (leaf — no children) ───────────────────────────────────
@@ -58,14 +58,14 @@ public struct GameNodeOps : INodeOps<MachineNode>, INodeOps<BeltSegmentNode>, IN
 
     readonly void INodeOps<MachineNode>.IncrementChildRefCounts(in MachineNode node)
     {
-        if (node.InputBelt.IsValid) BeltStore.IncrementRefCount(node.InputBelt);
-        if (node.OutputBelt.IsValid) BeltStore.IncrementRefCount(node.OutputBelt);
+        BeltStore.IncrementRefCount(node.InputBelt);
+        BeltStore.IncrementRefCount(node.OutputBelt);
     }
 
     readonly void INodeOps<BeltSegmentNode>.IncrementChildRefCounts(in BeltSegmentNode node)
     {
-        if (node.Next.IsValid) BeltStore.IncrementRefCount(node.Next);
-        if (node.Payload.IsValid) ItemStore.IncrementRefCount(node.Payload);
+        BeltStore.IncrementRefCount(node.Next);
+        ItemStore.IncrementRefCount(node.Payload);
     }
 
     readonly void INodeOps<ItemNode>.IncrementChildRefCounts(in ItemNode node)

@@ -33,8 +33,8 @@ public class PersistentTreeBenchmarks
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
+            visitor.Visit(node.Left);
+            visitor.Visit(node.Right);
         }
     }
 
@@ -116,8 +116,8 @@ public class PersistentTreeBenchmarks
         for (var i = 0; i < _nodeCount; i++)
         {
             ref readonly var node = ref _arena[new Handle<TreeNode>(i)];
-            if (node.Left.IsValid) _refCounts.Increment(node.Left);
-            if (node.Right.IsValid) _refCounts.Increment(node.Right);
+            _refCounts.Increment(node.Left);
+            _refCounts.Increment(node.Right);
         }
 
         _root = new Handle<TreeNode>(0);
@@ -162,8 +162,8 @@ public class PersistentTreeBenchmarks
             }
 
             _arena[newIdx] = new TreeNode { Left = left, Right = right };
-            if (left.IsValid) _refCounts.Increment(left);
-            if (right.IsValid) _refCounts.Increment(right);
+            _refCounts.Increment(left);
+            _refCounts.Increment(right);
 
             childOnPath = newIdx;
         }
@@ -286,8 +286,8 @@ public class SingleForkReleaseBenchmarks
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
+            visitor.Visit(node.Left);
+            visitor.Visit(node.Right);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -295,9 +295,9 @@ public class SingleForkReleaseBenchmarks
             where TVisitor : struct, INodeVisitor
         {
             ref var left = ref node.Left;
-            if (left.IsValid) visitor.VisitRef(ref left);
+            visitor.VisitRef(ref left);
             ref var right = ref node.Right;
-            if (right.IsValid) visitor.VisitRef(ref right);
+            visitor.VisitRef(ref right);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -378,8 +378,8 @@ public class SingleForkReleaseBenchmarks
         for (var i = 0; i < _nodeCount; i++)
         {
             ref readonly var node = ref _arena[new Handle<TreeNode>(i)];
-            if (node.Left.IsValid) _refCounts.Increment(node.Left);
-            if (node.Right.IsValid) _refCounts.Increment(node.Right);
+            _refCounts.Increment(node.Left);
+            _refCounts.Increment(node.Right);
         }
 
         _root = new Handle<TreeNode>(0);
@@ -423,8 +423,8 @@ public class SingleForkReleaseBenchmarks
             }
 
             _arena[newIdx] = new TreeNode { Left = left, Right = right };
-            if (left.IsValid) _refCounts.Increment(left);
-            if (right.IsValid) _refCounts.Increment(right);
+            _refCounts.Increment(left);
+            _refCounts.Increment(right);
 
             childOnPath = newIdx;
         }
