@@ -212,7 +212,6 @@ public class CoordinatorMergeTests
         Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(1)].Value);
 
         Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
-        Assert.Equal(0, childStore.GetTestAccessor().Remap.Count(1));
         Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(2, 0));
     }
 

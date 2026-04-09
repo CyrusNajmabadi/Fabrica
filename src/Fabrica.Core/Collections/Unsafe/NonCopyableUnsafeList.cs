@@ -33,6 +33,13 @@ internal struct NonCopyableUnsafeList<T>(int initialCapacity)
     /// <summary>Wraps an existing array with count = 0, for reuse from a pool.</summary>
     internal static NonCopyableUnsafeList<T> Wrap(T[] array) => new(0) { _array = array };
 
+    /// <summary>Returns the raw backing array. Use only in release-mode unsafe paths.</summary>
+    internal readonly T[] UnsafeBackingArray
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _array;
+    }
+
     /// <summary>Returns an immutable snapshot of the current array and count.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly ReadOnlyArray<T> AsReadOnly() => new(_array, _count);
@@ -44,10 +51,17 @@ internal struct NonCopyableUnsafeList<T>(int initialCapacity)
         get => _array != null;
     }
 
-    public readonly int Count
+    public int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _count;
+        readonly get => _count;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        set
+        {
+            Debug.Assert((uint)value <= (uint)_array.Length, $"Count {value} exceeds capacity {_array.Length}.");
+            _count = value;
+        }
     }
 
     public ref T this[int index]

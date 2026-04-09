@@ -105,7 +105,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
 
     /// <summary>Maps <c>(threadId, localIndex)</c> pairs to global arena indices during merge.
     /// Default (no-op) when the store has no merge infrastructure.</summary>
-    private readonly RemapTable _remap;
+    private NonCopyableRemapTable _remap;
 
     /// <summary>Handles allocated during the most recent <see cref="Drain"/>. Reset each tick by
     /// <see cref="ResetMergeState"/>, retaining backing memory for zero steady-state allocation.
@@ -135,7 +135,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         _threadLocalBuffers = new ThreadLocalBuffer<TNode>[workerCount];
         for (var i = 0; i < workerCount; i++)
             _threadLocalBuffers[i] = new ThreadLocalBuffer<TNode>(i);
-        _remap = new RemapTable(workerCount);
+        _remap = new NonCopyableRemapTable(workerCount);
     }
 
     /// <summary>
@@ -185,9 +185,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// returned unchanged.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Handle<T> RemapHandle<T>(Handle<T> handle) where T : struct => _remap.Remap(handle);
-
-    private RemapTable Remap => _remap;
+    public Handle<T> RemapHandle<T>(Handle<T> handle) where T : struct => _remap.AsReadOnly().Remap(handle);
 
     /// <summary>
     /// Sets the node operations struct. Used for two-phase initialization when the ops struct
@@ -316,11 +314,12 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// </summary>
     private void CollectAndRemapRoots(ref NonCopyableUnsafeList<Handle<TNode>> destination)
     {
+        var remap = _remap.AsReadOnly();
         for (var i = 0; i < _threadLocalBuffers.Length; i++)
         {
             ref var threadLocalBuffer = ref _threadLocalBuffers[i];
             foreach (var handle in threadLocalBuffer.RootHandles)
-                destination.Add(_remap.Remap(handle));
+                destination.Add(remap.Remap(handle));
         }
     }
 
@@ -509,7 +508,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         public void DecrementRoots(ReadOnlySpan<Handle<TNode>> roots) => store.DecrementRoots(roots);
 
         public void CollectAndRemapRoots(ref NonCopyableUnsafeList<Handle<TNode>> destination) => store.CollectAndRemapRoots(ref destination);
-        public RemapTable Remap => store._remap;
+        public ReadOnlyRemapTable Remap => store._remap.AsReadOnly();
 
         public UnsafeSlabArena<TNode> Arena => store.Arena;
         public RefCountTable<TNode> RefCounts => store.RefCounts;
