@@ -20,7 +20,8 @@ for (var p = 0; p < PhaseCount; p++)
     barriers[p] = new BarrierJob();
 }
 
-for (var tick = 0; tick < 3; tick++)
+// Run enough ticks to trigger tier-1 PGO recompilation (default threshold ~30 calls).
+for (var tick = 0; tick < 100; tick++)
 {
     trigger.Reset();
 
