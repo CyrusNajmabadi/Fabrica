@@ -88,7 +88,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// Handles whose refcount reached zero during a decrement cascade, pending processing.
     /// Reused across cascade operations to avoid allocation.
     /// </summary>
-    private readonly UnsafeStack<Handle<TNode>> _cascadePending = new();
+    private readonly UnsafeStack<Handle<TNode>> _cascadePending = UnsafeStack<Handle<TNode>>.Create();
 
     /// <summary>True while a decrement cascade is being processed.</summary>
     private bool _cascadeActive;
@@ -96,7 +96,7 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
     /// <summary>Pool of <see cref="UnsafeList{T}"/> instances for root handle collection during
     /// <see cref="BuildSnapshotSlice"/>. Instances are returned by <see cref="ReleaseSnapshotSlice"/>,
     /// so backing arrays are retained across ticks for zero steady-state allocation.</summary>
-    private readonly UnsafeStack<UnsafeList<Handle<TNode>>> _rootListPool = new();
+    private readonly UnsafeStack<UnsafeList<Handle<TNode>>> _rootListPool = UnsafeStack<UnsafeList<Handle<TNode>>>.Create();
 
     /// <summary>Per-worker append buffers for nodes created during the parallel work phase.
     /// Empty array when the store has no merge infrastructure (test-only parameterless constructor).</summary>

@@ -217,15 +217,8 @@ internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
 
             // Successfully claimed OverflowBatchSize items from [steal, steal + N).
             // The overflow CAS serializes with steal CASes, so these slots are
-            // exclusively ours. Read each and inject to the global queue.
-            for (var i = 0; i < OverflowBatchSize; i++)
-            {
-                var idx = (steal + i) & Mask;
-                _overflow.Enqueue(_buffer[idx]!);
-            }
-
-            // Also inject the incoming item (it does not go to the ring buffer).
-            _overflow.Enqueue(item);
+            // exclusively ours. Inject them plus the incoming item to the global queue.
+            this.PushOverflow(steal, item);
             return;
         }
 
@@ -236,6 +229,26 @@ internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
         // before thieves see the new tail. Without this, a thief could read the new tail
         // via Volatile.Read(_headTail.Tail) but see a stale/null buffer slot.
         Volatile.Write(ref _headTail.Tail, tail + 1);
+    }
+
+    /// <summary>
+    /// Moves <see cref="OverflowBatchSize"/> claimed items from the ring buffer plus the
+    /// incoming item to the shared injection queue under a single lock acquisition.
+    /// Kept out-of-line to minimize the code size of the hot <see cref="PushToRingBuffer"/> path.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private readonly void PushOverflow(int steal, T item)
+    {
+        ReadOnlySpan<T?> span = _buffer;
+        var start = steal & Mask;
+        var firstLen = Math.Min(OverflowBatchSize, QueueCapacity - start);
+
+        var seg1 = span.Slice(start, firstLen);
+        var seg2 = firstLen < OverflowBatchSize
+            ? span[..(OverflowBatchSize - firstLen)]
+            : [];
+
+        _overflow.EnqueueBatch(seg1, seg2, item);
     }
 
     /// <summary>
@@ -386,8 +399,9 @@ internal struct BoundedLocalQueue<T>(InjectionQueue<T> overflow) where T : class
         while (remaining > 0)
         {
             var chunk = Math.Min(remaining, Math.Min(QueueCapacity - srcStart, QueueCapacity - dstStart));
-            srcSpan.Slice(srcStart, chunk).CopyTo(dstSpan.Slice(dstStart, chunk));
-            srcSpan.Slice(srcStart, chunk).Clear();
+            var src = srcSpan.Slice(srcStart, chunk);
+            src.CopyTo(dstSpan.Slice(dstStart, chunk));
+            src.Clear();
 
             remaining -= chunk;
             srcStart = (srcStart + chunk) & Mask;

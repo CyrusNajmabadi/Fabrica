@@ -9,12 +9,12 @@ public class UnsafeStackTests
 
     [Fact]
     public void Empty_CountIsZero()
-        => Assert.Equal(0, new UnsafeStack<int>().Count);
+        => Assert.Equal(0, UnsafeStack<int>.Create().Count);
 
     [Fact]
     public void Push_IncrementsCount()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
         stack.Push(1);
         Assert.Equal(1, stack.Count);
         stack.Push(2);
@@ -24,14 +24,14 @@ public class UnsafeStackTests
     [Fact]
     public void TryPop_Empty_ReturnsFalse()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
         Assert.False(stack.TryPop(out _));
     }
 
     [Fact]
     public void TryPop_Empty_OutputsDefault()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
         stack.TryPop(out var item);
         Assert.Equal(0, item);
     }
@@ -39,7 +39,7 @@ public class UnsafeStackTests
     [Fact]
     public void PushThenPop_ReturnsItem()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
         stack.Push(42);
         Assert.True(stack.TryPop(out var item));
         Assert.Equal(42, item);
@@ -51,7 +51,7 @@ public class UnsafeStackTests
     [Fact]
     public void IsLifo()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
         stack.Push(1);
         stack.Push(2);
         stack.Push(3);
@@ -68,7 +68,7 @@ public class UnsafeStackTests
     [Fact]
     public void InterleavedPushPop_MaintainsLifo()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
         stack.Push(10);
         stack.Push(20);
 
@@ -190,7 +190,7 @@ public class UnsafeStackTests
     [Fact]
     public void WorksWithReferenceTypes()
     {
-        var stack = new UnsafeStack<string>();
+        var stack = UnsafeStack<string>.Create();
         stack.Push("hello");
         stack.Push("world");
 
@@ -205,7 +205,7 @@ public class UnsafeStackTests
     [Fact]
     public void DefaultCapacity_WorksCorrectly()
     {
-        var stack = new UnsafeStack<int>();
+        var stack = UnsafeStack<int>.Create();
 
         for (var i = 0; i < 100; i++)
             stack.Push(i);
