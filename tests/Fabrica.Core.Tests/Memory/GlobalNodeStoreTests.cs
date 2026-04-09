@@ -23,8 +23,8 @@ public class GlobalNodeStoreTests
         public readonly void EnumerateChildren<TVisitor>(in TreeNode node, ref TVisitor visitor)
             where TVisitor : struct, INodeVisitor
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
+            visitor.Visit(node.Left);
+            visitor.Visit(node.Right);
         }
 
         public readonly void Visit<T>(Handle<T> handle)
@@ -55,8 +55,8 @@ public class GlobalNodeStoreTests
     {
         var handle = store.Arena.Allocate();
         store.Arena[handle] = new TreeNode { Left = left, Right = right, Value = value };
-        if (left.IsValid) store.RefCounts.Increment(left);
-        if (right.IsValid) store.RefCounts.Increment(right);
+        store.RefCounts.Increment(left);
+        store.RefCounts.Increment(right);
         store.RefCounts.EnsureCapacity(handle.Index + 1);
         return handle;
     }
@@ -177,5 +177,40 @@ public class GlobalNodeStoreTests
     {
         var store = CreateStore();
         store.GetTestAccessor().IncrementRoots([]);
+    }
+
+    // ── Sentinel resilience ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that even if the None-sentinel slot's refcount is artificially lowered to 1
+    /// (simulating a bug or extreme wraparound), decrementing it to zero through the full
+    /// GlobalNodeStore cascade path does not crash, infinite-loop, or corrupt state.
+    /// The cascade must silently skip the sentinel.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-1)]
+    public void Sentinel_CascadeSkipsSentinelEvenIfRefcountReachesZero(int sentinelRefCount)
+    {
+        var store = CreateStore();
+        store.RefCounts.EnsureCapacity(10);
+
+        // Build a simple tree: root → leaf (both real nodes at indices > 0)
+        var leaf = AllocNode(store, Handle<TreeNode>.None, Handle<TreeNode>.None, 99);
+        var root = AllocNode(store, leaf, Handle<TreeNode>.None, 42);
+        store.GetTestAccessor().IncrementRoots([root]);
+
+        // Force the sentinel slot's refcount to the test value
+        store.RefCounts.GetTestAccessor().Directory[0][0] = sentinelRefCount;
+
+        // Decrement the root — cascades to leaf, each of which has None children that
+        // hit the sentinel. The sentinel's refcount will reach zero (or wrap to zero from -1).
+        // The cascade must skip it without crashing.
+        store.GetTestAccessor().DecrementRoots([root]);
+
+        // Real nodes freed
+        Assert.Equal(0, store.RefCounts.GetCount(root));
+        Assert.Equal(0, store.RefCounts.GetCount(leaf));
+        Assert.Equal(0, store.Arena.GetTestAccessor().Count);
     }
 }

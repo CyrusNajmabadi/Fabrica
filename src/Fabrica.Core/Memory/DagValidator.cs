@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Fabrica.Core.Collections.Unsafe;
 using Fabrica.Core.Memory.Nodes;
@@ -61,7 +60,7 @@ internal static class DagValidator
         /// <summary>
         /// Appends the children of the node at (typeId, index) to <paramref name="children"/>.
         /// Children may be of any type — each child's <see cref="NodeRef.TypeId"/> identifies its store.
-        /// Invalid children (index &lt; 0) must be filtered out by the implementation.
+        /// Invalid children (index == 0, the None sentinel) must be filtered out by the implementation.
         /// </summary>
         void GetChildren(int typeId, int index, List<NodeRef> children);
     }
@@ -192,10 +191,10 @@ internal static class DagValidator
             }
         }
 
-        // Compare expected vs actual refcounts
+        // Compare expected vs actual refcounts (skip index 0: reserved None-sentinel sink)
         for (var typeIndex = 0; typeIndex < typeCount; typeIndex++)
         {
-            for (var i = 0; i < expectedRefCount[typeIndex].Length; i++)
+            for (var i = 1; i < expectedRefCount[typeIndex].Length; i++)
             {
                 var actual = accessor.GetRefCount(typeIndex, i);
                 var expected = expectedRefCount[typeIndex][i];
@@ -233,7 +232,7 @@ internal static class DagValidator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsInRange(NodeRef node, int[][] arrays)
         => node.TypeId >= 0 && node.TypeId < arrays.Length
-           && node.Index >= 0 && node.Index < arrays[node.TypeId].Length;
+           && node.Index > 0 && node.Index < arrays[node.TypeId].Length;
 
     // ── Single-store convenience ────────────────────────────────────────
 
@@ -316,8 +315,8 @@ internal static class DagValidator
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly void CollectTyped(Handle<TNode> child)
         {
-            Debug.Assert(child.IsValid);
-            children.Add(new NodeRef(0, child.Index));
+            if (child.IsValid)
+                children.Add(new NodeRef(0, child.Index));
         }
     }
 }

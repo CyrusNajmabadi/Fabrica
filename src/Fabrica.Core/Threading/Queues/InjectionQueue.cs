@@ -7,7 +7,9 @@ namespace Fabrica.Core.Threading.Queues;
 
 /// <summary>
 /// Thread-safe global injection queue used as the overflow target for <see cref="BoundedLocalQueue{T}"/>.
-/// Backed by a <see cref="Lock"/> and an <see cref="NonCopyableUnsafeStack{T}"/> (LIFO).
+/// Backed by a monitor lock and an <see cref="NonCopyableUnsafeStack{T}"/> (LIFO).
+/// NOTE: Uses plain object+lock instead of System.Threading.Lock to rule out a suspected
+/// runtime bug on Linux x64. Revisit when investigating the AV — see TODO.md.
 ///
 /// LIFO ordering is intentional: recently overflowed items are likely cache-hot, so draining
 /// them first improves locality. This matches Tokio's injection queue behavior.
@@ -18,14 +20,14 @@ namespace Fabrica.Core.Threading.Queues;
 /// </summary>
 internal struct InjectionQueue<T>() where T : class
 {
-    private readonly Lock _lock = new();
+    private readonly object _lock = new();
     private NonCopyableUnsafeStack<T> _stack = NonCopyableUnsafeStack<T>.Create();
 
     /// <summary>Injects an item into the global queue. Called from the overflow path.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Enqueue(T item)
     {
-        using (_lock.EnterScope())
+        lock (_lock)
             _stack.Push(item);
     }
 
@@ -37,7 +39,7 @@ internal struct InjectionQueue<T>() where T : class
     /// </summary>
     public void EnqueueBatch(ReadOnlySpan<T?> segment1, ReadOnlySpan<T?> segment2, T extraItem)
     {
-        using (_lock.EnterScope())
+        lock (_lock)
         {
             _stack.EnsureCapacity(segment1.Length + segment2.Length + 1);
             _stack.PushRange(AsNonNull(segment1));
@@ -59,7 +61,7 @@ internal struct InjectionQueue<T>() where T : class
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T? TryDequeue()
     {
-        using (_lock.EnterScope())
+        lock (_lock)
             return _stack.TryPop(out var item) ? item : null;
     }
 
@@ -68,7 +70,7 @@ internal struct InjectionQueue<T>() where T : class
     {
         get
         {
-            using (_lock.EnterScope())
+            lock (_lock)
                 return _stack.Count;
         }
     }
@@ -78,7 +80,7 @@ internal struct InjectionQueue<T>() where T : class
     {
         get
         {
-            using (_lock.EnterScope())
+            lock (_lock)
                 return _stack.Count == 0;
         }
     }
@@ -98,7 +100,7 @@ internal struct InjectionQueue<T>() where T : class
         public List<T> DrainToList()
         {
             var result = new List<T>();
-            using (_queue._lock.EnterScope())
+            lock (_queue._lock)
             {
                 while (_queue._stack.TryPop(out var item))
                     result.Add(item);

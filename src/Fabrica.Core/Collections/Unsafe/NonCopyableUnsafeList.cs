@@ -1,15 +1,15 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-#if !DEBUG
+#if UNSAFE_OPT
 using System.Runtime.InteropServices;
 #endif
 
 namespace Fabrica.Core.Collections.Unsafe;
 
 /// <summary>
-/// Growable array-backed list with O(1) indexed access. In release builds, indexing uses
-/// <see cref="System.Runtime.CompilerServices.Unsafe"/> to bypass bounds checking for maximum throughput. In debug builds,
-/// standard array access is used so the CLR performs real bounds checking.
+/// Growable array-backed list with O(1) indexed access. When <c>UNSAFE_OPT</c> is defined, indexing uses
+/// <see cref="System.Runtime.CompilerServices.Unsafe"/> to bypass bounds checking for maximum throughput.
+/// Otherwise, standard array access is used so the CLR performs real bounds checking.
 ///
 /// GROWTH
 ///   Doubles the backing array when capacity is exceeded. <see cref="Reset"/> sets the count to
@@ -70,10 +70,10 @@ internal struct NonCopyableUnsafeList<T>(int initialCapacity)
         get
         {
             Debug.Assert((uint)index < (uint)_count, $"Index {index} is out of range [0, {_count}).");
-#if DEBUG
-            return ref _array[index];
-#else
+#if UNSAFE_OPT
             return ref System.Runtime.CompilerServices.Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_array), index);
+#else
+            return ref _array[index];
 #endif
         }
     }
@@ -87,10 +87,10 @@ internal struct NonCopyableUnsafeList<T>(int initialCapacity)
         if (count == array.Length)
             array = this.Grow();
 
-#if DEBUG
-        array[count] = item;
-#else
+#if UNSAFE_OPT
         System.Runtime.CompilerServices.Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), count) = item;
+#else
+        array[count] = item;
 #endif
         _count = count + 1;
     }

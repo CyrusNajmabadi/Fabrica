@@ -1,14 +1,14 @@
 using System.Runtime.CompilerServices;
-#if !DEBUG
+#if UNSAFE_OPT
 using System.Runtime.InteropServices;
 #endif
 
 namespace Fabrica.Core.Memory;
 
 /// <summary>
-/// Two-level array directory with O(1) indexed access to value-type entries. In release builds, indexing uses
-/// <see cref="Unsafe.Add{T}"/> to bypass bounds checking. In debug builds, standard array access is used so the
-/// CLR performs real bounds checking.
+/// Two-level array directory with O(1) indexed access to value-type entries. When <c>UNSAFE_OPT</c> is defined,
+/// indexing uses <see cref="Unsafe.Add{T}"/> to bypass bounds checking. Otherwise, standard array access is
+/// used so the CLR performs real bounds checking.
 ///
 /// The directory is a pre-allocated <c>T[][]</c> where each inner array (slab) has a power-of-2 length, enabling
 /// bit-shift and bitwise-AND to compute <c>(slabIndex, offset)</c> from a flat index.
@@ -38,11 +38,11 @@ internal sealed class UnsafeSlabDirectory<T>(int directoryLength, int slabShift)
             var slabIndex = index >> _slabShift;
             var offset = index & _slabMask;
 
-#if DEBUG
-            return ref _array[slabIndex][offset];
-#else
+#if UNSAFE_OPT
             ref var slab = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_array), slabIndex);
             return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(slab!), offset);
+#else
+            return ref _array[slabIndex][offset];
 #endif
         }
     }
@@ -52,11 +52,11 @@ internal sealed class UnsafeSlabDirectory<T>(int directoryLength, int slabShift)
     {
         var slabIndex = index >> _slabShift;
 
-#if DEBUG
-        _array[slabIndex] ??= new T[_slabLength];
-#else
+#if UNSAFE_OPT
         ref var slab = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_array), slabIndex);
         slab ??= new T[_slabLength];
+#else
+        _array[slabIndex] ??= new T[_slabLength];
 #endif
     }
 }

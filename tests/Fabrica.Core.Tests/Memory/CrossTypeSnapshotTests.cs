@@ -44,15 +44,15 @@ public class CrossTypeSnapshotTests
 
         readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+            visitor.Visit(node.LeftParent);
+            visitor.Visit(node.RightParent);
+            visitor.Visit(node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateChildren<TVisitor>(in ChildNode node, ref TVisitor visitor)
         {
-            if (node.LeftChild.IsValid) visitor.Visit(node.LeftChild);
-            if (node.RightChild.IsValid) visitor.Visit(node.RightChild);
+            visitor.Visit(node.LeftChild);
+            visitor.Visit(node.RightChild);
         }
 
         public readonly void Visit<T>(Handle<T> handle)
@@ -159,10 +159,8 @@ public class CrossTypeSnapshotTests
         var handle = store.Arena.Allocate();
         store.RefCounts.EnsureCapacity(handle.Index + 1);
         store.Arena[handle] = new ChildNode { LeftChild = left, RightChild = right, Value = value };
-        if (left.IsValid)
-            store.RefCounts.Increment(left);
-        if (right.IsValid)
-            store.RefCounts.Increment(right);
+        store.RefCounts.Increment(left);
+        store.RefCounts.Increment(right);
         return handle;
     }
 
@@ -181,12 +179,9 @@ public class CrossTypeSnapshotTests
             RightParent = rightParent,
             ChildRef = childRef,
         };
-        if (leftParent.IsValid)
-            parentStore.RefCounts.Increment(leftParent);
-        if (rightParent.IsValid)
-            parentStore.RefCounts.Increment(rightParent);
-        if (childRef.IsValid)
-            childStore.RefCounts.Increment(childRef);
+        parentStore.RefCounts.Increment(leftParent);
+        parentStore.RefCounts.Increment(rightParent);
+        childStore.RefCounts.Increment(childRef);
         return handle;
     }
 

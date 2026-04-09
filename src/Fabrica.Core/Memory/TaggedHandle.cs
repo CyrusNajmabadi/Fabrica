@@ -10,9 +10,9 @@ namespace Fabrica.Core.Memory;
 /// point into the shared <see cref="UnsafeSlabArena{T}"/>.
 ///
 /// BIT LAYOUT
-///   Global (bit 31 = 0): [0][31 bits: global arena index]  — range 0 to 2,147,483,647
+///   Global (bit 31 = 0, nonzero): [0][31 bits: global arena index]  — range 1 to 2,147,483,647
 ///   Local  (bit 31 = 1): [1][7 bits: thread ID][24 bits: local index]
-///   None   (-1 / 0xFFFFFFFF): sentinel — neither global nor local
+///   None   (0x00000000): sentinel — neither global nor local
 ///
 /// <see cref="Handle{T}"/> itself remains a clean <c>int</c> wrapper. These helpers interpret the
 /// raw index contextually during work phases and the coordinator merge.
@@ -22,27 +22,26 @@ internal static class TaggedHandle
     /// <summary>Maximum number of worker threads that can be encoded in a local handle.</summary>
     internal const int MaxThreads = 128;
 
-    /// <summary>Maximum local index that fits in the 24-bit field (16,777,214).
-    /// One less than the full 24-bit range to avoid colliding with the None sentinel (-1)
-    /// when threadId = 127.</summary>
-    internal const int MaxLocalIndex = 0x00FF_FFFE;
+    /// <summary>Maximum local index that fits in the 24-bit field (16,777,215).
+    /// Full 24-bit range — no sentinel collision since None is 0, not -1.</summary>
+    internal const int MaxLocalIndex = 0x00FF_FFFF;
 
     private const uint LocalBit = 0x8000_0000u;
     private const int ThreadIdShift = 24;
     private const int ThreadIdMask = 0x7F;
     private const int LocalIndexMask = 0x00FF_FFFF;
 
-    /// <summary>Returns <c>true</c> if the index represents a global arena handle (bit 31 = 0, not None).</summary>
+    /// <summary>Returns <c>true</c> if the index represents a global arena handle (bit 31 = 0, nonzero).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool IsGlobal(int index) => index >= 0;
+    public static bool IsGlobal(int index) => index > 0;
 
-    /// <summary>Returns <c>true</c> if the index represents a local thread-buffer handle (bit 31 = 1, not None).</summary>
+    /// <summary>Returns <c>true</c> if the index represents a local thread-buffer handle (bit 31 = 1).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool IsLocal(int index) => index < -1;
+    public static bool IsLocal(int index) => index < 0;
 
-    /// <summary>Returns <c>true</c> if the index is the <see cref="Handle{T}.None"/> sentinel (-1).</summary>
+    /// <summary>Returns <c>true</c> if the index is the <see cref="Handle{T}.None"/> sentinel (0).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool IsNone(int index) => index == -1;
+    public static bool IsNone(int index) => index == 0;
 
     /// <summary>
     /// Encodes a local handle from a thread ID and local buffer index.

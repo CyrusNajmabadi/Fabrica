@@ -388,6 +388,13 @@ public sealed class GlobalNodeStore<TNode, TNodeOps> : GlobalNodeStore
         var ops = _nodeOps;
         while (_cascadePending.TryPop(out var current))
         {
+            // Index 0 is the None-sentinel sink. Its refcount (initialized to int.MaxValue)
+            // should never reach zero, but if it does — e.g. due to extreme wraparound — skip
+            // it rather than reading a default(T) node from slot 0 and cascading into an
+            // infinite loop (all children would also be Handle.None → index 0).
+            if (current.Index == 0)
+                continue;
+
             ref readonly var node = ref this.Arena[current];
             ops.EnumerateChildren(in node, ref ops);
             this.Arena.Free(current);

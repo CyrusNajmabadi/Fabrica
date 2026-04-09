@@ -5,7 +5,7 @@
 ; fp based frame
 ; partially interruptible
 ; No PGO data
-; 0 inlinees with PGO data; 7 single block inlinees; 3 inlinees without PGO data
+; 0 inlinees with PGO data; 4 single block inlinees; 2 inlinees without PGO data
 
 G_M000_IG01:                ;; offset=0x0000
             stp     fp, lr, [sp, #-0x10]!
@@ -13,9 +13,6 @@ G_M000_IG01:                ;; offset=0x0000
  
 G_M000_IG02:                ;; offset=0x0008
             ldr     w0, [x1]
-            tbnz    w0, #31, G_M000_IG04
- 
-G_M000_IG03:                ;; offset=0x0010
             ldr     x1, [x2]
             ldp     w2, w3, [x1, #0x14]
             asr     w2, w0, w2
@@ -30,9 +27,9 @@ G_M000_IG03:                ;; offset=0x0010
             sub     w1, w1, #1
             str     w1, [x0]
  
-G_M000_IG04:                ;; offset=0x0044
+G_M000_IG03:                ;; offset=0x0040
             ldp     fp, lr, [sp], #0x10
             ret     lr
  
-; Total bytes of code 76
+; Total bytes of code 72
 

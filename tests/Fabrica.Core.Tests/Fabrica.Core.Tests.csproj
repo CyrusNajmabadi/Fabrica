@@ -2,4 +2,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\Fabrica.Core\Fabrica.Core.csproj" />
 	</ItemGroup>
+	<ItemGroup>
+	  <PackageReference Include="DiffPlex" />
+	</ItemGroup>
 </Project>

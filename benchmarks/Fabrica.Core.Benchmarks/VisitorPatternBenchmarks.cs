@@ -76,9 +76,9 @@ public class VisitorPatternBenchmarks
         public readonly void EnumerateChildren<TAction>(in ParentNode node, ref TAction visitor)
             where TAction : struct, INodeVisitor
         {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
-            if (node.RightParent.IsValid) visitor.Visit(node.RightParent);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+            visitor.Visit(node.LeftParent);
+            visitor.Visit(node.RightParent);
+            visitor.Visit(node.ChildRef);
         }
     }
 
@@ -88,8 +88,8 @@ public class VisitorPatternBenchmarks
         public readonly void EnumerateChildren<TAction>(in ChildNode node, ref TAction visitor)
             where TAction : struct, INodeVisitor
         {
-            if (node.Left.IsValid) visitor.Visit(node.Left);
-            if (node.Right.IsValid) visitor.Visit(node.Right);
+            visitor.Visit(node.Left);
+            visitor.Visit(node.Right);
         }
     }
 
@@ -276,7 +276,7 @@ public class VisitorPatternBenchmarks
         {
             w.ParentRefCounts.Increment(_parentHandles[i]);
             ref readonly var node = ref w.ParentArena[_parentHandles[i]];
-            if (node.ChildRef.IsValid) w.ChildRefCounts.Increment(node.ChildRef);
+            w.ChildRefCounts.Increment(node.ChildRef);
         }
 
         for (var i = 0; i < this.N; i++)
@@ -299,7 +299,7 @@ public class VisitorPatternBenchmarks
         {
             w.ParentRefCounts.Increment(_parentHandles[i]);
             ref readonly var node = ref w.ParentArena[_parentHandles[i]];
-            if (node.ChildRef.IsValid) w.ChildRefCounts.Increment(node.ChildRef);
+            w.ChildRefCounts.Increment(node.ChildRef);
         }
 
         for (var i = 0; i < this.N; i++)

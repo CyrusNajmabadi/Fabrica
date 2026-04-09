@@ -21,4 +21,3 @@ G_M000_IG03:                ;; offset=0x0021
        ret      
  
 ; Total bytes of code 38
-

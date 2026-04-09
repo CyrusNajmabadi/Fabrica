@@ -52,7 +52,16 @@ internal readonly struct RefCountTable<T> where T : struct
     }
 
     private RefCountTable(int directoryLength, int slabShift)
-        => _directory = new UnsafeSlabDirectory<int>(directoryLength, slabShift);
+    {
+        _directory = new UnsafeSlabDirectory<int>(directoryLength, slabShift);
+
+        // Slot 0 is the None-sentinel sink — Increment/Decrement may be called on it when
+        // INodeOps enumerate children unconditionally (no IsValid guard). Setting the initial
+        // refcount to int.MaxValue guarantees Decrement never reaches zero (would require ~2 billion
+        // releases), so the cascade/free path is never triggered for the sentinel.
+        _directory.EnsureSlab(0);
+        _directory[0] = int.MaxValue;
+    }
 
     // ── Capacity management ──────────────────────────────────────────────
 
@@ -83,12 +92,13 @@ internal readonly struct RefCountTable<T> where T : struct
     /// <summary>
     /// Decrements the refcount at the given handle. Returns <c>true</c> if the refcount reached zero,
     /// indicating that the caller should cascade (enumerate children, decrement their refcounts, and
-    /// free the arena slot).
+    /// free the arena slot). Slot 0 (the None sentinel) absorbs decrements harmlessly — its refcount
+    /// starts at <see cref="int.MaxValue"/> and never reaches zero.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Decrement(Handle<T> handle)
     {
-        Debug.Assert(_directory[handle.Index] > 0, $"Decrement on index {handle.Index} with refcount already at {_directory[handle.Index]}.");
+        Debug.Assert(handle.Index == 0 || _directory[handle.Index] > 0, $"Decrement on index {handle.Index} with refcount already at {_directory[handle.Index]}.");
         return --_directory[handle.Index] == 0;
     }
 

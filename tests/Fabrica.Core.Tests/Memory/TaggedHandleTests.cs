@@ -10,13 +10,12 @@ public class TaggedHandleTests
     [Fact]
     public void None_IsNone()
     {
-        Assert.True(TaggedHandle.IsNone(-1));
-        Assert.False(TaggedHandle.IsGlobal(-1));
-        Assert.False(TaggedHandle.IsLocal(-1));
+        Assert.True(TaggedHandle.IsNone(0));
+        Assert.False(TaggedHandle.IsGlobal(0));
+        Assert.False(TaggedHandle.IsLocal(0));
     }
 
     [Theory]
-    [InlineData(0)]
     [InlineData(1)]
     [InlineData(1000)]
     [InlineData(int.MaxValue)]
@@ -31,7 +30,7 @@ public class TaggedHandleTests
     [InlineData(0, 0)]
     [InlineData(0, 1)]
     [InlineData(127, 0)]
-    [InlineData(64, 0x00FF_FFFE)]
+    [InlineData(64, 0x00FF_FFFF)]
     public void Local_IsLocal(int threadId, int localIndex)
     {
         var encoded = TaggedHandle.EncodeLocal(threadId, localIndex);
@@ -47,8 +46,8 @@ public class TaggedHandleTests
     [InlineData(0, 1)]
     [InlineData(1, 0)]
     [InlineData(127, 0)]
-    [InlineData(0, 0x00FF_FFFE)]
-    [InlineData(127, 0x00FF_FFFE)]
+    [InlineData(0, 0x00FF_FFFF)]
+    [InlineData(127, 0x00FF_FFFF)]
     [InlineData(64, 12345)]
     [InlineData(1, 1)]
     public void EncodeLocal_Roundtrips(int threadId, int localIndex)
@@ -88,7 +87,7 @@ public class TaggedHandleTests
     public void MaxBoth_DoesNotCollideWithNone()
     {
         var encoded = TaggedHandle.EncodeLocal(127, TaggedHandle.MaxLocalIndex);
-        Assert.NotEqual(-1, encoded);
+        Assert.NotEqual(0, encoded);
         Assert.False(TaggedHandle.IsNone(encoded));
         Assert.True(TaggedHandle.IsLocal(encoded));
     }
@@ -102,7 +101,7 @@ public class TaggedHandleTests
         {
             var encoded = TaggedHandle.EncodeLocal(threadId, 0);
             Assert.False(TaggedHandle.IsNone(encoded),
-                $"EncodeLocal({threadId}, 0) produced -1 (None sentinel).");
+                $"EncodeLocal({threadId}, 0) produced 0 (None sentinel).");
         }
     }
 
@@ -131,6 +130,6 @@ public class TaggedHandleTests
         => Assert.Equal(128, TaggedHandle.MaxThreads);
 
     [Fact]
-    public void MaxLocalIndex_Is16M_Minus2()
-        => Assert.Equal(0x00FF_FFFE, TaggedHandle.MaxLocalIndex);
+    public void MaxLocalIndex_IsFull24BitRange()
+        => Assert.Equal(0x00FF_FFFF, TaggedHandle.MaxLocalIndex);
 }

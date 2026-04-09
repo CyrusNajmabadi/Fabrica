@@ -58,14 +58,21 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     }
 
     private UnsafeSlabArena(int directoryLength, int slabShift)
-        => _directory = new UnsafeSlabDirectory<T>(directoryLength, slabShift);
+    {
+        _directory = new UnsafeSlabDirectory<T>(directoryLength, slabShift);
+
+        // Reserve slot 0 as the None-sentinel sink. All Handle<T>.None references point here,
+        // so it must be backed by a real slab. Bump _highWater past it so real allocations start at 1.
+        _directory.EnsureSlab(0);
+        _highWater = 1;
+    }
 
     // ── Public API ────────────────────────────────────────────────────────
 
     /// <summary>
     /// Exclusive upper bound on indices reserved by bump allocation (<see cref="Allocate"/>, <see cref="AllocateBatch"/>):
-    /// valid handles satisfy <c>0 &lt;= index &lt; HighWater</c> (free-list reuse may still reference indices below this
-    /// mark). Single-threaded readers may observe this after coordinator-side merges for sizing and iteration ranges.
+    /// valid handles satisfy <c>1 &lt;= index &lt; HighWater</c> (index 0 is the reserved None-sentinel sink).
+    /// Single-threaded readers may observe this after coordinator-side merges for sizing and iteration ranges.
     /// </summary>
     public int HighWater
     {
@@ -82,7 +89,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-            Debug.Assert(handle.Index >= 0 && handle.Index < _highWater, $"Index {handle.Index} is out of range [0, {_highWater}).");
+            Debug.Assert(handle.Index > 0 && handle.Index < _highWater, $"Index {handle.Index} is out of range [1, {_highWater}).");
             return ref _directory[handle.Index];
         }
     }
@@ -153,7 +160,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     public void Free(Handle<T> handle)
     {
         _owner.AssertOwnerThread();
-        Debug.Assert(handle.Index >= 0 && handle.Index < _highWater, $"Free index {handle.Index} is out of range [0, {_highWater}).");
+        Debug.Assert(handle.Index > 0 && handle.Index < _highWater, $"Free index {handle.Index} is out of range [1, {_highWater}).");
         _freeList.Push(handle);
         _count--;
     }

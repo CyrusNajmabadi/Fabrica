@@ -40,8 +40,8 @@ public class CoordinatorMergeTests
 
         readonly void INodeOps<ParentNode>.EnumerateChildren<TVisitor>(in ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent.IsValid) visitor.Visit(node.LeftParent);
-            if (node.ChildRef.IsValid) visitor.Visit(node.ChildRef);
+            visitor.Visit(node.LeftParent);
+            visitor.Visit(node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateChildren<TVisitor>(in ChildNode node, ref TVisitor visitor)
@@ -50,8 +50,8 @@ public class CoordinatorMergeTests
 
         readonly void INodeOps<ParentNode>.IncrementChildRefCounts(in ParentNode node)
         {
-            if (node.LeftParent.IsValid) ParentStore.IncrementRefCount(node.LeftParent);
-            if (node.ChildRef.IsValid) ChildStore.IncrementRefCount(node.ChildRef);
+            ParentStore.IncrementRefCount(node.LeftParent);
+            ChildStore.IncrementRefCount(node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.IncrementChildRefCounts(in ChildNode node)
@@ -60,8 +60,8 @@ public class CoordinatorMergeTests
 
         readonly void INodeOps<ParentNode>.EnumerateRefChildren<TVisitor>(ref ParentNode node, ref TVisitor visitor)
         {
-            if (node.LeftParent != Handle<ParentNode>.None) visitor.VisitRef(ref node.LeftParent);
-            if (node.ChildRef != Handle<ChildNode>.None) visitor.VisitRef(ref node.ChildRef);
+            visitor.VisitRef(ref node.LeftParent);
+            visitor.VisitRef(ref node.ChildRef);
         }
 
         readonly void INodeOps<ChildNode>.EnumerateRefChildren<TVisitor>(ref ChildNode node, ref TVisitor visitor)
@@ -159,16 +159,16 @@ public class CoordinatorMergeTests
 
         var (start, count) = childStore.DrainBuffers();
 
-        Assert.Equal(0, start);
+        Assert.Equal(1, start);
         Assert.Equal(3, count);
 
-        Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
-        Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
-        Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(2)].Value);
+        Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(1)].Value);
+        Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(2)].Value);
+        Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(3)].Value);
 
-        Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
-        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(1, 0));
-        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(1, 1));
+        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(1, 0));
+        Assert.Equal(3, childStore.GetTestAccessor().Remap.Resolve(1, 1));
     }
 
     [Fact]
@@ -178,9 +178,9 @@ public class CoordinatorMergeTests
 
         var (start, count) = childStore.DrainBuffers();
 
-        Assert.Equal(0, start);
+        Assert.Equal(1, start);
         Assert.Equal(0, count);
-        Assert.Equal(0, childStore.Arena.GetTestAccessor().HighWater);
+        Assert.Equal(1, childStore.Arena.GetTestAccessor().HighWater);
     }
 
     [Fact]
@@ -198,14 +198,14 @@ public class CoordinatorMergeTests
 
         var (start, count) = childStore.DrainBuffers();
 
-        Assert.Equal(0, start);
+        Assert.Equal(1, start);
         Assert.Equal(2, count);
 
-        Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
-        Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(1)].Value);
+        Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(1)].Value);
+        Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(2)].Value);
 
-        Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
-        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(2, 0));
+        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(2, 0));
     }
 
     // ═══════════════════════════ Phase 2a tests ══════════════════════════
@@ -233,9 +233,9 @@ public class CoordinatorMergeTests
         childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
-        ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
+        ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(1)];
         Assert.Equal(Handle<ParentNode>.None, parent.LeftParent);
-        Assert.Equal(0, parent.ChildRef.Index);
+        Assert.Equal(1, parent.ChildRef.Index);
         Assert.True(TaggedHandle.IsGlobal(parent.ChildRef.Index));
     }
 
@@ -244,10 +244,10 @@ public class CoordinatorMergeTests
     {
         var (parentStore, childStore) = CreateStores(1);
 
-        // Pre-existing global child at index 0
+        // Pre-existing global child at index 1 (index 0 is the None sentinel)
         var globalChild = childStore.Arena.Allocate();
         childStore.Arena[globalChild] = new ChildNode { Value = 99 };
-        childStore.RefCounts.EnsureCapacity(1);
+        childStore.RefCounts.EnsureCapacity(2);
 
         var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
         parentThreadLocalBuffers[0].Allocate(new ParentNode
@@ -262,7 +262,7 @@ public class CoordinatorMergeTests
         childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
-        ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(0)];
+        ref readonly var parent = ref parentStore.Arena[new Handle<ParentNode>(1)];
         Assert.Equal(globalChild, parent.ChildRef);
     }
 
@@ -317,21 +317,21 @@ public class CoordinatorMergeTests
         var (childStart, childCount) = childStore.DrainBuffers();
         var (parentStart, parentCount) = parentStore.DrainBuffers();
 
-        Assert.Equal(0, childStart);
+        Assert.Equal(1, childStart);
         Assert.Equal(3, childCount);
-        Assert.Equal(0, parentStart);
+        Assert.Equal(1, parentStart);
         Assert.Equal(3, parentCount);
 
-        Assert.Equal(0, childStore.GetTestAccessor().Remap.Resolve(0, 0));
-        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(1, 0));
-        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(1, 1));
-        Assert.Equal(0, parentStore.GetTestAccessor().Remap.Resolve(0, 0));
-        Assert.Equal(1, parentStore.GetTestAccessor().Remap.Resolve(1, 0));
-        Assert.Equal(2, parentStore.GetTestAccessor().Remap.Resolve(1, 1));
+        Assert.Equal(1, childStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(2, childStore.GetTestAccessor().Remap.Resolve(1, 0));
+        Assert.Equal(3, childStore.GetTestAccessor().Remap.Resolve(1, 1));
+        Assert.Equal(1, parentStore.GetTestAccessor().Remap.Resolve(0, 0));
+        Assert.Equal(2, parentStore.GetTestAccessor().Remap.Resolve(1, 0));
+        Assert.Equal(3, parentStore.GetTestAccessor().Remap.Resolve(1, 1));
 
-        Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(0)].Value);
-        Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(1)].Value);
-        Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(2)].Value);
+        Assert.Equal(10, childStore.Arena[new Handle<ChildNode>(1)].Value);
+        Assert.Equal(20, childStore.Arena[new Handle<ChildNode>(2)].Value);
+        Assert.Equal(30, childStore.Arena[new Handle<ChildNode>(3)].Value);
 
         // ── Rewrite + refcount ───────────────────────────────────────────
         // Barrier: all types finished Phase 1 before fixup begins.
@@ -342,34 +342,34 @@ public class CoordinatorMergeTests
         childStore.RewriteAndIncrementRefCounts();
 
         // Verify all handles are now global
-        ref readonly var p0 = ref parentStore.Arena[new Handle<ParentNode>(0)];
+        ref readonly var p0 = ref parentStore.Arena[new Handle<ParentNode>(1)];
         Assert.Equal(Handle<ParentNode>.None, p0.LeftParent);
-        Assert.Equal(0, p0.ChildRef.Index);
+        Assert.Equal(1, p0.ChildRef.Index);
         Assert.True(TaggedHandle.IsGlobal(p0.ChildRef.Index));
 
-        ref readonly var p1 = ref parentStore.Arena[new Handle<ParentNode>(1)];
+        ref readonly var p1 = ref parentStore.Arena[new Handle<ParentNode>(2)];
         Assert.Equal(Handle<ParentNode>.None, p1.LeftParent);
-        Assert.Equal(1, p1.ChildRef.Index);
+        Assert.Equal(2, p1.ChildRef.Index);
         Assert.True(TaggedHandle.IsGlobal(p1.ChildRef.Index));
 
-        ref readonly var p2 = ref parentStore.Arena[new Handle<ParentNode>(2)];
-        Assert.Equal(1, p2.LeftParent.Index);
+        ref readonly var p2 = ref parentStore.Arena[new Handle<ParentNode>(3)];
+        Assert.Equal(2, p2.LeftParent.Index);
         Assert.True(TaggedHandle.IsGlobal(p2.LeftParent.Index));
-        Assert.Equal(2, p2.ChildRef.Index);
+        Assert.Equal(3, p2.ChildRef.Index);
         Assert.True(TaggedHandle.IsGlobal(p2.ChildRef.Index));
 
-        // child[0]: from parent[0] → RC=1
         // child[1]: from parent[1] → RC=1
         // child[2]: from parent[2] → RC=1
-        // parent[0]: unreferenced → RC=0
-        // parent[1]: from parent[2].LeftParent → RC=1
-        // parent[2]: unreferenced → RC=0
-        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
+        // child[3]: from parent[3] → RC=1
+        // parent[1]: unreferenced → RC=0
+        // parent[2]: from parent[3].LeftParent → RC=1
+        // parent[3]: unreferenced → RC=0
         Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(1)));
         Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(2)));
-        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
-        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
-        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
+        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(3)));
+        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
+        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(3)));
 
         // ── Root collection + remap + increment ──────────────────────────
 
@@ -378,13 +378,13 @@ public class CoordinatorMergeTests
         var roots = rootList.WrittenSpan;
 
         Assert.Equal(2, roots.Length);
-        Assert.Equal(0, roots[0].Index); // p0T0 → global 0
-        Assert.Equal(2, roots[1].Index); // p1T1 → global 2
+        Assert.Equal(1, roots[0].Index); // p0T0 → global 1
+        Assert.Equal(3, roots[1].Index); // p1T1 → global 3
 
         parentStore.GetTestAccessor().IncrementRoots(roots);
 
-        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
-        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(3)));
 
         DagValidator.NodeRef[] dagRoots = [new(ParentTypeId, roots[0].Index), new(ParentTypeId, roots[1].Index)];
         DagValidator.AssertValid(dagRoots, new MergeWorldAccessor(parentStore, childStore), strict: true);
@@ -424,18 +424,18 @@ public class CoordinatorMergeTests
         parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
-        Assert.Equal(0, roots[0].Index);
+        Assert.Equal(1, roots[0].Index);
 
         parentStore.GetTestAccessor().IncrementRoots(roots);
 
-        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
-        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(1)));
 
         // ReleaseSnapshotSlice — should cascade-free the entire graph
         parentStore.GetTestAccessor().DecrementRoots(roots);
 
-        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
-        Assert.Equal(0, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
+        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(0, childStore.RefCounts.GetCount(new Handle<ChildNode>(1)));
         Assert.Equal(0, parentStore.Arena.GetTestAccessor().Count);
         Assert.Equal(0, childStore.Arena.GetTestAccessor().Count);
     }
@@ -477,23 +477,23 @@ public class CoordinatorMergeTests
         childStore.SetMergeActive(true);
         parentStore.RewriteAndIncrementRefCounts();
 
-        // After structural refcount pass: inner(0) has RC=1 (from root), root(1) has RC=0, leaf(0) has RC=1 (from inner)
-        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
-        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
-        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
+        // After structural refcount pass: inner(1) has RC=1 (from root), root(2) has RC=0, leaf(1) has RC=1 (from inner)
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
+        Assert.Equal(0, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
+        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(1)));
 
         // Collect + remap roots, then increment
         var rootList = NonCopyableUnsafeList<Handle<ParentNode>>.Create();
         parentStore.GetTestAccessor().CollectAndRemapRoots(ref rootList);
         var roots = rootList.WrittenSpan;
         Assert.Equal(1, roots.Length);
-        Assert.Equal(1, roots[0].Index);
+        Assert.Equal(2, roots[0].Index);
 
         parentStore.GetTestAccessor().IncrementRoots(roots);
 
-        // After increment: root(1) now has RC=1, inner and leaf unchanged
-        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(0)));
+        // After increment: root(2) now has RC=1, inner and leaf unchanged
         Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(1)));
-        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(0)));
+        Assert.Equal(1, parentStore.RefCounts.GetCount(new Handle<ParentNode>(2)));
+        Assert.Equal(1, childStore.RefCounts.GetCount(new Handle<ChildNode>(1)));
     }
 }
