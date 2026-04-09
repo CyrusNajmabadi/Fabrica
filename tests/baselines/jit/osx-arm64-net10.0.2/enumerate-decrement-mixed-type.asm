@@ -17,7 +17,6 @@ G_M000_IG02:                ;; offset=0x0008
  
 G_M000_IG03:                ;; offset=0x0010
             ldr     x1, [x2]
-            ldr     x1, [x1, #0x08]
             ldp     w2, w3, [x1, #0x14]
             asr     w2, w0, w2
             and     w0, w0, w3
@@ -31,9 +30,9 @@ G_M000_IG03:                ;; offset=0x0010
             sub     w1, w1, #1
             str     w1, [x0]
  
-G_M000_IG04:                ;; offset=0x0048
+G_M000_IG04:                ;; offset=0x0044
             ldp     fp, lr, [sp], #0x10
             ret     lr
  
-; Total bytes of code 80
+; Total bytes of code 76
 

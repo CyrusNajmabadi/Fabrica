@@ -16,8 +16,8 @@ G_M000_IG02:                ;; offset=0x0008
             tbnz    w0, #31, G_M000_IG04
  
 G_M000_IG03:                ;; offset=0x0010
-            ldr     x3, [x2, #0x08]
-            ldr     x3, [x3, #0x08]
+            add     x3, x2, #8
+            ldr     x3, [x3]
             ldp     w4, w5, [x3, #0x14]
             asr     w4, w0, w4
             and     w0, w0, w5
@@ -36,8 +36,8 @@ G_M000_IG04:                ;; offset=0x0048
             tbnz    w0, #31, G_M000_IG06
  
 G_M000_IG05:                ;; offset=0x0050
-            ldr     x1, [x2, #0x08]
-            ldr     x1, [x1, #0x08]
+            add     x1, x2, #8
+            ldr     x1, [x1]
             ldp     w2, w3, [x1, #0x14]
             asr     w2, w0, w2
             and     w0, w0, w3

@@ -36,15 +36,16 @@ internal struct BenchNodeOps : INodeOps<BenchNode>
 
     readonly void INodeOps<BenchNode>.IncrementChildRefCounts(in BenchNode node)
     {
-        if (node.Child0.IsValid) Store.IncrementRefCount(node.Child0);
-        if (node.Child1.IsValid) Store.IncrementRefCount(node.Child1);
-        if (node.Child2.IsValid) Store.IncrementRefCount(node.Child2);
-        if (node.Child3.IsValid) Store.IncrementRefCount(node.Child3);
-        if (node.Child4.IsValid) Store.IncrementRefCount(node.Child4);
-        if (node.Child5.IsValid) Store.IncrementRefCount(node.Child5);
-        if (node.Child6.IsValid) Store.IncrementRefCount(node.Child6);
-        if (node.Child7.IsValid) Store.IncrementRefCount(node.Child7);
-        if (node.Next.IsValid) Store.IncrementRefCount(node.Next);
+        var refCounts = Store.RefCounts;
+        if (node.Child0.IsValid) refCounts.Increment(node.Child0);
+        if (node.Child1.IsValid) refCounts.Increment(node.Child1);
+        if (node.Child2.IsValid) refCounts.Increment(node.Child2);
+        if (node.Child3.IsValid) refCounts.Increment(node.Child3);
+        if (node.Child4.IsValid) refCounts.Increment(node.Child4);
+        if (node.Child5.IsValid) refCounts.Increment(node.Child5);
+        if (node.Child6.IsValid) refCounts.Increment(node.Child6);
+        if (node.Child7.IsValid) refCounts.Increment(node.Child7);
+        if (node.Next.IsValid) refCounts.Increment(node.Next);
     }
 
     public readonly void VisitRef<T>(ref Handle<T> handle) where T : struct
