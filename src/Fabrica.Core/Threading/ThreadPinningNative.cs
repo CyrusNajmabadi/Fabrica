@@ -39,8 +39,6 @@ public static partial class ThreadPinningNative
         {
             if (OperatingSystem.IsWindows())
                 return TryPinWindows(coreIndex);
-            if (OperatingSystem.IsLinux())
-                return TryPinLinux(coreIndex);
         }
         catch
         {
