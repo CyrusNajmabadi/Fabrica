@@ -331,15 +331,15 @@ public class JobSchedulerTests
         // readied dependent at bit 0 or bit 63 of some long word.
         for (var longIdx = 0; longIdx <= 16; longIdx++)
         {
-            Add(longIdx * 64 + 1);  // bit 0 of long[longIdx] is the last set bit
-            Add(longIdx * 64 + 63); // bit 62 of long[longIdx] is the last set bit
-            Add(longIdx * 64 + 64); // bit 63 of long[longIdx] is the last set bit
+            Add((longIdx * 64) + 1);  // bit 0 of long[longIdx] is the last set bit
+            Add((longIdx * 64) + 63); // bit 62 of long[longIdx] is the last set bit
+            Add((longIdx * 64) + 64); // bit 63 of long[longIdx] is the last set bit
         }
 
         // Both sides of a long boundary: count lands so that bits 63 and 0
         // of adjacent longs are both set (i.e. exactly N*64 + 1 dependents).
         for (var n = 1; n <= 16; n++)
-            Add(n * 64 + 1);
+            Add((n * 64) + 1);
 
         // Power-of-two counts (stress doubling patterns)
         for (var p = 1; p <= 1024; p *= 2)
@@ -429,6 +429,150 @@ public class JobSchedulerTests
         }
 
         return data;
+    }
+
+    // ── Concurrency stress for batched increment + deferred push ────────────
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(12)]
+    public void Stress_WideDiamond_Repeated(int workerCount)
+    {
+        const int Iterations = 50;
+        const int FanWidth = 200;
+
+        using var pool = new WorkerPool(workerCount: workerCount, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+            var root = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+            for (var i = 0; i < FanWidth; i++)
+            {
+                var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                child.DependsOn(root);
+                join.DependsOn(child);
+            }
+
+            accessor.Submit(root);
+            Assert.Equal(FanWidth + 2, executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
+    }
+
+    [Fact]
+    public void Stress_MultiRootSharedJoin()
+    {
+        const int RootCount = 10;
+        const int ChildrenPerRoot = 20;
+        const int Iterations = 50;
+
+        using var pool = new WorkerPool(workerCount: 8, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+            var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+            var roots = new TestJob[RootCount];
+            for (var r = 0; r < RootCount; r++)
+            {
+                roots[r] = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                for (var c = 0; c < ChildrenPerRoot; c++)
+                {
+                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    child.DependsOn(roots[r]);
+                    join.DependsOn(child);
+                }
+            }
+
+            foreach (var root in roots)
+                accessor.Inject(root);
+            accessor.WaitForCompletion();
+
+            Assert.Equal(RootCount + (RootCount * ChildrenPerRoot) + 1, executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
+    }
+
+    [Fact]
+    public void Stress_CascadingFanOutFanIn()
+    {
+        const int Stages = 5;
+        const int FanWidth = 50;
+        const int Iterations = 50;
+
+        using var pool = new WorkerPool(workerCount: 8, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+            var source = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var current = source;
+
+            for (var stage = 0; stage < Stages; stage++)
+            {
+                var stageJoin = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                for (var i = 0; i < FanWidth; i++)
+                {
+                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    child.DependsOn(current);
+                    stageJoin.DependsOn(child);
+                }
+
+                current = stageJoin;
+            }
+
+            accessor.Submit(source);
+            Assert.Equal(1 + (Stages * (FanWidth + 1)), executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
+    }
+
+    [Fact]
+    public void Stress_InterleavedDiamonds()
+    {
+        const int DiamondCount = 20;
+        const int FanWidth = 30;
+        const int Iterations = 30;
+
+        using var pool = new WorkerPool(workerCount: 8, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var accessor = scheduler.GetTestAccessor();
+
+        for (var iteration = 0; iteration < Iterations; iteration++)
+        {
+            var executionCount = 0;
+
+            for (var d = 0; d < DiamondCount; d++)
+            {
+                var root = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+
+                for (var i = 0; i < FanWidth; i++)
+                {
+                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    child.DependsOn(root);
+                    join.DependsOn(child);
+                }
+
+                accessor.Inject(root);
+            }
+
+            accessor.WaitForCompletion();
+            Assert.Equal(DiamondCount * (FanWidth + 2), executionCount);
+            Assert.Equal(0, accessor.OutstandingJobs);
+        }
     }
 
     // ── Two schedulers sharing one pool ──────────────────────────────────────
