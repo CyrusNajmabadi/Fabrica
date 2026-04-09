@@ -60,7 +60,7 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
     internal void Enqueue(Job job)
     {
         Debug.Assert(CurrentScheduler != null, "Enqueue is only valid during Job.Execute.");
-        var scheduler = CurrentScheduler!;
+        var scheduler = CurrentScheduler;
 
 #if DEBUG
         Debug.Assert(job.State == JobState.Pending);
