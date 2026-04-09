@@ -26,7 +26,7 @@ public sealed class ThreadPinningTests
         Assert.False(ThreadPinningNative.TryPinCurrentThread(int.MaxValue));
     }
 
-// Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
+    // Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
 #if false
     [Fact]
     public void TryPinCurrentThread_Linux_AffinityMaskReflectsPin()
@@ -89,7 +89,7 @@ public sealed class ThreadPinningTests
         Assert.Equal(ThreadPinningNative.QOS_CLASS_USER_INITIATED, observedQos);
     }
 
-// Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
+    // Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
 #if false
     /// <summary>
     /// Verifies that <see cref="ThreadPinningNative.StartNativeThreadWithHighQos"/> creates threads with
@@ -165,7 +165,7 @@ public sealed class ThreadPinningTests
         Assert.Equal(WorkerCount, bgCount);
     }
 
-// Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
+    // Linux thread pinning is currently disabled — see TODO.md for re-enablement tracking.
 #if false
     /// <summary>
     /// End-to-end: creates a <see cref="WorkerPool"/> and verifies that background worker threads
