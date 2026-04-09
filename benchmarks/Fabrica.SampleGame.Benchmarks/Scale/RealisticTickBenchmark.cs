@@ -1,59 +1,59 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Columns;
+using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using Fabrica.Core.Jobs;
-using Fabrica.Core.Memory;
 using Fabrica.SampleGame.Benchmarks.Scale;
 
 namespace Fabrica.SampleGame.Benchmarks;
 
 /// <summary>
-/// Models a realistic game tick: 4 sequential phases with parallel fan-out within each phase.
-/// Each job does ~15-20μs of real CPU work (hash-mixing), and the final phase also allocates
-/// nodes through the arena system. Job counts are multiples of 12 (P-core count on Apple M4 Max)
-/// to eliminate ceil-division rounding waste and isolate true scheduler overhead.
+/// Measures pure scheduler overhead: 4 identical sequential phases, each fanning out
+/// 192 ComputeJobs across 12 P-cores (16 jobs/core). Every job does ~15-20μs of hash-mixing
+/// in L1-resident arrays. No arena allocation or snapshot merging — just compute + scheduling.
 ///
-///   Phase 1 (AI/Decision):     192 ComputeJobs  (16 per core)
-///   Phase 2 (Physics):         192 ComputeJobs  (16 per core)
-///   Phase 3 (World Update):     96 ComputeJobs  ( 8 per core)
-///   Phase 4 (Snapshot):         48 SnapshotJobs  ( 4 per core) + 1 SnapshotCollectorJob
+///   Phase 1 → Phase 2 → Phase 3 → Phase 4   (each: 192 ComputeJobs, barrier between)
 ///
-/// Total: ~530 jobs. Every phase divides evenly across 12 cores — no straggler waste.
+/// Total: 768 compute jobs + 1 trigger + 4 barriers = 773 jobs per tick.
+/// Optimal = (768 × per-job work) / 12 cores.
 /// </summary>
-[MemoryDiagnoser]
+[Config(typeof(DiagnoserConfig))]
 [EventPipeProfiler(EventPipeProfile.CpuSampling)]
 public class RealisticTickBenchmark
 {
-    private const int Phase1Count = 192;
-    private const int Phase2Count = 192;
-    private const int Phase3Count = 96;
-    private const int Phase4Count = 48;
-    private const int SnapshotNodeCount = 10;
+    private sealed class DiagnoserConfig : ManualConfig
+    {
+        public DiagnoserConfig()
+        {
+            this.AddDiagnoser(MemoryDiagnoser.Default);
+            this.AddDiagnoser(ThreadingDiagnoser.Default);
+
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                this.AddDiagnoser(new DisassemblyDiagnoser(new DisassemblyDiagnoserConfig(maxDepth: 3, printSource: true)));
+
+            this.AddColumn(StatisticColumn.Median);
+            this.AddColumn(StatisticColumn.P95);
+            this.AddColumn(StatisticColumn.OperationsPerSecond);
+        }
+    }
+
+    private const int JobsPerPhase = 192;
+    private const int PhaseCount = 4;
+    private const int Cores = 12;
 
     /// <summary>
     /// Hash-mixing iterations per job. Calibrate so each job takes ~15-20μs.
-    /// Halved from 50k (with 2× job counts) to keep total work per phase constant while giving
-    /// every phase a clean multiple of 12 cores — eliminating ceil-division rounding waste.
     /// </summary>
     private const int ComputeIterations = 25_000;
 
     private WorkerPool _pool = null!;
     private JobScheduler _scheduler = null!;
-    private GlobalNodeStore<BenchNode, BenchNodeOps> _store = null!;
-    private MergeCoordinator _coordinator;
 
     private TriggerJob _trigger = null!;
-    private ComputeJob[] _phase1 = null!;
-    private BarrierJob _barrier1 = null!;
-    private ComputeJob[] _phase2 = null!;
-    private BarrierJob _barrier2 = null!;
-    private ComputeJob[] _phase3 = null!;
-    private BarrierJob _barrier3 = null!;
-    private SnapshotJob[] _phase4 = null!;
-    private SnapshotCollectorJob _collector = null!;
-
-    private SnapshotSlice<BenchNode, BenchNodeOps> _previousSlice;
-    private bool _hasPreviousSlice;
+    private ComputeJob[][] _phases = null!;
+    private BarrierJob[] _barriers = null!;
 
     [GlobalSetup]
     public void GlobalSetup()
@@ -62,10 +62,6 @@ public class RealisticTickBenchmark
 
         _pool = new WorkerPool(coordinatorCount: 1);
         _scheduler = new JobScheduler(_pool);
-        _store = new GlobalNodeStore<BenchNode, BenchNodeOps>(_pool.WorkerCount);
-        var ops = new BenchNodeOps { Store = _store };
-        _store.SetNodeOps(ops);
-        _coordinator = new MergeCoordinator([_store]);
 
         this.AllocateJobs();
 
@@ -78,29 +74,13 @@ public class RealisticTickBenchmark
     {
         this.RunPhaseAnalysis();
         this.RunSchedulerAnalysis();
-
-        if (_hasPreviousSlice)
-            _store.ReleaseSnapshotSlice(_previousSlice);
         _pool.Dispose();
     }
 
     [Benchmark]
     public void OneTick() => this.RunOneTick();
 
-    private void RunOneTick()
-    {
-        this.WireAndSubmit();
-
-        SnapshotSlice<BenchNode, BenchNodeOps> slice;
-        using (var merge = _coordinator.MergeAll())
-            slice = _store.BuildSnapshotSlice();
-
-        if (_hasPreviousSlice)
-            _store.ReleaseSnapshotSlice(_previousSlice);
-
-        _previousSlice = slice;
-        _hasPreviousSlice = true;
-    }
+    private void RunOneTick() => this.WireAndSubmit();
 
     // ── Phase analysis ───────────────────────────────────────────────────
 
@@ -117,15 +97,6 @@ public class RealisticTickBenchmark
             this.WireAndSubmit();
             var dagCompleteTs = Stopwatch.GetTimestamp();
 
-            SnapshotSlice<BenchNode, BenchNodeOps> slice;
-            using (var merge = _coordinator.MergeAll())
-                slice = _store.BuildSnapshotSlice();
-
-            if (_hasPreviousSlice)
-                _store.ReleaseSnapshotSlice(_previousSlice);
-            _previousSlice = slice;
-            _hasPreviousSlice = true;
-
             snapshots[t] = this.CaptureRawSnapshot(submitTs, dagCompleteTs);
         }
 
@@ -136,14 +107,9 @@ public class RealisticTickBenchmark
     private void SetInstrument(bool enabled)
     {
         _trigger.Instrument = enabled;
-        _barrier1.Instrument = enabled;
-        _barrier2.Instrument = enabled;
-        _barrier3.Instrument = enabled;
-        _collector.Instrument = enabled;
-        foreach (var j in _phase1) j.Instrument = enabled;
-        foreach (var j in _phase2) j.Instrument = enabled;
-        foreach (var j in _phase3) j.Instrument = enabled;
-        foreach (var j in _phase4) j.Instrument = enabled;
+        foreach (var barrier in _barriers) barrier.Instrument = enabled;
+        foreach (var phase in _phases)
+            foreach (var j in phase) j.Instrument = enabled;
     }
 
     private RawSnapshot CaptureRawSnapshot(long submitTs, long dagCompleteTs)
@@ -153,25 +119,22 @@ public class RealisticTickBenchmark
             SubmitTs = submitTs,
             DagCompleteTs = dagCompleteTs,
             TriggerTs = _trigger.ExecutedTimestamp,
-            B1Ts = _barrier1.ExecutedTimestamp,
-            B2Ts = _barrier2.ExecutedTimestamp,
-            B3Ts = _barrier3.ExecutedTimestamp,
-            CollStartTs = _collector.StartTimestamp,
-            CollEndTs = _collector.EndTimestamp,
-            P1JobStarts = new long[_phase1.Length],
-            P1JobEnds = new long[_phase1.Length],
-            P2JobStarts = new long[_phase2.Length],
-            P2JobEnds = new long[_phase2.Length],
-            P3JobStarts = new long[_phase3.Length],
-            P3JobEnds = new long[_phase3.Length],
-            P4JobStarts = new long[_phase4.Length],
-            P4JobEnds = new long[_phase4.Length],
+            BarrierTs = new long[PhaseCount],
+            PhaseJobStarts = new long[PhaseCount][],
+            PhaseJobEnds = new long[PhaseCount][],
         };
 
-        for (var i = 0; i < _phase1.Length; i++) { snap.P1JobStarts[i] = _phase1[i].StartTimestamp; snap.P1JobEnds[i] = _phase1[i].EndTimestamp; }
-        for (var i = 0; i < _phase2.Length; i++) { snap.P2JobStarts[i] = _phase2[i].StartTimestamp; snap.P2JobEnds[i] = _phase2[i].EndTimestamp; }
-        for (var i = 0; i < _phase3.Length; i++) { snap.P3JobStarts[i] = _phase3[i].StartTimestamp; snap.P3JobEnds[i] = _phase3[i].EndTimestamp; }
-        for (var i = 0; i < _phase4.Length; i++) { snap.P4JobStarts[i] = _phase4[i].StartTimestamp; snap.P4JobEnds[i] = _phase4[i].EndTimestamp; }
+        for (var p = 0; p < PhaseCount; p++)
+        {
+            snap.BarrierTs[p] = _barriers[p].ExecutedTimestamp;
+            snap.PhaseJobStarts[p] = new long[_phases[p].Length];
+            snap.PhaseJobEnds[p] = new long[_phases[p].Length];
+            for (var i = 0; i < _phases[p].Length; i++)
+            {
+                snap.PhaseJobStarts[p][i] = _phases[p][i].StartTimestamp;
+                snap.PhaseJobEnds[p][i] = _phases[p][i].EndTimestamp;
+            }
+        }
 
         return snap;
     }
@@ -185,44 +148,30 @@ public class RealisticTickBenchmark
         for (var t = 0; t < snapshots.Length; t++)
         {
             ref var s = ref snapshots[t];
-
-            var p1Start = Min(s.P1JobStarts);
-            var p1End = Max(s.P1JobEnds);
-            var p2Start = Min(s.P2JobStarts);
-            var p2End = Max(s.P2JobEnds);
-            var p3Start = Min(s.P3JobStarts);
-            var p3End = Max(s.P3JobEnds);
-            var p4Start = Min(s.P4JobStarts);
-            var p4End = Max(s.P4JobEnds);
-
-            var p1Work = SumDurations(s.P1JobStarts, s.P1JobEnds, freq);
-            var p2Work = SumDurations(s.P2JobStarts, s.P2JobEnds, freq);
-            var p3Work = SumDurations(s.P3JobStarts, s.P3JobEnds, freq);
-            var p4Work = SumDurations(s.P4JobStarts, s.P4JobEnds, freq);
-
-            records[t] = new TickRecord
+            var rec = new TickRecord
             {
                 TotalUs = ToUs(s.SubmitTs, s.DagCompleteTs, freq),
                 PreTriggerUs = ToUs(s.SubmitTs, s.TriggerTs, freq),
-                TriggerToP1FirstUs = ToUs(s.TriggerTs, p1Start, freq),
-                P1SpanUs = ToUs(p1Start, p1End, freq),
-                P1EndToB1Us = ToUs(p1End, s.B1Ts, freq),
-                B1ToP2FirstUs = ToUs(s.B1Ts, p2Start, freq),
-                P2SpanUs = ToUs(p2Start, p2End, freq),
-                P2EndToB2Us = ToUs(p2End, s.B2Ts, freq),
-                B2ToP3FirstUs = ToUs(s.B2Ts, p3Start, freq),
-                P3SpanUs = ToUs(p3Start, p3End, freq),
-                P3EndToB3Us = ToUs(p3End, s.B3Ts, freq),
-                B3ToP4FirstUs = ToUs(s.B3Ts, p4Start, freq),
-                P4SpanUs = ToUs(p4Start, p4End, freq),
-                P4EndToCollStartUs = ToUs(p4End, s.CollStartTs, freq),
-                CollectorUs = ToUs(s.CollStartTs, s.CollEndTs, freq),
-                PostCollectorUs = ToUs(s.CollEndTs, s.DagCompleteTs, freq),
-                P1TotalWorkUs = p1Work,
-                P2TotalWorkUs = p2Work,
-                P3TotalWorkUs = p3Work,
-                P4TotalWorkUs = p4Work,
+                PhaseSpanUs = new double[PhaseCount],
+                PhaseWorkUs = new double[PhaseCount],
+                PrePhaseUs = new double[PhaseCount],
+                PostPhaseUs = new double[PhaseCount],
             };
+
+            for (var p = 0; p < PhaseCount; p++)
+            {
+                var pStart = Min(s.PhaseJobStarts[p]);
+                var pEnd = Max(s.PhaseJobEnds[p]);
+                rec.PhaseSpanUs[p] = ToUs(pStart, pEnd, freq);
+                rec.PhaseWorkUs[p] = SumDurations(s.PhaseJobStarts[p], s.PhaseJobEnds[p], freq);
+
+                var preceding = p == 0 ? s.TriggerTs : s.BarrierTs[p - 1];
+                rec.PrePhaseUs[p] = ToUs(preceding, pStart, freq);
+                rec.PostPhaseUs[p] = ToUs(pEnd, s.BarrierTs[p], freq);
+            }
+
+            rec.PostFinalUs = ToUs(s.BarrierTs[^1], s.DagCompleteTs, freq);
+            records[t] = rec;
         }
 
         Array.Sort(records, (a, b) => a.TotalUs.CompareTo(b.TotalUs));
@@ -230,7 +179,7 @@ public class RealisticTickBenchmark
         Console.WriteLine();
         Console.WriteLine("═══════════════════════════════════════════════════════════════");
         Console.WriteLine("  PHASE BREAKDOWN ANALYSIS");
-        Console.WriteLine($"  {records.Length} ticks, sorted by total time");
+        Console.WriteLine($"  {records.Length} ticks, {PhaseCount} phases × {JobsPerPhase} jobs, sorted by total time");
         Console.WriteLine("═══════════════════════════════════════════════════════════════");
 
         var percentiles = new[] { ("P1", 0.01), ("P10", 0.10), ("P50", 0.50), ("P90", 0.90), ("P99", 0.99) };
@@ -242,20 +191,15 @@ public class RealisticTickBenchmark
 
         PrintRow("Total tick", records, percentiles, r => r.TotalUs);
         PrintRow("Pre-trigger", records, percentiles, r => r.PreTriggerUs);
-        PrintRow("Trigger→P1 first", records, percentiles, r => r.TriggerToP1FirstUs);
-        PrintRow("P1 span (192 jobs)", records, percentiles, r => r.P1SpanUs);
-        PrintRow("P1 last→Barrier1", records, percentiles, r => r.P1EndToB1Us);
-        PrintRow("Barrier1→P2 first", records, percentiles, r => r.B1ToP2FirstUs);
-        PrintRow("P2 span (192 jobs)", records, percentiles, r => r.P2SpanUs);
-        PrintRow("P2 last→Barrier2", records, percentiles, r => r.P2EndToB2Us);
-        PrintRow("Barrier2→P3 first", records, percentiles, r => r.B2ToP3FirstUs);
-        PrintRow("P3 span (96 jobs)", records, percentiles, r => r.P3SpanUs);
-        PrintRow("P3 last→Barrier3", records, percentiles, r => r.P3EndToB3Us);
-        PrintRow("Barrier3→P4 first", records, percentiles, r => r.B3ToP4FirstUs);
-        PrintRow("P4 span (48 snap)", records, percentiles, r => r.P4SpanUs);
-        PrintRow("P4 last→Coll start", records, percentiles, r => r.P4EndToCollStartUs);
-        PrintRow("Collector exec", records, percentiles, r => r.CollectorUs);
-        PrintRow("Post-collector", records, percentiles, r => r.PostCollectorUs);
+        for (var p = 0; p < PhaseCount; p++)
+        {
+            var pi = p;
+            PrintRow($"→ P{p + 1} first job", records, percentiles, r => r.PrePhaseUs[pi]);
+            PrintRow($"P{p + 1} span ({JobsPerPhase} jobs)", records, percentiles, r => r.PhaseSpanUs[pi]);
+            PrintRow($"P{p + 1} last → barrier", records, percentiles, r => r.PostPhaseUs[pi]);
+        }
+
+        PrintRow("Post-final barrier", records, percentiles, r => r.PostFinalUs);
 
         Console.WriteLine("  └─────────────────────────────┴────────┴────────┴────────┴────────┴────────┘");
 
@@ -265,28 +209,32 @@ public class RealisticTickBenchmark
         Console.WriteLine("  │ Phase                       │ P50 Sp │  Work  │  Eff%  │");
         Console.WriteLine("  ├─────────────────────────────┼────────┼────────┼────────┤");
 
-        PrintEfficiency("P1 (192 jobs / 12 cores)", records, r => r.P1SpanUs, r => r.P1TotalWorkUs, 12);
-        PrintEfficiency("P2 (192 jobs / 12 cores)", records, r => r.P2SpanUs, r => r.P2TotalWorkUs, 12);
-        PrintEfficiency("P3 (96 jobs / 12 cores)", records, r => r.P3SpanUs, r => r.P3TotalWorkUs, 12);
-        PrintEfficiency("P4 (48 snap / 12 cores)", records, r => r.P4SpanUs, r => r.P4TotalWorkUs, 12);
+        for (var p = 0; p < PhaseCount; p++)
+        {
+            var pi = p;
+            PrintEfficiency($"P{p + 1} ({JobsPerPhase} jobs / {Cores} cores)", records, r => r.PhaseSpanUs[pi], r => r.PhaseWorkUs[pi], Cores);
+        }
 
         Console.WriteLine("  └─────────────────────────────┴────────┴────────┴────────┘");
 
-        const int Cores = 12;
         var p50Idx = (int)(records.Length * 0.50);
         var r50 = records[p50Idx];
-        var overheadUs = r50.PreTriggerUs + r50.TriggerToP1FirstUs + r50.P1EndToB1Us
-            + r50.B1ToP2FirstUs + r50.P2EndToB2Us + r50.B2ToP3FirstUs
-            + r50.P3EndToB3Us + r50.B3ToP4FirstUs + r50.P4EndToCollStartUs
-            + r50.CollectorUs + r50.PostCollectorUs;
-        var workUs = r50.P1SpanUs + r50.P2SpanUs + r50.P3SpanUs + r50.P4SpanUs;
 
-        var totalJobWorkUs = r50.P1TotalWorkUs + r50.P2TotalWorkUs + r50.P3TotalWorkUs + r50.P4TotalWorkUs;
-        var optimalUs = totalJobWorkUs / Cores;
+        var totalSpanUs = 0.0;
+        var totalWorkUs = 0.0;
+        var totalOverheadUs = r50.PreTriggerUs + r50.PostFinalUs;
+        for (var p = 0; p < PhaseCount; p++)
+        {
+            totalSpanUs += r50.PhaseSpanUs[p];
+            totalWorkUs += r50.PhaseWorkUs[p];
+            totalOverheadUs += r50.PrePhaseUs[p] + r50.PostPhaseUs[p];
+        }
+
+        var optimalUs = totalWorkUs / Cores;
         var gapUs = r50.TotalUs - optimalUs;
 
         Console.WriteLine();
-        Console.WriteLine($"  P50 total: {r50.TotalUs:F1} μs  =  {workUs:F1} μs work  +  {overheadUs:F1} μs overhead ({overheadUs / r50.TotalUs * 100:F1}%)");
+        Console.WriteLine($"  P50 total: {r50.TotalUs:F1} μs  =  {totalSpanUs:F1} μs phases  +  {totalOverheadUs:F1} μs overhead ({totalOverheadUs / r50.TotalUs * 100:F1}%)");
         Console.WriteLine($"  Theoretical optimal (total job work / {Cores} cores): {optimalUs:F1} μs");
         Console.WriteLine($"  Gap to optimal: {gapUs:F1} μs  ({gapUs / optimalUs * 100:F1}% above optimal)");
         Console.WriteLine("═══════════════════════════════════════════════════════════════");
@@ -344,36 +292,20 @@ public class RealisticTickBenchmark
     private struct RawSnapshot
     {
         public long SubmitTs, DagCompleteTs;
-        public long TriggerTs, B1Ts, B2Ts, B3Ts;
-        public long CollStartTs, CollEndTs;
-        public long[] P1JobStarts, P1JobEnds;
-        public long[] P2JobStarts, P2JobEnds;
-        public long[] P3JobStarts, P3JobEnds;
-        public long[] P4JobStarts, P4JobEnds;
+        public long TriggerTs;
+        public long[] BarrierTs;
+        public long[][] PhaseJobStarts, PhaseJobEnds;
     }
 
     private struct TickRecord
     {
         public double TotalUs;
         public double PreTriggerUs;
-        public double TriggerToP1FirstUs;
-        public double P1SpanUs;
-        public double P1EndToB1Us;
-        public double B1ToP2FirstUs;
-        public double P2SpanUs;
-        public double P2EndToB2Us;
-        public double B2ToP3FirstUs;
-        public double P3SpanUs;
-        public double P3EndToB3Us;
-        public double B3ToP4FirstUs;
-        public double P4SpanUs;
-        public double P4EndToCollStartUs;
-        public double CollectorUs;
-        public double PostCollectorUs;
-        public double P1TotalWorkUs;
-        public double P2TotalWorkUs;
-        public double P3TotalWorkUs;
-        public double P4TotalWorkUs;
+        public double[] PhaseSpanUs;
+        public double[] PhaseWorkUs;
+        public double[] PrePhaseUs;
+        public double[] PostPhaseUs;
+        public double PostFinalUs;
     }
 
     // ── Scheduler instrumentation analysis ──────────────────────────────
@@ -390,16 +322,6 @@ public class RealisticTickBenchmark
         {
             accessor.ResetInstrumentation();
             this.WireAndSubmit();
-
-            SnapshotSlice<BenchNode, BenchNodeOps> slice;
-            using (var merge = _coordinator.MergeAll())
-                slice = _store.BuildSnapshotSlice();
-
-            if (_hasPreviousSlice)
-                _store.ReleaseSnapshotSlice(_previousSlice);
-            _previousSlice = slice;
-            _hasPreviousSlice = true;
-
             perTickRecords[t] = accessor.GetInstrumentationRecords();
         }
 
@@ -547,105 +469,42 @@ public class RealisticTickBenchmark
     {
         _trigger = new TriggerJob();
 
-        _phase1 = new ComputeJob[Phase1Count];
-        for (var i = 0; i < Phase1Count; i++)
-            _phase1[i] = new ComputeJob();
+        _phases = new ComputeJob[PhaseCount][];
+        _barriers = new BarrierJob[PhaseCount];
 
-        _barrier1 = new BarrierJob();
-
-        _phase2 = new ComputeJob[Phase2Count];
-        for (var i = 0; i < Phase2Count; i++)
-            _phase2[i] = new ComputeJob();
-
-        _barrier2 = new BarrierJob();
-
-        _phase3 = new ComputeJob[Phase3Count];
-        for (var i = 0; i < Phase3Count; i++)
-            _phase3[i] = new ComputeJob();
-
-        _barrier3 = new BarrierJob();
-
-        _phase4 = new SnapshotJob[Phase4Count];
-        for (var i = 0; i < Phase4Count; i++)
-            _phase4[i] = new SnapshotJob();
-
-        _collector = new SnapshotCollectorJob
+        for (var p = 0; p < PhaseCount; p++)
         {
-            Sources = _phase4,
-        };
+            _phases[p] = new ComputeJob[JobsPerPhase];
+            for (var i = 0; i < JobsPerPhase; i++)
+                _phases[p][i] = new ComputeJob();
+            _barriers[p] = new BarrierJob();
+        }
     }
 
     // ── Per-tick wiring ──────────────────────────────────────────────────
 
     private void WireAndSubmit()
     {
-        var buffers = _store.ThreadLocalBuffers;
-
         _trigger.Reset();
 
-        // Phase 1: AI/Decision — 64 compute jobs, all depend on trigger
-        for (var i = 0; i < _phase1.Length; i++)
+        for (var p = 0; p < PhaseCount; p++)
         {
-            var job = _phase1[i];
-            job.Reset();
-            job.Iterations = ComputeIterations;
-            job.Seed = i;
-            job.DependsOn(_trigger);
+            var predecessor = p == 0 ? (Job)_trigger : _barriers[p - 1];
+            var phase = _phases[p];
+
+            for (var i = 0; i < phase.Length; i++)
+            {
+                var job = phase[i];
+                job.Reset();
+                job.Iterations = ComputeIterations;
+                job.Seed = (p * JobsPerPhase) + i;
+                job.DependsOn(predecessor);
+            }
+
+            _barriers[p].Reset();
+            for (var i = 0; i < phase.Length; i++)
+                _barriers[p].DependsOn(phase[i]);
         }
-
-        // Barrier 1: depends on all phase 1 jobs
-        _barrier1.Reset();
-        for (var i = 0; i < _phase1.Length; i++)
-            _barrier1.DependsOn(_phase1[i]);
-
-        // Phase 2: Physics — 64 compute jobs, all depend on barrier 1
-        for (var i = 0; i < _phase2.Length; i++)
-        {
-            var job = _phase2[i];
-            job.Reset();
-            job.Iterations = ComputeIterations;
-            job.Seed = Phase1Count + i;
-            job.DependsOn(_barrier1);
-        }
-
-        // Barrier 2: depends on all phase 2 jobs
-        _barrier2.Reset();
-        for (var i = 0; i < _phase2.Length; i++)
-            _barrier2.DependsOn(_phase2[i]);
-
-        // Phase 3: World Update — 32 compute jobs, all depend on barrier 2
-        for (var i = 0; i < _phase3.Length; i++)
-        {
-            var job = _phase3[i];
-            job.Reset();
-            job.Iterations = ComputeIterations;
-            job.Seed = Phase1Count + Phase2Count + i;
-            job.DependsOn(_barrier2);
-        }
-
-        // Barrier 3: depends on all phase 3 jobs
-        _barrier3.Reset();
-        for (var i = 0; i < _phase3.Length; i++)
-            _barrier3.DependsOn(_phase3[i]);
-
-        // Phase 4: Snapshot — 16 snapshot jobs, all depend on barrier 3
-        for (var i = 0; i < _phase4.Length; i++)
-        {
-            var job = _phase4[i];
-            job.Reset();
-            job.Iterations = ComputeIterations;
-            job.Seed = Phase1Count + Phase2Count + Phase3Count + i;
-            job.Buffers = buffers;
-            job.NodeCount = SnapshotNodeCount;
-            job.IsRoot = false;
-            job.DependsOn(_barrier3);
-        }
-
-        // Collector: fan-in from all snapshot jobs
-        _collector.Reset();
-        _collector.Buffers = buffers;
-        for (var i = 0; i < _phase4.Length; i++)
-            _collector.DependsOn(_phase4[i]);
 
         _scheduler.Submit(_trigger);
     }
