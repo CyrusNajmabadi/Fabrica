@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using DiffPlex.DiffBuilder;
+using DiffPlex.DiffBuilder.Model;
 using Fabrica.Core.Memory.Nodes;
 using Xunit;
 
@@ -190,8 +192,11 @@ public partial class JitBaselineTests
               $"  echo \"{hint}\" > {Path.Combine(s_baselineDir, $"{baselineName}.v{nextNum}.ref")}\n"
             : $"If the new output is a valid alternative encoding, add it as a variant:\n" +
               $"  cp {actualFile} {Path.Combine(s_baselineDir, variantFileName)}\n";
-        msg += "Do NOT delete existing baselines or variants — they remain valid.\n" +
-            $"\n--- BEGIN {baselineName}.actual ---\n{normalized}--- END {baselineName}.actual ---";
+        msg += "Do NOT delete existing baselines or variants — they remain valid.\n";
+
+        msg += FormatUnifiedDiffs(variants, normalized);
+
+        msg += $"\n--- BEGIN {baselineName}.actual ---\n{normalized}--- END {baselineName}.actual ---";
 
         Assert.Fail(msg);
 #pragma warning restore CS0162
@@ -478,6 +483,89 @@ public partial class JitBaselineTests
         }
 
         return null;
+    }
+
+    private static string FormatUnifiedDiffs(string[] variants, string actual)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var variantPath in variants)
+        {
+            var expected = File.ReadAllText(variantPath);
+            var diff = InlineDiffBuilder.Diff(expected, actual, ignoreWhiteSpace: false);
+
+            sb.AppendLine();
+            sb.AppendLine($"--- DIFF vs {Path.GetFileName(variantPath)} ---");
+
+            var lineNum = 0;
+            foreach (var line in diff.Lines)
+            {
+                lineNum++;
+                switch (line.Type)
+                {
+                    case ChangeType.Inserted:
+                        sb.AppendLine($"+{lineNum,4}: {line.Text}");
+                        break;
+                    case ChangeType.Deleted:
+                        sb.AppendLine($"-{lineNum,4}: {line.Text}");
+                        break;
+                    case ChangeType.Modified:
+                        sb.AppendLine($"~{lineNum,4}: {line.Text}");
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            var changeCount = diff.Lines.Count(l => l.Type != ChangeType.Unchanged);
+            if (changeCount == 0)
+            {
+                sb.AppendLine("(DiffPlex reports no line differences — investigating byte-level)");
+                AppendByteLevelDiff(sb, expected, actual);
+            }
+            else
+            {
+                sb.AppendLine($"({changeCount} changed line(s))");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendByteLevelDiff(System.Text.StringBuilder sb, string expected, string actual)
+    {
+        sb.AppendLine($"  expected length: {expected.Length} chars, actual length: {actual.Length} chars");
+
+        for (var i = 0; i < Math.Min(expected.Length, actual.Length); i++)
+        {
+            if (expected[i] != actual[i])
+            {
+                sb.AppendLine($"  first difference at char index {i}: expected 0x{(int)expected[i]:X4} '{Escape(expected[i])}', actual 0x{(int)actual[i]:X4} '{Escape(actual[i])}'");
+                var contextStart = Math.Max(0, i - 20);
+                sb.AppendLine($"  expected context: \"{EscapeString(expected[contextStart..Math.Min(expected.Length, i + 20)])}\"");
+                sb.AppendLine($"  actual   context: \"{EscapeString(actual[contextStart..Math.Min(actual.Length, i + 20)])}\"");
+                return;
+            }
+        }
+
+        if (expected.Length != actual.Length)
+            sb.AppendLine($"  strings are identical up to the shorter length; expected has {expected.Length} chars, actual has {actual.Length} chars");
+        else
+            sb.AppendLine("  strings are byte-for-byte identical (File.ReadAllText may have normalized line endings)");
+
+        static string Escape(char c) => c switch
+        {
+            '\r' => "\\r",
+            '\n' => "\\n",
+            '\t' => "\\t",
+            ' ' => "SPACE",
+            _ => c.ToString()
+        };
+
+        static string EscapeString(string s) => s
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t");
     }
 
     private static string OsArchPrefix()
