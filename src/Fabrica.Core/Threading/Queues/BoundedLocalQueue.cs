@@ -276,9 +276,13 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
         // Interlocked: thieves may concurrently Interlocked.Exchange _lifoSlot (in
         // TryStealHalf). Atomic swap ensures exactly one thread gets the item.
-        var lifo = Interlocked.Exchange(ref _lifoSlot, null);
-        if (lifo != null)
-            return lifo;
+        // Volatile.Read first: dominant path is empty slot — skip expensive Exchange when null.
+        if (Volatile.Read(ref _lifoSlot) != null)
+        {
+            var lifo = Interlocked.Exchange(ref _lifoSlot, null);
+            if (lifo != null)
+                return lifo;
+        }
 
         // Volatile.Read: acquire fence to see the latest _headTail.Head from thieves' CAS
         // operations. Loaded once before the loop; updated from CAS return on retry.
