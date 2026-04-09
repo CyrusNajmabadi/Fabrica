@@ -31,7 +31,7 @@ internal sealed class BuildBeltChainJob : Job
 
     protected override void Execute(JobContext context)
     {
-        var threadLocalBuffer = BeltThreadLocalBuffers![context.WorkerIndex];
+        ref var threadLocalBuffer = ref BeltThreadLocalBuffers![context.WorkerIndex];
         var items = _spawnJob!.AllocatedItems!;
 
         // Built in reverse so each segment's Next handle is known at construction time.

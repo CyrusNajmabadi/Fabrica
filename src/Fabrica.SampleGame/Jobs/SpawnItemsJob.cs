@@ -17,7 +17,7 @@ internal sealed class SpawnItemsJob : Job
 
     protected override void Execute(JobContext context)
     {
-        var threadLocalBuffer = ItemThreadLocalBuffers![context.WorkerIndex];
+        ref var threadLocalBuffer = ref ItemThreadLocalBuffers![context.WorkerIndex];
         if (AllocatedItems is null || AllocatedItems.Length < Count)
             AllocatedItems = new Handle<ItemNode>[Count];
         for (var i = 0; i < Count; i++)

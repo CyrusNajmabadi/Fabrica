@@ -107,7 +107,7 @@ internal readonly struct RefCountTable<T> where T : struct
     /// onto <paramref name="hitZero"/> for the caller to cascade. Must not be called during an active
     /// cascade (i.e., only from top-level coordinator operations).
     /// </summary>
-    public void DecrementBatch(ReadOnlySpan<Handle<T>> handles, UnsafeStack<Handle<T>> hitZero)
+    public void DecrementBatch(ReadOnlySpan<Handle<T>> handles, ref NonCopyableUnsafeStack<Handle<T>> hitZero)
     {
         for (var i = 0; i < handles.Length; i++)
         {

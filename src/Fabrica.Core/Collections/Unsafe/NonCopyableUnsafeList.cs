@@ -18,17 +18,33 @@ namespace Fabrica.Core.Collections.Unsafe;
 /// THREAD MODEL
 ///   Single-threaded. No synchronization is provided.
 ///
-/// WARNING: This is a reference type with mutable state. Do not share a single instance across
-/// multiple owners without synchronization. When held via <see cref="UnsafeStack{T}"/> (a struct),
-/// copies of the struct will alias this instance — mutations through one copy are visible through
-/// all others.
+/// WARNING: This is a mutable struct. Copies share the same backing array but have independent
+/// counts — after a copy, mutations to one are NOT visible through the other, and a Grow() on
+/// one leaves the other pointing at the old (smaller) array. Never copy this struct. Always
+/// store in a single location and pass by reference.
 /// </summary>
-internal sealed class UnsafeList<T>(int initialCapacity = 16)
+internal struct NonCopyableUnsafeList<T>(int initialCapacity)
 {
     private T[] _array = new T[initialCapacity];
     private int _count;
 
-    public int Count
+    public static NonCopyableUnsafeList<T> Create() => new(initialCapacity: 16);
+
+    /// <summary>Wraps an existing array with count = 0, for reuse from a pool.</summary>
+    internal static NonCopyableUnsafeList<T> Wrap(T[] array) => new(0) { _array = array };
+
+    /// <summary>Returns an immutable snapshot of the current array and count.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly ReadOnlyArray<T> AsReadOnly() => new(_array, _count);
+
+    /// <summary>True when this struct has been properly constructed (backing array is non-null).</summary>
+    public readonly bool IsInitialized
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _array != null;
+    }
+
+    public readonly int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _count;
@@ -94,13 +110,13 @@ internal sealed class UnsafeList<T>(int initialCapacity = 16)
         _count--;
     }
 
-    public ReadOnlySpan<T> WrittenSpan
+    public readonly ReadOnlySpan<T> WrittenSpan
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _array.AsSpan(0, _count);
     }
 
-    public Span<T> WrittenSpanMutable
+    public readonly Span<T> WrittenSpanMutable
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _array.AsSpan(0, _count);

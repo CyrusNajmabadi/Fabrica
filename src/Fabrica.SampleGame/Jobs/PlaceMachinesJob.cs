@@ -27,7 +27,7 @@ internal sealed class PlaceMachinesJob : Job
 
     protected override void Execute(JobContext context)
     {
-        var threadLocalBuffer = MachineThreadLocalBuffers![context.WorkerIndex];
+        ref var threadLocalBuffer = ref MachineThreadLocalBuffers![context.WorkerIndex];
         var handle = threadLocalBuffer.Allocate(isRoot: true);
         threadLocalBuffer[handle] = new MachineNode
         {

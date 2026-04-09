@@ -28,12 +28,12 @@ public sealed class ObjectPool<T, TAllocator>
     where T : class
     where TAllocator : struct, IAllocator<T>
 {
-    private readonly UnsafeStack<T> _items;
+    private NonCopyableUnsafeStack<T> _items;
     private SingleThreadedOwner _owner;
 
     public ObjectPool(int initialCapacity)
     {
-        _items = new UnsafeStack<T>(initialCapacity);
+        _items = new NonCopyableUnsafeStack<T>(initialCapacity);
         for (var i = 0; i < initialCapacity; i++)
             _items.Push(default(TAllocator).Allocate());
     }

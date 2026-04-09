@@ -35,7 +35,7 @@ namespace Fabrica.Core.Memory;
 ///
 /// PERFORMANCE (see benchmarks/results/ for full tables)
 ///   Bump allocation: ~1ns/entry for small structs. Indexed read: ~0.8ns sequential, ~1ns random (zero-allocation).
-///   Free-list reuse (via UnsafeStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
+///   Free-list reuse (via NonCopyableUnsafeStack with unchecked access): ~7.6x bump at 100K. Steady-state interleaved
 ///   alloc/free: ~4.3ns/op at 100K entries.
 /// </summary>
 internal sealed class UnsafeSlabArena<T> where T : struct
@@ -45,7 +45,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     private readonly UnsafeSlabDirectory<T> _directory;
     private int _highWater;
     private int _count;
-    private readonly UnsafeStack<Handle<T>> _freeList = UnsafeStack<Handle<T>>.Create();
+    private NonCopyableUnsafeStack<Handle<T>> _freeList = NonCopyableUnsafeStack<Handle<T>>.Create();
 
     private SingleThreadedOwner _owner;
 
@@ -116,7 +116,7 @@ internal sealed class UnsafeSlabArena<T> where T : struct
     /// then bump-allocating the remainder contiguously. This gives steady-state zero allocation (freed slots are
     /// recycled) while preserving the fast sequential-write path when the free-list is exhausted.
     /// </summary>
-    public void AllocateBatch(int count, UnsafeList<Handle<T>> destination)
+    public void AllocateBatch(int count, ref NonCopyableUnsafeList<Handle<T>> destination)
     {
         _owner.AssertOwnerThread();
         Debug.Assert(count >= 0, $"AllocateBatch called with negative count {count}.");

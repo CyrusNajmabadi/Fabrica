@@ -29,9 +29,10 @@ public abstract class Job
     internal int RemainingDependencies; // DependsOn increments; scheduler decrements atomically when a prerequisite completes.
 
     /// <summary>
-    /// Downstream jobs notified on completion.
+    /// Downstream jobs notified on completion. Default-initialized (backing array is null);
+    /// lazily allocated on first <see cref="DependsOn"/> call.
     /// </summary>
-    internal UnsafeList<Job>? Dependents;
+    internal NonCopyableUnsafeList<Job> Dependents;
 
     // Owning scheduler for this job's DAG: set by JobScheduler.Submit for root jobs and by WorkerPool for
     // sub-jobs and propagated dependents; read by WorkerPool to route completion signals; cleared by
@@ -59,7 +60,8 @@ public abstract class Job
         // The prerequisite tracks this job as a downstream dependent; RemainingDependencies gates execution.
         // The scheduler decrements counts when prerequisites complete; the thread that brings a job to zero
         // enqueues it.
-        prerequisite.Dependents ??= new UnsafeList<Job>(4);
+        if (!prerequisite.Dependents.IsInitialized)
+            prerequisite.Dependents = new NonCopyableUnsafeList<Job>(4);
         prerequisite.Dependents.Add(this);
         RemainingDependencies++;
     }
@@ -86,8 +88,8 @@ public abstract class Job
     {
         // Called by the coordinator during the DAG sweep after the scheduler's outstanding job count reaches zero.
         // Dependents was lazily allocated: Reset clears the count but retains the backing array for reuse across
-        // JobPool cycles.
-        Dependents?.Reset();
+        // JobPool cycles. Safe to call on default (uninitialized) struct — Reset just sets _count to 0.
+        Dependents.Reset();
         RemainingDependencies = 0;
         this.ResetState();
     }

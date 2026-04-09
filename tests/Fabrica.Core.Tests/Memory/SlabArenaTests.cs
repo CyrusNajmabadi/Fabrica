@@ -487,8 +487,8 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
 
-        var dest = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(5, dest);
+        var dest = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(5, ref dest);
         Assert.Equal(5, dest.Count);
         for (var i = 0; i < 5; i++)
             Assert.Equal(i, dest[i].Index);
@@ -504,8 +504,8 @@ public class UnsafeSlabArenaTests
 
         arena.Allocate();
         arena.Allocate();
-        var dest = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(3, dest);
+        var dest = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(3, ref dest);
 
         Assert.Equal(3, dest.Count);
         Assert.Equal(2, dest[0].Index);
@@ -522,8 +522,8 @@ public class UnsafeSlabArenaTests
         var ta = arena.GetTestAccessor();
 
         arena.Allocate();
-        var dest = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(0, dest);
+        var dest = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(0, ref dest);
 
         Assert.Equal(0, dest.Count);
         Assert.Equal(1, ta.HighWater);
@@ -536,8 +536,8 @@ public class UnsafeSlabArenaTests
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
         var ta = arena.GetTestAccessor();
 
-        var dest = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(6, dest);
+        var dest = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(6, ref dest);
 
         Assert.NotNull(ta.Directory[0]);
         Assert.NotNull(ta.Directory[1]);
@@ -548,8 +548,8 @@ public class UnsafeSlabArenaTests
     {
         var arena = CreateTinyArena(directoryLength: 8, slabShift: 2);
 
-        var dest = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(8, dest);
+        var dest = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(8, ref dest);
         for (var i = 0; i < 8; i++)
             arena[dest[i]] = new Int32Entry { Value = i * 10 };
 
@@ -567,8 +567,8 @@ public class UnsafeSlabArenaTests
         arena.Free(allocatedHandle);
         Assert.Equal(1, ta.FreeCount);
 
-        var dest = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(2, dest);
+        var dest = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(2, ref dest);
         Assert.Equal(2, dest.Count);
         Assert.Equal(allocatedHandle, dest[0]);
         Assert.Equal(1, dest[1].Index);
@@ -584,10 +584,10 @@ public class UnsafeSlabArenaTests
         var ta = arena.GetTestAccessor();
 
         // Free-list is empty — each batch is a contiguous bump run, and the second run follows the first.
-        var dest1 = new UnsafeList<Handle<Int32Entry>>();
-        var dest2 = new UnsafeList<Handle<Int32Entry>>();
-        arena.AllocateBatch(3, dest1);
-        arena.AllocateBatch(4, dest2);
+        var dest1 = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        var dest2 = NonCopyableUnsafeList<Handle<Int32Entry>>.Create();
+        arena.AllocateBatch(3, ref dest1);
+        arena.AllocateBatch(4, ref dest2);
 
         Assert.Equal(3, dest1.Count);
         Assert.Equal(4, dest2.Count);

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
@@ -155,7 +156,7 @@ public sealed class WorkerPool : IDisposable
     /// via <see cref="JobScheduler.TestAccessor.Inject"/>. The coordinator fast-path
     /// (<see cref="JobScheduler.Submit"/>) pushes directly onto the coordinator's deque instead.
     /// </summary>
-    private readonly InjectionQueue<Job> _injectionQueue = new();
+    private readonly StrongBox<InjectionQueue<Job>> _injectionQueue = new(new InjectionQueue<Job>());
 
     /// <summary>Next coordinator slot index to hand out via <see cref="AttachCoordinator"/>.</summary>
     private int _nextCoordinatorSlot;
@@ -220,7 +221,7 @@ public sealed class WorkerPool : IDisposable
     /// </summary>
     internal void Inject(Job job)
     {
-        _injectionQueue.Enqueue(job);
+        _injectionQueue.Value.Enqueue(job);
         this.NotifyWorkAvailable();
     }
 
@@ -461,7 +462,7 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryDequeueInjected(WorkerContext context)
     {
-        var job = _injectionQueue.TryDequeue();
+        var job = _injectionQueue.Value.TryDequeue();
         if (job != null)
         {
             context.LastJobSource = JobSource.Injection;
@@ -518,9 +519,10 @@ public sealed class WorkerPool : IDisposable
 
     private int PropagateCompletion(Job job, WorkerContext context)
     {
-        if (job.Dependents is not { Count: > 0 } dependents)
+        if (job.Dependents.Count == 0)
             return 0;
 
+        var dependents = job.Dependents;
         var scheduler = context.CurrentScheduler!;
         var readied = 0;
 

@@ -36,9 +36,9 @@ public readonly struct SnapshotSlice<TNode, TNodeOps>
     where TNodeOps : struct, INodeOps<TNode>
 {
     private readonly GlobalNodeStore<TNode, TNodeOps> _store;
-    private readonly UnsafeList<Handle<TNode>> _rootHandles;
+    private readonly ReadOnlyArray<Handle<TNode>> _rootHandles;
 
-    internal SnapshotSlice(GlobalNodeStore<TNode, TNodeOps> store, UnsafeList<Handle<TNode>> rootHandles)
+    internal SnapshotSlice(GlobalNodeStore<TNode, TNodeOps> store, ReadOnlyArray<Handle<TNode>> rootHandles)
     {
         _store = store;
         _rootHandles = rootHandles;
@@ -55,13 +55,9 @@ public readonly struct SnapshotSlice<TNode, TNodeOps>
     public ReadOnlySpan<Handle<TNode>> Roots
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _rootHandles.WrittenSpan;
+        get => _rootHandles.AsSpan;
     }
 
-    /// <summary>Resets the root list and returns it so the caller can recycle the backing storage.</summary>
-    internal UnsafeList<Handle<TNode>> DetachRoots()
-    {
-        _rootHandles.Reset();
-        return _rootHandles;
-    }
+    /// <summary>Detaches the backing array for recycling into a pool.</summary>
+    internal Handle<TNode>[] DetachArray() => _rootHandles.DetachArray();
 }
