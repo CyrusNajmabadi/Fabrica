@@ -437,7 +437,9 @@ public sealed class WorkerPool : IDisposable
 
         for (var i = 0; i < count; i++)
         {
-            var target = _allContexts[(start + i) % count];
+            var idx = start + i;
+            if (idx >= count) idx -= count;
+            var target = _allContexts[idx];
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
