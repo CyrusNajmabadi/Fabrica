@@ -527,10 +527,10 @@ public sealed class WorkerPool : IDisposable
         var scheduler = context.CurrentScheduler!;
         var readied = 0;
 
-        // Track which dependents this thread readied (decremented to 0), so the second
-        // pass pushes exactly the right set. Necessary because concurrent threads may
-        // also be decrementing shared dependents.
-        Span<bool> isReadied = stackalloc bool[count];
+        // Bitfield tracking which dependents this thread readied (decremented to 0), so
+        // the second pass pushes exactly the right set. Necessary because concurrent
+        // threads may also be decrementing shared dependents.
+        Span<long> readiedBits = stackalloc long[(count + 63) >> 6];
 
         for (var i = 0; i < count; i++)
         {
@@ -545,7 +545,7 @@ public sealed class WorkerPool : IDisposable
             dependent.State = JobState.Queued;
 #endif
             dependent.Scheduler = scheduler;
-            isReadied[i] = true;
+            readiedBits[i >> 6] |= 1L << (i & 63);
             readied++;
         }
 
@@ -557,7 +557,7 @@ public sealed class WorkerPool : IDisposable
 
         for (var i = 0; i < count; i++)
         {
-            if (isReadied[i])
+            if ((readiedBits[i >> 6] & (1L << (i & 63))) != 0)
                 context.Deque.Push(dependents[i]);
         }
 
