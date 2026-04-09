@@ -519,14 +519,20 @@ public sealed class WorkerPool : IDisposable
 
     private int PropagateCompletion(Job job, WorkerContext context)
     {
-        if (job.Dependents.Count == 0)
+        var count = job.Dependents.Count;
+        if (count == 0)
             return 0;
 
         var dependents = job.Dependents;
         var scheduler = context.CurrentScheduler!;
         var readied = 0;
 
-        for (var i = 0; i < dependents.Count; i++)
+        // Bitfield tracking which dependents this thread readied (decremented to 0), so
+        // the second pass pushes exactly the right set. Necessary because concurrent
+        // threads may also be decrementing shared dependents.
+        Span<long> readiedBits = stackalloc long[(count + 63) >> 6];
+
+        for (var i = 0; i < count; i++)
         {
             var dependent = dependents[i];
             var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
@@ -539,14 +545,23 @@ public sealed class WorkerPool : IDisposable
             dependent.State = JobState.Queued;
 #endif
             dependent.Scheduler = scheduler;
-            scheduler.IncrementOutstanding();
-            context.Deque.Push(dependent);
+            readiedBits[i >> 6] |= 1L << (i & 63);
             readied++;
         }
 
-        if (readied > 0)
-            this.TryWakeOneWorker();
+        if (readied == 0)
+            return 0;
 
+        // Single atomic increment for all readied dependents, before any are pushed.
+        scheduler.IncrementOutstandingBy(readied);
+
+        for (var i = 0; i < count; i++)
+        {
+            if ((readiedBits[i >> 6] & (1L << (i & 63))) != 0)
+                context.Deque.Push(dependents[i]);
+        }
+
+        this.TryWakeOneWorker();
         return readied;
     }
 

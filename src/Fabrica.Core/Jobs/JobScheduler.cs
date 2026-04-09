@@ -68,6 +68,8 @@ public sealed class JobScheduler(WorkerPool pool)
 
     internal void IncrementOutstanding() => Interlocked.Increment(ref _outstandingJobs);
 
+    internal void IncrementOutstandingBy(int count) => Interlocked.Add(ref _outstandingJobs, count);
+
     internal void DecrementOutstanding() => Interlocked.Decrement(ref _outstandingJobs);
 
     // ── Private ─────────────────────────────────────────────────────────────
