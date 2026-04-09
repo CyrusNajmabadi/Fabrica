@@ -153,14 +153,9 @@ public class CoordinatorMergeTests
 
         var threadLocalBuffers = childStore.ThreadLocalBuffers;
 
-        var c0 = threadLocalBuffers[0].Allocate();
-        threadLocalBuffers[0][c0] = new ChildNode { Value = 10 };
-
-        var c1 = threadLocalBuffers[1].Allocate();
-        threadLocalBuffers[1][c1] = new ChildNode { Value = 20 };
-
-        var c2 = threadLocalBuffers[1].Allocate();
-        threadLocalBuffers[1][c2] = new ChildNode { Value = 30 };
+        threadLocalBuffers[0].Allocate(new ChildNode { Value = 10 });
+        threadLocalBuffers[1].Allocate(new ChildNode { Value = 20 });
+        threadLocalBuffers[1].Allocate(new ChildNode { Value = 30 });
 
         var (start, count) = childStore.DrainBuffers();
 
@@ -195,13 +190,11 @@ public class CoordinatorMergeTests
 
         var threadLocalBuffers = childStore.ThreadLocalBuffers;
 
-        var c0 = threadLocalBuffers[0].Allocate();
-        threadLocalBuffers[0][c0] = new ChildNode { Value = 10 };
+        threadLocalBuffers[0].Allocate(new ChildNode { Value = 10 });
 
         // Thread 1 is empty
 
-        var c2 = threadLocalBuffers[2].Allocate();
-        threadLocalBuffers[2][c2] = new ChildNode { Value = 30 };
+        threadLocalBuffers[2].Allocate(new ChildNode { Value = 30 });
 
         var (start, count) = childStore.DrainBuffers();
 
@@ -225,15 +218,13 @@ public class CoordinatorMergeTests
         var childThreadLocalBuffers = childStore.ThreadLocalBuffers;
         var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
-        var childHandle = childThreadLocalBuffers[0].Allocate();
-        childThreadLocalBuffers[0][childHandle] = new ChildNode { Value = 42 };
+        var childHandle = childThreadLocalBuffers[0].Allocate(new ChildNode { Value = 42 });
 
-        var parentHandle = parentThreadLocalBuffers[0].Allocate();
-        parentThreadLocalBuffers[0][parentHandle] = new ParentNode
+        parentThreadLocalBuffers[0].Allocate(new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = childHandle,
-        };
+        });
 
         childStore.DrainBuffers();
         parentStore.DrainBuffers();
@@ -259,12 +250,11 @@ public class CoordinatorMergeTests
         childStore.RefCounts.EnsureCapacity(1);
 
         var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
-        var parentHandle = parentThreadLocalBuffers[0].Allocate();
-        parentThreadLocalBuffers[0][parentHandle] = new ParentNode
+        parentThreadLocalBuffers[0].Allocate(new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = globalChild,
-        };
+        });
 
         parentStore.DrainBuffers();
 
@@ -298,36 +288,29 @@ public class CoordinatorMergeTests
         // ── Simulate production phase ────────────────────────────────────
 
         // Thread 0: one child, one parent referencing it (parent is a root)
-        var c0T0 = childThreadLocalBuffers[0].Allocate();
-        childThreadLocalBuffers[0][c0T0] = new ChildNode { Value = 10 };
+        var c0T0 = childThreadLocalBuffers[0].Allocate(new ChildNode { Value = 10 });
 
-        var p0T0 = parentThreadLocalBuffers[0].Allocate(isRoot: true);
-        parentThreadLocalBuffers[0][p0T0] = new ParentNode
+        parentThreadLocalBuffers[0].Allocate(new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = c0T0,
-        };
+        }, isRoot: true);
 
         // Thread 1: two children, two parents (parent[1] also references parent[0]; parent[1] is a root)
-        var c0T1 = childThreadLocalBuffers[1].Allocate();
-        childThreadLocalBuffers[1][c0T1] = new ChildNode { Value = 20 };
+        var c0T1 = childThreadLocalBuffers[1].Allocate(new ChildNode { Value = 20 });
+        var c1T1 = childThreadLocalBuffers[1].Allocate(new ChildNode { Value = 30 });
 
-        var c1T1 = childThreadLocalBuffers[1].Allocate();
-        childThreadLocalBuffers[1][c1T1] = new ChildNode { Value = 30 };
-
-        var p0T1 = parentThreadLocalBuffers[1].Allocate();
-        parentThreadLocalBuffers[1][p0T1] = new ParentNode
+        var p0T1 = parentThreadLocalBuffers[1].Allocate(new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = c0T1,
-        };
+        });
 
-        var p1T1 = parentThreadLocalBuffers[1].Allocate(isRoot: true);
-        parentThreadLocalBuffers[1][p1T1] = new ParentNode
+        parentThreadLocalBuffers[1].Allocate(new ParentNode
         {
             LeftParent = p0T1,
             ChildRef = c1T1,
-        };
+        }, isRoot: true);
 
         // ── Phase 1: Allocate + Copy + Remap ─────────────────────────────
 
@@ -420,15 +403,13 @@ public class CoordinatorMergeTests
         var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
         // Single child, single parent referencing it (parent is a root)
-        var childHandle = childThreadLocalBuffers[0].Allocate();
-        childThreadLocalBuffers[0][childHandle] = new ChildNode { Value = 42 };
+        var childHandle = childThreadLocalBuffers[0].Allocate(new ChildNode { Value = 42 });
 
-        var parentHandle = parentThreadLocalBuffers[0].Allocate(isRoot: true);
-        parentThreadLocalBuffers[0][parentHandle] = new ParentNode
+        parentThreadLocalBuffers[0].Allocate(new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = childHandle,
-        };
+        }, isRoot: true);
 
         // DrainBuffers
         childStore.DrainBuffers();
@@ -474,22 +455,19 @@ public class CoordinatorMergeTests
         var childThreadLocalBuffers = childStore.ThreadLocalBuffers;
         var parentThreadLocalBuffers = parentStore.ThreadLocalBuffers;
 
-        var leaf = childThreadLocalBuffers[0].Allocate();
-        childThreadLocalBuffers[0][leaf] = new ChildNode { Value = 1 };
+        var leaf = childThreadLocalBuffers[0].Allocate(new ChildNode { Value = 1 });
 
-        var inner = parentThreadLocalBuffers[0].Allocate();
-        parentThreadLocalBuffers[0][inner] = new ParentNode
+        var inner = parentThreadLocalBuffers[0].Allocate(new ParentNode
         {
             LeftParent = Handle<ParentNode>.None,
             ChildRef = leaf,
-        };
+        });
 
-        var root = parentThreadLocalBuffers[0].Allocate(isRoot: true);
-        parentThreadLocalBuffers[0][root] = new ParentNode
+        parentThreadLocalBuffers[0].Allocate(new ParentNode
         {
             LeftParent = inner,
             ChildRef = Handle<ChildNode>.None,
-        };
+        }, isRoot: true);
 
         // Merge: DrainBuffers → RewriteAndIncrementRefCounts
         childStore.DrainBuffers();

@@ -12,8 +12,7 @@ internal sealed class CollectorJob : TreeJob
     protected internal override void Execute(JobContext context)
     {
         var buf = Buffers![context.WorkerIndex];
-        var h = buf.Allocate(isRoot: IsRoot);
-        buf[h] = new BenchNode
+        var h = buf.Allocate(new BenchNode
         {
             Child0 = Children[0].ResultHead,
             Child1 = Children[1].ResultHead,
@@ -23,7 +22,7 @@ internal sealed class CollectorJob : TreeJob
             Child5 = Children[5].ResultHead,
             Child6 = Children[6].ResultHead,
             Child7 = Children[7].ResultHead,
-        };
+        }, isRoot: IsRoot);
         ResultHead = h;
     }
 

@@ -161,9 +161,7 @@ public class JobMergePipelineTests : IDisposable
             AllocatedHandles = new Handle<ChildNode>[ChildCount];
             for (var i = 0; i < ChildCount; i++)
             {
-                var handle = threadLocalBuffer.Allocate();
-                threadLocalBuffer[handle] = new ChildNode { Value = ValueStart + i };
-                AllocatedHandles[i] = handle;
+                AllocatedHandles[i] = threadLocalBuffer.Allocate(new ChildNode { Value = ValueStart + i });
             }
         }
 
@@ -197,12 +195,11 @@ public class JobMergePipelineTests : IDisposable
             Handle<ParentNode> lastHandle = default;
             for (var i = 0; i < allChildHandles.Count; i++)
             {
-                lastHandle = threadLocalBuffer.Allocate();
-                threadLocalBuffer[lastHandle] = new ParentNode
+                lastHandle = threadLocalBuffer.Allocate(new ParentNode
                 {
                     LeftParent = previousParent,
                     ChildRef = allChildHandles[i],
-                };
+                });
                 previousParent = lastHandle;
             }
 

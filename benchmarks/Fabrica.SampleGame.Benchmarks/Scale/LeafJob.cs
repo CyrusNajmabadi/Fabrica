@@ -15,8 +15,7 @@ internal sealed class LeafJob : TreeJob
 
         for (var i = ChainLength - 1; i >= 0; i--)
         {
-            var h = buf.Allocate();
-            buf[h] = new BenchNode { Next = next, Value = i };
+            var h = buf.Allocate(new BenchNode { Next = next, Value = i });
             next = h;
         }
 

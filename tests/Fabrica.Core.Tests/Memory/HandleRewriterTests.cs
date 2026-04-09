@@ -137,11 +137,9 @@ public class HandleRewriterTests
     {
         var threadLocalBuffer = new ThreadLocalBuffer<TreeNode>(threadId: 2);
 
-        var leafHandle = threadLocalBuffer.Allocate();
-        threadLocalBuffer[leafHandle] = new TreeNode { Value = 10, Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None };
+        var leafHandle = threadLocalBuffer.Allocate(new TreeNode { Value = 10, Left = Handle<TreeNode>.None, Right = Handle<TreeNode>.None });
 
-        var parentHandle = threadLocalBuffer.Allocate();
-        threadLocalBuffer[parentHandle] = new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None };
+        var parentHandle = threadLocalBuffer.Allocate(new TreeNode { Value = 20, Left = leafHandle, Right = Handle<TreeNode>.None });
 
         int[] remap = [500, 501];
         var visitor = new TestVisitor(remap);
