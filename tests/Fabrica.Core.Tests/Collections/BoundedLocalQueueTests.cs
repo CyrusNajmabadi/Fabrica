@@ -11,18 +11,24 @@ public class BoundedLocalQueueTests
     // ═══════════════════════════ LAYOUT VERIFICATION ═════════════════════════
 
     [Fact]
-    public void Layout_HeadAndTail_AreSeparatedByAtLeast128Bytes()
+    public void Layout_HeadAndTail_MatchesExpectedConfiguration()
     {
         var ht = new CacheLinePaddedHead();
-        var offset = Unsafe.ByteOffset(
+        var offset = (long)Unsafe.ByteOffset(
             ref Unsafe.As<long, byte>(ref ht.Head),
             ref Unsafe.As<int, byte>(ref ht.Tail));
+
+        var expectedUnsafe = Environment.GetEnvironmentVariable("EXPECTED_UNSAFE_OPT");
+        if (expectedUnsafe == "true")
+            Assert.True(offset >= 128,
+                $"EXPECTED_UNSAFE_OPT=true but layout offset is only {offset} — flag not reaching the build.");
+        else if (expectedUnsafe == "false")
+            Assert.True(offset < 128,
+                $"EXPECTED_UNSAFE_OPT=false but layout offset is {offset} — unsafe layout is unexpectedly active.");
+
 #if UNSAFE_OPT
-        Assert.True((long)offset >= 128,
-            $"Expected Head and Tail to be >= 128 bytes apart, but they are {(long)offset} bytes apart.");
-#else
-        Assert.True((long)offset >= 0,
-            $"Tail should be at a positive offset from Head, but offset is {(long)offset}.");
+        Assert.True(offset >= 128,
+            $"UNSAFE_OPT defined but layout offset is only {offset}.");
 #endif
     }
 

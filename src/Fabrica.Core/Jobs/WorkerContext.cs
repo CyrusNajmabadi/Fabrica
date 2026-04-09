@@ -43,7 +43,7 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
 
     // ── Instrumentation ──────────────────────────────────────────────────
 
-    /// <summary>How the most recent job was obtained. Always set (branch-free); only read when instrumented.</summary>
+    /// <summary>How the most recent job was obtained. Only set when INSTRUMENT is defined.</summary>
     internal JobSource LastJobSource;
 
     /// <summary>Pre-allocated per-worker buffer. Non-null when instrumentation is active.</summary>

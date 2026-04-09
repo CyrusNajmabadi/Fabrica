@@ -420,7 +420,9 @@ public sealed class WorkerPool : IDisposable
         var job = context.Deque.TryPop();
         if (job != null)
         {
+#if INSTRUMENT
             context.LastJobSource = JobSource.Local;
+#endif
             this.ExecuteJob(job, context);
             return true;
         }
@@ -451,7 +453,9 @@ public sealed class WorkerPool : IDisposable
             var job = target.Deque.TryStealHalf(ref context.Deque);
             if (job != null)
             {
+#if INSTRUMENT
                 context.LastJobSource = JobSource.Steal;
+#endif
                 this.ExecuteJob(job, context);
                 return true;
             }
@@ -465,7 +469,9 @@ public sealed class WorkerPool : IDisposable
         var job = _injectionQueue.Value.TryDequeue();
         if (job != null)
         {
+#if INSTRUMENT
             context.LastJobSource = JobSource.Injection;
+#endif
             this.ExecuteJob(job, context);
             return true;
         }
@@ -475,10 +481,9 @@ public sealed class WorkerPool : IDisposable
 
     private void ExecuteJob(Job job, WorkerContext context)
     {
-        var records = context.InstrumentRecords;
-        long obtainedTs = 0;
-        if (records != null)
-            obtainedTs = Stopwatch.GetTimestamp();
+#if INSTRUMENT
+        long obtainedTs = Stopwatch.GetTimestamp();
+#endif
 
         var scheduler = job.Scheduler!;
         context.CurrentScheduler = scheduler;
@@ -493,37 +498,46 @@ public sealed class WorkerPool : IDisposable
         job.State = JobState.Completed;
 #endif
 
-        var readied = this.PropagateCompletion(job, context);
+        if (job.Dependents.Count > 0)
+            this.PropagateCompletion(job, context);
 
+#if INSTRUMENT
         // Record BEFORE DecrementOutstanding: the coordinator exits RunUntilComplete
         // when _outstandingJobs hits 0, then reads these records. If we recorded after
         // the decrement, a worker could still be writing when the coordinator reads.
-        if (records != null)
-        {
-            var idx = context.InstrumentRecordCount;
-            if (idx < records.Length)
-            {
-                ref var rec = ref records[idx];
-                rec.ObtainedTs = obtainedTs;
-                rec.CompletedTs = Stopwatch.GetTimestamp();
-                rec.Source = context.LastJobSource;
-                rec.ReadiedCount = (byte)Math.Min(readied, 255);
-                rec.WorkerIndex = (byte)context.WorkerIndex;
-                context.InstrumentRecordCount = idx + 1;
-            }
-        }
+        this.RecordInstrumentation(context, obtainedTs);
+#endif
 
         scheduler.DecrementOutstanding();
         context.CurrentScheduler = null;
     }
 
-    private int PropagateCompletion(Job job, WorkerContext context)
+#if INSTRUMENT
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void RecordInstrumentation(WorkerContext context, long obtainedTs)
     {
-        var count = job.Dependents.Count;
-        if (count == 0)
-            return 0;
+        var records = context.InstrumentRecords;
+        if (records == null)
+            return;
 
+        var idx = context.InstrumentRecordCount;
+        if (idx < records.Length)
+        {
+            ref var rec = ref records[idx];
+            rec.ObtainedTs = obtainedTs;
+            rec.CompletedTs = Stopwatch.GetTimestamp();
+            rec.Source = context.LastJobSource;
+            rec.WorkerIndex = (byte)context.WorkerIndex;
+            context.InstrumentRecordCount = idx + 1;
+        }
+    }
+#endif
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void PropagateCompletion(Job job, WorkerContext context)
+    {
         var dependents = job.Dependents;
+        var count = dependents.Count;
         var scheduler = context.CurrentScheduler!;
         var readied = 0;
 
@@ -550,7 +564,7 @@ public sealed class WorkerPool : IDisposable
         }
 
         if (readied == 0)
-            return 0;
+            return;
 
         // Single atomic increment for all readied dependents, before any are pushed.
         scheduler.IncrementOutstandingBy(readied);
@@ -562,7 +576,6 @@ public sealed class WorkerPool : IDisposable
         }
 
         this.TryWakeOneWorker();
-        return readied;
     }
 
     // ── Disposal ────────────────────────────────────────────────────────────
