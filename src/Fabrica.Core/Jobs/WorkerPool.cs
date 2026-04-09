@@ -536,6 +536,7 @@ public sealed class WorkerPool : IDisposable
 #endif
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [SkipLocalsInit]
     private void PropagateCompletion(Job job, WorkerContext context)
     {
         var dependents = job.Dependents;
@@ -547,6 +548,7 @@ public sealed class WorkerPool : IDisposable
         // the second pass pushes exactly the right set. Necessary because concurrent
         // threads may also be decrementing shared dependents.
         Span<long> readiedBits = stackalloc long[(count + 63) >> 6];
+        readiedBits.Clear();
 
         for (var i = 0; i < count; i++)
         {
