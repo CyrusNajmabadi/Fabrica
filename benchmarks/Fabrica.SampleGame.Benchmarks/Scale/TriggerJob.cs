@@ -3,7 +3,7 @@ using Fabrica.Core.Jobs;
 
 namespace Fabrica.SampleGame.Benchmarks.Scale;
 
-internal sealed class TriggerJob : Job
+internal sealed class TriggerJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal bool Instrument;
     internal long ExecutedTimestamp;

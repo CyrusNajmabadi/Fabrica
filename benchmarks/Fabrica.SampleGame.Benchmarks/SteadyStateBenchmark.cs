@@ -23,7 +23,7 @@ public class SteadyStateBenchmark
     {
         _pool = new WorkerPool(coordinatorCount: 1);
         _scheduler = new JobScheduler(_pool);
-        _tickState = new GameTickState(_pool.WorkerCount);
+        _tickState = new GameTickState(_pool.WorkerCount, _scheduler);
 
         _previousImage = this.ProduceImage();
 

@@ -8,11 +8,13 @@ public class JobSchedulerTests
 {
     // ── Test job types ──────────────────────────────────────────────────────
 
-    private sealed class TestJob : Job
+    private sealed class TestJob(JobScheduler scheduler) : Job(scheduler), IPoolableJob<TestJob>
     {
         public bool Executed { get; set; }
         public int ExecutedOnWorker { get; set; } = -1;
         public Action<JobContext>? OnExecute { get; set; }
+
+        public static TestJob Create(JobScheduler scheduler) => new(scheduler);
 
         protected internal override void Execute(JobContext context)
         {
@@ -38,7 +40,7 @@ public class JobSchedulerTests
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
-        var job = new TestJob();
+        var job = new TestJob(scheduler);
         accessor.Submit(job);
 
         Assert.True(job.Executed);
@@ -52,7 +54,7 @@ public class JobSchedulerTests
         var accessor = scheduler.GetTestAccessor();
 
         var capturedIndex = -1;
-        var job = new TestJob
+        var job = new TestJob(scheduler)
         {
             OnExecute = ctx => capturedIndex = ctx.WorkerIndex,
         };
@@ -73,9 +75,9 @@ public class JobSchedulerTests
 
         var order = new ConcurrentQueue<string>();
 
-        var jobA = new TestJob { OnExecute = _ => order.Enqueue("A") };
-        var jobB = new TestJob { OnExecute = _ => order.Enqueue("B") };
-        var jobC = new TestJob { OnExecute = _ => order.Enqueue("C") };
+        var jobA = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("A") };
+        var jobB = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("B") };
+        var jobC = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("C") };
 
         jobB.DependsOn(jobA);
         jobC.DependsOn(jobB);
@@ -96,10 +98,10 @@ public class JobSchedulerTests
 
         var order = new ConcurrentQueue<string>();
 
-        var root = new TestJob { OnExecute = _ => order.Enqueue("root") };
-        var left = new TestJob { OnExecute = _ => order.Enqueue("left") };
-        var right = new TestJob { OnExecute = _ => order.Enqueue("right") };
-        var join = new TestJob { OnExecute = _ => order.Enqueue("join") };
+        var root = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("root") };
+        var left = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("left") };
+        var right = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("right") };
+        var join = new TestJob(scheduler) { OnExecute = _ => order.Enqueue("join") };
 
         left.DependsOn(root);
         right.DependsOn(root);
@@ -127,10 +129,10 @@ public class JobSchedulerTests
 
         var joinExecutionCount = 0;
 
-        var root = new TestJob();
-        var left = new TestJob();
-        var right = new TestJob();
-        var join = new TestJob
+        var root = new TestJob(scheduler);
+        var left = new TestJob(scheduler);
+        var right = new TestJob(scheduler);
+        var join = new TestJob(scheduler)
         {
             OnExecute = _ => Interlocked.Increment(ref joinExecutionCount),
         };
@@ -155,12 +157,12 @@ public class JobSchedulerTests
         var accessor = scheduler.GetTestAccessor();
 
         var subJobExecuted = false;
-        var subJob = new TestJob
+        var subJob = new TestJob(scheduler)
         {
             OnExecute = _ => subJobExecuted = true,
         };
 
-        var parentJob = new TestJob
+        var parentJob = new TestJob(scheduler)
         {
             OnExecute = ctx => ctx.WorkerContext.Enqueue(subJob),
         };
@@ -180,7 +182,7 @@ public class JobSchedulerTests
         var scheduler = new JobScheduler(pool);
         var accessor = scheduler.GetTestAccessor();
 
-        var job = new TestJob();
+        var job = new TestJob(scheduler);
         accessor.Submit(job);
 
         Assert.Equal(0, accessor.OutstandingJobs);
@@ -191,11 +193,13 @@ public class JobSchedulerTests
     [Fact]
     public void PooledJobs_StateResetCorrectly()
     {
-        var jobPool = new JobPool<TestJob>();
+        using var pool = new WorkerPool(workerCount: 2, coordinatorCount: 1);
+        var scheduler = new JobScheduler(pool);
+        var jobPool = new JobPool<TestJob>(scheduler);
 
         var job = jobPool.Rent();
-        new TestJob().DependsOn(job);
-        new TestJob().DependsOn(job);
+        new TestJob(scheduler).DependsOn(job);
+        new TestJob(scheduler).DependsOn(job);
 #if DEBUG
         job.State = JobState.Completed;
 #endif
@@ -206,7 +210,7 @@ public class JobSchedulerTests
         Assert.Same(job, reused);
         Assert.Equal(0, reused.RemainingDependencies);
         Assert.Equal(0, reused.Dependents.Count);
-        Assert.Null(reused.Scheduler);
+        Assert.Same(scheduler, reused.Scheduler);
 #if DEBUG
         Assert.Equal(JobState.Pending, reused.State);
 #endif
@@ -226,7 +230,7 @@ public class JobSchedulerTests
 
         for (var i = 0; i < JobCount; i++)
         {
-            var job = new TestJob
+            var job = new TestJob(scheduler)
             {
                 OnExecute = _ => Interlocked.Increment(ref executionCount),
             };
@@ -251,7 +255,7 @@ public class JobSchedulerTests
         for (var i = 0; i < Depth; i++)
         {
             var capturedJobIndex = i;
-            jobs[i] = new TestJob
+            jobs[i] = new TestJob(scheduler)
             {
                 OnExecute = _ => order.Enqueue(capturedJobIndex),
             };
@@ -278,18 +282,18 @@ public class JobSchedulerTests
 
         var executionCount = 0;
 
-        var join = new TestJob
+        var join = new TestJob(scheduler)
         {
             OnExecute = _ => Interlocked.Increment(ref executionCount),
         };
 
-        var root = new TestJob
+        var root = new TestJob(scheduler)
         {
             OnExecute = _ => Interlocked.Increment(ref executionCount),
         };
         for (var i = 0; i < fanWidth; i++)
         {
-            var child = new TestJob
+            var child = new TestJob(scheduler)
             {
                 OnExecute = _ => Interlocked.Increment(ref executionCount),
             };
@@ -363,13 +367,13 @@ public class JobSchedulerTests
         var accessor = scheduler.GetTestAccessor();
 
         var executionCount = 0;
-        var trigger = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
-        var blocker = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+        var trigger = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+        var blocker = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
 
         var expectedReadied = 0;
         for (var i = 0; i < totalDependents; i++)
         {
-            var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var child = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
             child.DependsOn(trigger);
             if (IsReadiedByTrigger(i, pattern))
                 expectedReadied++;
@@ -450,12 +454,12 @@ public class JobSchedulerTests
         for (var iteration = 0; iteration < Iterations; iteration++)
         {
             var executionCount = 0;
-            var root = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
-            var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var root = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var join = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
 
             for (var i = 0; i < FanWidth; i++)
             {
-                var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                var child = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
                 child.DependsOn(root);
                 join.DependsOn(child);
             }
@@ -480,15 +484,15 @@ public class JobSchedulerTests
         for (var iteration = 0; iteration < Iterations; iteration++)
         {
             var executionCount = 0;
-            var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var join = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
 
             var roots = new TestJob[RootCount];
             for (var r = 0; r < RootCount; r++)
             {
-                roots[r] = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                roots[r] = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
                 for (var c = 0; c < ChildrenPerRoot; c++)
                 {
-                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    var child = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
                     child.DependsOn(roots[r]);
                     join.DependsOn(child);
                 }
@@ -517,15 +521,15 @@ public class JobSchedulerTests
         for (var iteration = 0; iteration < Iterations; iteration++)
         {
             var executionCount = 0;
-            var source = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+            var source = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
             var current = source;
 
             for (var stage = 0; stage < Stages; stage++)
             {
-                var stageJoin = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                var stageJoin = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
                 for (var i = 0; i < FanWidth; i++)
                 {
-                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    var child = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
                     child.DependsOn(current);
                     stageJoin.DependsOn(child);
                 }
@@ -556,12 +560,12 @@ public class JobSchedulerTests
 
             for (var d = 0; d < DiamondCount; d++)
             {
-                var root = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
-                var join = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                var root = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                var join = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
 
                 for (var i = 0; i < FanWidth; i++)
                 {
-                    var child = new TestJob { OnExecute = _ => Interlocked.Increment(ref executionCount) };
+                    var child = new TestJob(scheduler) { OnExecute = _ => Interlocked.Increment(ref executionCount) };
                     child.DependsOn(root);
                     join.DependsOn(child);
                 }
@@ -590,9 +594,9 @@ public class JobSchedulerTests
         var countB = 0;
 
         for (var i = 0; i < 50; i++)
-            accessorA.Inject(new TestJob { OnExecute = _ => Interlocked.Increment(ref countA) });
+            accessorA.Inject(new TestJob(schedulerA) { OnExecute = _ => Interlocked.Increment(ref countA) });
         for (var i = 0; i < 50; i++)
-            accessorB.Inject(new TestJob { OnExecute = _ => Interlocked.Increment(ref countB) });
+            accessorB.Inject(new TestJob(schedulerB) { OnExecute = _ => Interlocked.Increment(ref countB) });
 
         accessorA.WaitForCompletion();
         accessorB.WaitForCompletion();

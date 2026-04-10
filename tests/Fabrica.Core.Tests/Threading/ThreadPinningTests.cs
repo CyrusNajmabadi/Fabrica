@@ -137,7 +137,7 @@ public sealed class ThreadPinningTests
         for (var i = 0; i < ThreadCount; i++)
         {
             results[i] = new QosResult();
-            var job = new RendezvousQosJob { Result = results[i], Rendezvous = rendezvous, Done = done };
+            var job = new RendezvousQosJob(scheduler) { Result = results[i], Rendezvous = rendezvous, Done = done };
             scheduler.GetTestAccessor().Inject(job);
         }
 
@@ -185,7 +185,7 @@ public sealed class ThreadPinningTests
         for (var i = 0; i < ThreadCount; i++)
         {
             results[i] = new AffinityResult();
-            var job = new RendezvousAffinityJob { Result = results[i], Rendezvous = rendezvous, Done = done };
+            var job = new RendezvousAffinityJob(scheduler) { Result = results[i], Rendezvous = rendezvous, Done = done };
             scheduler.GetTestAccessor().Inject(job);
         }
 
@@ -218,7 +218,7 @@ public sealed class ThreadPinningTests
     /// Job that blocks at a <see cref="Barrier"/> rendezvous, forcing all threads (workers +
     /// coordinator) to participate simultaneously before any completes.
     /// </summary>
-    private sealed class RendezvousQosJob : Job
+    private sealed class RendezvousQosJob(JobScheduler scheduler) : Job(scheduler)
     {
         internal QosResult Result = null!;
         internal Barrier Rendezvous = null!;
@@ -242,7 +242,7 @@ public sealed class ThreadPinningTests
         public int WorkerIndex = -1;
     }
 
-    private sealed class RendezvousAffinityJob : Job
+    private sealed class RendezvousAffinityJob(JobScheduler scheduler) : Job(scheduler)
     {
         internal AffinityResult Result = null!;
         internal Barrier Rendezvous = null!;

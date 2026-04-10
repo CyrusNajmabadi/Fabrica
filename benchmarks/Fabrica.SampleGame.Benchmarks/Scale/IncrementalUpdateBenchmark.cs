@@ -46,7 +46,7 @@ public class IncrementalUpdateBenchmark
         this.AllocateFullRebuildJobs();
         this.BuildInitialTree();
 
-        _spineJob = new SpineUpdateJob();
+        _spineJob = new SpineUpdateJob(_scheduler);
 
         // Warm up the incremental path to reach steady state.
         for (var i = 0; i < 10; i++)
@@ -102,10 +102,10 @@ public class IncrementalUpdateBenchmark
     private void AllocateFullRebuildJobs()
     {
         var leafCount = (int)Math.Pow(FanOut, Depth - 1);
-        _trigger = new TriggerJob();
+        _trigger = new TriggerJob(_scheduler);
         _leaves = new LeafJob[leafCount];
         for (var i = 0; i < leafCount; i++)
-            _leaves[i] = new LeafJob();
+            _leaves[i] = new LeafJob(_scheduler);
 
         _collectorLevels = new CollectorJob[Depth - 1][];
         for (var level = 0; level < Depth - 1; level++)
@@ -114,7 +114,7 @@ public class IncrementalUpdateBenchmark
             _collectorLevels[level] = new CollectorJob[count];
             for (var i = 0; i < count; i++)
             {
-                _collectorLevels[level][i] = new CollectorJob
+                _collectorLevels[level][i] = new CollectorJob(_scheduler)
                 {
                     Children = new TreeJob[FanOut],
                 };

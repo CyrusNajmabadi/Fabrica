@@ -40,13 +40,14 @@ namespace Fabrica.Core.Jobs;
 ///   number of concurrently live jobs of this type. If this becomes a concern, a bounded variant
 ///   can cap the pool size and let excess items fall to GC.
 /// </summary>
-internal sealed class JobPool<TJob> where TJob : Job, new()
+internal sealed class JobPool<TJob>(JobScheduler scheduler) where TJob : Job, IPoolableJob<TJob>
 {
     // Sign bit used as "this node should be on the free list" flag.
     // Low 31 bits are the reference count.
     private const int SHOULD_BE_ON_FREELIST = unchecked((int)0x80000000); // int.MinValue
     private const int REFS_MASK = 0x7FFFFFFF; // int.MaxValue
 
+    private readonly JobScheduler _scheduler = scheduler;
     private TJob? _head;
 
     /// <summary>
@@ -61,7 +62,7 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
         {
             var head = Volatile.Read(ref _head);
             if (head is null)
-                return new TJob();
+                return TJob.Create(_scheduler);
 
             var prevHead = head;
 
@@ -110,7 +111,6 @@ internal sealed class JobPool<TJob> where TJob : Job, new()
     /// </summary>
     public void Return(TJob item)
     {
-        item.Scheduler = null;
 #if DEBUG
         item.State = default;
 #endif

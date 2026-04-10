@@ -108,14 +108,14 @@ public class GamePipelineTests : IDisposable
 
         // ── Build and execute the job DAG ────────────────────────────────
         // Dependencies wired automatically via DependsOn in property setters.
-        var spawnJob = new SpawnItemsJob { ItemThreadLocalBuffers = itemStore.ThreadLocalBuffers, Count = ItemCount };
-        var beltJob = new BuildBeltChainJob
+        var spawnJob = new SpawnItemsJob(scheduler) { ItemThreadLocalBuffers = itemStore.ThreadLocalBuffers, Count = ItemCount };
+        var beltJob = new BuildBeltChainJob(scheduler)
         {
             BeltThreadLocalBuffers = beltStore.ThreadLocalBuffers,
             SpawnJob = spawnJob,
             ChainLength = ChainLength,
         };
-        _ = new PlaceMachinesJob { MachineThreadLocalBuffers = machineStore.ThreadLocalBuffers, BeltJob = beltJob };
+        _ = new PlaceMachinesJob(scheduler) { MachineThreadLocalBuffers = machineStore.ThreadLocalBuffers, BeltJob = beltJob };
 
         schedulerAccessor.Submit(spawnJob);
 

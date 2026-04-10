@@ -9,7 +9,7 @@ namespace Fabrica.SampleGame.Jobs;
 /// belt chain's head and tail, and marks it as a root. All belt segments and items become
 /// reachable through this machine root.
 /// </summary>
-internal sealed class PlaceMachinesJob : Job
+internal sealed class PlaceMachinesJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal ThreadLocalBuffer<MachineNode>[]? MachineThreadLocalBuffers;
 

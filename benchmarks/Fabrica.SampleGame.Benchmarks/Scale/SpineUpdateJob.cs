@@ -7,7 +7,7 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// Creates 14 new nodes (10 chain + 4 spine collectors) along a single path from root to leaf,
 /// referencing existing global handles for the 7 unchanged siblings at each level.
 /// </summary>
-internal sealed class SpineUpdateJob : Job
+internal sealed class SpineUpdateJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal ThreadLocalBuffer<BenchNode>[]? Buffers;
     internal UnsafeSlabArena<BenchNode> Arena = null!;

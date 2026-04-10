@@ -7,7 +7,7 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// No-op job used as a synchronization barrier between DAG phases. All jobs in phase N+1 depend
 /// on this barrier, and this barrier depends on all jobs in phase N.
 /// </summary>
-internal sealed class BarrierJob : Job
+internal sealed class BarrierJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal bool Instrument;
     internal long ExecutedTimestamp;

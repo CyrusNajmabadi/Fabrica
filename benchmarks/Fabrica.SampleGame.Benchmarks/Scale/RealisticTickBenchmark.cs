@@ -467,7 +467,7 @@ public class RealisticTickBenchmark
 
     private void AllocateJobs()
     {
-        _trigger = new TriggerJob();
+        _trigger = new TriggerJob(_scheduler);
 
         _phases = new ComputeJob[PhaseCount][];
         _barriers = new BarrierJob[PhaseCount];
@@ -476,8 +476,8 @@ public class RealisticTickBenchmark
         {
             _phases[p] = new ComputeJob[JobsPerPhase];
             for (var i = 0; i < JobsPerPhase; i++)
-                _phases[p][i] = new ComputeJob();
-            _barriers[p] = new BarrierJob();
+                _phases[p][i] = new ComputeJob(_scheduler);
+            _barriers[p] = new BarrierJob(_scheduler);
         }
     }
 

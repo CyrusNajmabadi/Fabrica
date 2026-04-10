@@ -21,7 +21,7 @@ internal enum JobState : byte
 /// <see cref="JobPool{TJob}"/> for lock-free Treiber stack operations. It must not be read
 /// or written by derived classes.
 /// </summary>
-public abstract class Job
+public abstract class Job(JobScheduler scheduler)
 {
     /// <summary>
     /// Prerequisite count for DAG readiness: zero means this job is eligible to run.
@@ -34,10 +34,13 @@ public abstract class Job
     /// </summary>
     internal NonCopyableUnsafeList<Job> Dependents;
 
-    // Owning scheduler for this job's DAG: set by JobScheduler.Submit for root jobs and by WorkerPool for
-    // sub-jobs and propagated dependents; read by WorkerPool to route completion signals; cleared by
-    // JobPool<TJob>.Return when the job is recycled.
-    internal JobScheduler? Scheduler;
+    /// <summary>
+    /// Owning scheduler for this job's DAG. Set once at construction time and never mutated —
+    /// jobs are permanently bound to a single scheduler. This eliminates GC write barriers on
+    /// the hot path (PropagateCompletion, Enqueue, ExecuteJob) that would otherwise fire on
+    /// every reference-type field store.
+    /// </summary>
+    internal readonly JobScheduler Scheduler = scheduler;
 
     /// <summary>
     /// Intrusive linked-list pointer for <see cref="JobPool{TJob}"/>. Must not be read or

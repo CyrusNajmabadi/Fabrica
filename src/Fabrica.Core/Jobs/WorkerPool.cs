@@ -502,8 +502,7 @@ public sealed class WorkerPool : IDisposable
         long obtainedTs = Stopwatch.GetTimestamp();
 #endif
 
-        var scheduler = job.Scheduler!;
-        context.CurrentScheduler = scheduler;
+        var scheduler = job.Scheduler;
 
 #if DEBUG
         job.State = JobState.Executing;
@@ -527,9 +526,6 @@ public sealed class WorkerPool : IDisposable
 #endif
 
         scheduler.DecrementOutstanding();
-        // CurrentScheduler is intentionally NOT nulled here. The next ExecuteJob will overwrite it,
-        // and nulling would cost a GC write barrier (~2ns) on every job for no functional benefit.
-        // Enqueue() is only called during Job.Execute, where CurrentScheduler is always valid.
     }
 
 #if INSTRUMENT
@@ -559,7 +555,7 @@ public sealed class WorkerPool : IDisposable
     {
         Debug.Assert(count >= 1);
         var dependents = job.Dependents;
-        var scheduler = context.CurrentScheduler!;
+        var scheduler = job.Scheduler;
 
         if (count == 1)
         {
@@ -576,7 +572,6 @@ public sealed class WorkerPool : IDisposable
                 Debug.Assert(dependent.State == JobState.Pending);
                 dependent.State = JobState.Queued;
 #endif
-                dependent.Scheduler = scheduler;
                 scheduler.IncrementOutstandingBy(1);
                 context.Deque.Push(dependent);
                 this.TryWakeOneWorker();
@@ -613,7 +608,6 @@ public sealed class WorkerPool : IDisposable
             Debug.Assert(dependent.State == JobState.Pending);
             dependent.State = JobState.Queued;
 #endif
-            dependent.Scheduler = scheduler;
             readiedBits[i >> 6] |= 1L << (i & 63);
             readied++;
         }
