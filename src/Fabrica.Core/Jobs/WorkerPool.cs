@@ -384,6 +384,7 @@ public sealed class WorkerPool : IDisposable
             this.TryWakeOneWorker();
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void TransitionToParked(WorkerContext context)
     {
         Debug.Assert(!context.IsSearching);
@@ -391,6 +392,7 @@ public sealed class WorkerPool : IDisposable
         Interlocked.Add(ref _idleState, -UnparkedBit);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void TransitionFromParked() =>
         Interlocked.Add(ref _idleState, UnparkedBit);
 
