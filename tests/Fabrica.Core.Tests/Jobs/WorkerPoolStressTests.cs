@@ -267,6 +267,8 @@ public class WorkerPoolStressTests
 
     // ═══════════════════════════ TWO SCHEDULERS CONTENTION ═════════════════
     // Two schedulers sharing one pool submit concurrently on separate threads.
+    // Each scheduler's coordinator deque is bound to one thread via SingleThreadedOwner,
+    // so we use a persistent dedicated thread for scheduler B across all iterations.
 
     [Theory]
     [InlineData(4, 200)]
@@ -283,19 +285,23 @@ public class WorkerPoolStressTests
         var countB = 0;
         Exception? threadException = null;
 
-        for (var iteration = 0; iteration < iterations; iteration++)
+        const int FanWidth = 50;
+
+        // Persistent thread for scheduler B — matches real usage where each coordinator
+        // is a dedicated thread (game loop, render loop, etc.). Creating a new thread per
+        // iteration would violate SingleThreadedOwner on the coordinator's deque.
+        using var startEvent = new ManualResetEventSlim(false);
+        using var doneEvent = new ManualResetEventSlim(false);
+
+        var threadB = new Thread(() =>
         {
-            Volatile.Write(ref countA, 0);
-            Volatile.Write(ref countB, 0);
-
-            const int FanWidth = 50;
-            var barrier = new Barrier(2);
-
-            var threadB = new Thread(() =>
+            try
             {
-                try
+                for (var iteration = 0; iteration < iterations; iteration++)
                 {
-                    barrier.SignalAndWait();
+                    startEvent.Wait();
+                    startEvent.Reset();
+
                     var rootB = new CallbackJob(schedulerB)
                     {
                         OnExecute = _ => Interlocked.Increment(ref countB),
@@ -310,15 +316,25 @@ public class WorkerPoolStressTests
                     }
 
                     accessorB.Submit(rootB);
+                    doneEvent.Set();
                 }
-                catch (Exception ex)
-                {
-                    Volatile.Write(ref threadException, ex);
-                }
-            });
+            }
+            catch (Exception ex)
+            {
+                Volatile.Write(ref threadException, ex);
+                doneEvent.Set();
+            }
+        });
 
-            threadB.Start();
-            barrier.SignalAndWait(TestContext.Current.CancellationToken);
+        threadB.Start();
+
+        for (var iteration = 0; iteration < iterations; iteration++)
+        {
+            Volatile.Write(ref countA, 0);
+            Volatile.Write(ref countB, 0);
+
+            // Signal thread B to start this iteration's work.
+            startEvent.Set();
 
             var rootA = new CallbackJob(schedulerA)
             {
@@ -334,7 +350,10 @@ public class WorkerPoolStressTests
             }
 
             accessorA.Submit(rootA);
-            threadB.Join();
+
+            // Wait for thread B to finish this iteration.
+            doneEvent.Wait(TestContext.Current.CancellationToken);
+            doneEvent.Reset();
 
             var ex = Volatile.Read(ref threadException);
             if (ex != null)
@@ -343,6 +362,8 @@ public class WorkerPoolStressTests
             Assert.Equal(FanWidth + 1, Volatile.Read(ref countA));
             Assert.Equal(FanWidth + 1, Volatile.Read(ref countB));
         }
+
+        threadB.Join();
     }
 
     // ═══════════════════════════ SHUTDOWN UNDER LOAD ═══════════════════════
