@@ -204,6 +204,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     /// Pushes an item. The new item goes to the LIFO slot; any evicted item is appended to
     /// the ring buffer tail.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Push(T item)
     {
         _owner.AssertOwnerThread();
@@ -289,6 +290,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     /// Pops an item. Checks the LIFO slot first (no CAS, cache-hot). Falls back to CAS-popping
     /// from the ring buffer head. Returns <c>null</c> if the queue is empty.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T? TryPop()
     {
         _owner.AssertOwnerThread();
