@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if UNSAFE_OPT
 using System.Runtime.InteropServices;
+#endif
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
