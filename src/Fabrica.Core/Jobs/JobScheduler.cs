@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Fabrica.Core.Jobs;
 
@@ -66,10 +67,13 @@ public sealed class JobScheduler(WorkerPool pool)
 
     // ── Called by WorkerPool execution infrastructure ────────────────────────
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void IncrementOutstanding() => Interlocked.Increment(ref _outstandingJobs);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void IncrementOutstandingBy(int count) => Interlocked.Add(ref _outstandingJobs, count);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void DecrementOutstanding() => Interlocked.Decrement(ref _outstandingJobs);
 
     // ── Private ─────────────────────────────────────────────────────────────
