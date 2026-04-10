@@ -416,19 +416,30 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
         Debug.Assert(n <= QueueCapacity / 2);
 
-        // ── Copy (bulk) ────────────────────────────────────────────────────
+        // ── Copy ───────────────────────────────────────────────────────────
         // The claimed range [steal, steal+n) is exclusively ours (Phase 1 CAS).
         // The owner cannot push (steal != real forces overflow) or pop these slots
         // (TryPop advances real, beyond our range). No other thief can start
         // (steal != real causes early return). The Phase 1 CAS provides a full
         // fence ensuring we see the owner's buffer writes. Matches Tokio's
         // ptr::read (plain read) in the equivalent Rust code.
-        //
+        var (first, _) = Unpack(nextPacked);
+#if UNSAFE_OPT
+        // Under UNSAFE_OPT, copy elements individually via BufferAt to avoid
+        // Span overhead (BulkMoveWithWriteBarrierInternal, bounds checks).
+        // n is at most QueueCapacity/2 (128), so the loop is short.
+        for (var j = 0; j < n; j++)
+        {
+            var srcIdx = (first + j) & Mask;
+            var dstIdx = (dstTail + j) & Mask;
+            BufferAt(ref destination, dstIdx) = BufferAt(ref this, srcIdx)!;
+            BufferAt(ref this, srcIdx) = null;
+        }
+#else
         // Bulk copy + clear: each circular range is at most 2 contiguous segments
         // (before and after the buffer wrap point). The while loop handles all
         // combinations in 1–3 iterations, using Span.CopyTo/Clear instead of
         // per-element reads/writes.
-        var (first, _) = Unpack(nextPacked);
         var srcStart = first & Mask;
         var dstStart = dstTail & Mask;
         var remaining = n;
@@ -447,6 +458,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
             srcStart = (srcStart + chunk) & Mask;
             dstStart = (dstStart + chunk) & Mask;
         }
+#endif
 
         // ── Phase 2: Complete ───────────────────────────────────────────────
         // Advance steal to match current real (which the owner may have further
