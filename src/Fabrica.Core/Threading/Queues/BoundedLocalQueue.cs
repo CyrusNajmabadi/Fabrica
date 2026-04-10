@@ -424,41 +424,41 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
         // fence ensuring we see the owner's buffer writes. Matches Tokio's
         // ptr::read (plain read) in the equivalent Rust code.
         var (first, _) = Unpack(nextPacked);
-#if UNSAFE_OPT
-        // Under UNSAFE_OPT, copy elements individually via BufferAt to avoid
-        // Span overhead (BulkMoveWithWriteBarrierInternal, bounds checks).
-        // n is at most QueueCapacity/2 (128), so the loop is short.
-        for (var j = 0; j < n; j++)
-        {
-            var srcIdx = (first + j) & Mask;
-            var dstIdx = (dstTail + j) & Mask;
-            BufferAt(ref destination, dstIdx) = BufferAt(ref this, srcIdx)!;
-            BufferAt(ref this, srcIdx) = null;
-        }
-#else
-        // Bulk copy + clear: each circular range is at most 2 contiguous segments
-        // (before and after the buffer wrap point). The while loop handles all
-        // combinations in 1–3 iterations, using Span.CopyTo/Clear instead of
-        // per-element reads/writes.
         var srcStart = first & Mask;
         var dstStart = dstTail & Mask;
         var remaining = n;
 
+#if !UNSAFE_OPT
         Span<T?> srcSpan = _buffer;
         Span<T?> dstSpan = destination._buffer;
+#endif
 
         while (remaining > 0)
         {
             var chunk = Math.Min(remaining, Math.Min(QueueCapacity - srcStart, QueueCapacity - dstStart));
+
+            // Ranged copy via MemoryMarshal.CreateSpan from Unsafe.Add refs: avoids
+            // Span.Slice bounds checks while CopyTo still goes through
+            // BulkMoveWithWriteBarrier (GC-safe). No source clear — ring validity is
+            // index-based (head/tail cursors), not null-based. PushOverflow already
+            // reads ring slots without clearing, establishing this precedent. Stale
+            // references keep objects alive only until the slot is overwritten by a
+            // future Push. Debug builds retain Clear for crash-on-bug safety.
+#if UNSAFE_OPT
+            MemoryMarshal.CreateSpan(
+                ref Unsafe.Add(ref Unsafe.As<RingBuffer<T?>, T?>(ref _buffer), srcStart), chunk)
+                .CopyTo(MemoryMarshal.CreateSpan(
+                    ref Unsafe.Add(ref Unsafe.As<RingBuffer<T?>, T?>(ref destination._buffer), dstStart), chunk));
+#else
             var src = srcSpan.Slice(srcStart, chunk);
             src.CopyTo(dstSpan.Slice(dstStart, chunk));
             src.Clear();
+#endif
 
             remaining -= chunk;
             srcStart = (srcStart + chunk) & Mask;
             dstStart = (dstStart + chunk) & Mask;
         }
-#endif
 
         // ── Phase 2: Complete ───────────────────────────────────────────────
         // Advance steal to match current real (which the owner may have further
