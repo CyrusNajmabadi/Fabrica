@@ -1,6 +1,8 @@
 // Adapted from Tokio (https://github.com/tokio-rs/tokio), MIT License.
 // Copyright (c) Tokio Contributors.
 
+using System.Runtime.CompilerServices;
+
 namespace Fabrica.Core.Threading;
 
 /// <summary>
@@ -42,6 +44,7 @@ internal struct FastRand
     /// Uses Lemire's fast range reduction
     /// (<see href="https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/"/>).
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal uint NextN(uint n)
     {
         var r = this.Next();
@@ -49,6 +52,7 @@ internal struct FastRand
     }
 
     /// <summary>Returns the next raw 32-bit pseudo-random value.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal uint Next()
     {
         var s1 = _s0;
