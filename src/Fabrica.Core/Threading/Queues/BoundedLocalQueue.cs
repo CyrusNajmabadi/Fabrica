@@ -208,6 +208,22 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     {
         _owner.AssertOwnerThread();
 
+        // Volatile.Read first: if the LIFO slot is already occupied, skip the Exchange and push
+        // directly to the ring buffer. This avoids an Interlocked.Exchange that would acquire
+        // exclusive cache line ownership and invalidate every thief's cached copy of _lifoSlot —
+        // for no benefit, since the evicted item would just go to the ring buffer anyway. This is
+        // a producer-side application of the same "test before RMW" principle as TTAS: an Exchange
+        // that replaces one non-null value with another is pure cache coherence waste.
+        //
+        // Trade-off: the slot may keep an older item while the newer one goes to the ring buffer,
+        // weakening strict LIFO freshness. This is benign — the owner will pop the slot item soon,
+        // and the ring buffer item is still available to both the owner and thieves.
+        if (Volatile.Read(ref _lifoSlot) != null)
+        {
+            this.PushToRingBuffer(item);
+            return;
+        }
+
         // Interlocked: thieves may concurrently read _lifoSlot via Interlocked.Exchange
         // in TryPop or TryStealHalf. Must be atomic to avoid torn reads/writes.
         var prev = Interlocked.Exchange(ref _lifoSlot, item);
