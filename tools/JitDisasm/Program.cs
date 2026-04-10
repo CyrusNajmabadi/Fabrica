@@ -2,8 +2,8 @@ using Fabrica.Core.Jobs;
 using Fabrica.SampleGame.Benchmarks.Scale;
 
 const int JobsPerPhase = 192;
-const int PhaseCount = 4;
-const int ComputeIterations = 25_000;
+const int PhaseCount = 32;
+const int ComputeIterations = 12_500;
 
 var pool = new WorkerPool(coordinatorCount: 1);
 var scheduler = new JobScheduler(pool);
