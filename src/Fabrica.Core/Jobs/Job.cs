@@ -29,10 +29,11 @@ public abstract class Job(JobScheduler scheduler)
     internal int RemainingDependencies; // DependsOn increments; scheduler decrements atomically when a prerequisite completes.
 
     /// <summary>
-    /// Downstream jobs notified on completion. Default-initialized (backing array is null);
-    /// lazily allocated on first <see cref="DependsOn"/> call.
+    /// Downstream jobs notified on completion. Eagerly allocated so <see cref="DependsOn"/> avoids
+    /// a branch on every call. <see cref="Reset"/> clears the count but retains the backing array,
+    /// so steady-state usage incurs no allocation after warmup.
     /// </summary>
-    internal NonCopyableUnsafeList<Job> Dependents;
+    internal NonCopyableUnsafeList<Job> Dependents = new(4);
 
     /// <summary>
     /// Owning scheduler for this job's DAG. Set once at construction time and never mutated —
@@ -74,11 +75,6 @@ public abstract class Job(JobScheduler scheduler)
     /// </summary>
     protected internal void DependsOn(Job prerequisite)
     {
-        // The prerequisite tracks this job as a downstream dependent; RemainingDependencies gates execution.
-        // The scheduler decrements counts when prerequisites complete; the thread that brings a job to zero
-        // enqueues it.
-        if (!prerequisite.Dependents.IsInitialized)
-            prerequisite.Dependents = new NonCopyableUnsafeList<Job>(4);
         prerequisite.Dependents.Add(this);
         RemainingDependencies++;
     }
@@ -103,9 +99,6 @@ public abstract class Job(JobScheduler scheduler)
     /// </summary>
     public void Reset()
     {
-        // Called by the coordinator during the DAG sweep after the scheduler's outstanding job count reaches zero.
-        // Dependents was lazily allocated: Reset clears the count but retains the backing array for reuse across
-        // JobPool cycles. Safe to call on default (uninitialized) struct — Reset just sets _count to 0.
         Dependents.Reset();
         RemainingDependencies = 0;
         this.ResetState();
