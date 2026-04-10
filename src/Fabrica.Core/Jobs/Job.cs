@@ -21,7 +21,7 @@ internal enum JobState : byte
 /// <see cref="JobPool{TJob}"/> for lock-free Treiber stack operations. It must not be read
 /// or written by derived classes.
 /// </summary>
-public abstract class Job
+public abstract class Job(JobScheduler scheduler)
 {
     /// <summary>
     /// Prerequisite count for DAG readiness: zero means this job is eligible to run.
@@ -40,12 +40,7 @@ public abstract class Job
     /// the hot path (PropagateCompletion, Enqueue, ExecuteJob) that would otherwise fire on
     /// every reference-type field store.
     /// </summary>
-    internal readonly JobScheduler Scheduler;
-
-    protected Job(JobScheduler scheduler)
-    {
-        Scheduler = scheduler;
-    }
+    internal readonly JobScheduler Scheduler = scheduler;
 
     /// <summary>
     /// Intrusive linked-list pointer for <see cref="JobPool{TJob}"/>. Must not be read or

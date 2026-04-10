@@ -8,10 +8,7 @@ public class JobPoolTests : IDisposable
     private readonly WorkerPool _pool = new(coordinatorCount: 1);
     private readonly JobScheduler _scheduler;
 
-    public JobPoolTests()
-    {
-        _scheduler = new JobScheduler(_pool);
-    }
+    public JobPoolTests() => _scheduler = new JobScheduler(_pool);
 
     public void Dispose() => _pool.Dispose();
 
