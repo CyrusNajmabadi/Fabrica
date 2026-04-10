@@ -393,8 +393,10 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
             if (available <= 0)
             {
-                // Interlocked: owner may concurrently write _lifoSlot via Push. Atomic
-                // swap ensures exactly one thread (owner or thief) gets the item.
+                // Volatile.Read first: the LIFO slot is usually empty — skip the expensive
+                // Interlocked.Exchange (swpal on ARM64) when the slot is null.
+                if (Volatile.Read(ref _lifoSlot) == null)
+                    return null;
                 return Interlocked.Exchange(ref _lifoSlot, null);
             }
 
