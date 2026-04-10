@@ -407,6 +407,18 @@ public sealed class WorkerPool : IDisposable
         }
     }
 
+    /// <summary>
+    /// Wakes up to <paramref name="count"/> parked workers. Used after large fan-outs where
+    /// multiple jobs become available simultaneously.
+    /// </summary>
+    private void TryWakeWorkers(int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            this.TryWakeOneWorker();
+        }
+    }
+
     // ── Core execution ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -577,7 +589,7 @@ public sealed class WorkerPool : IDisposable
                 context.Deque.Push(dependents[i]);
         }
 
-        this.TryWakeOneWorker();
+        this.TryWakeWorkers(readied);
     }
 
     // ── Disposal ────────────────────────────────────────────────────────────
