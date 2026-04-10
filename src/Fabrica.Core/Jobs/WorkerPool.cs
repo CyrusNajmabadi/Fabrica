@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if UNSAFE_OPT
+using System.Runtime.InteropServices;
+#endif
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
@@ -438,14 +441,20 @@ public sealed class WorkerPool : IDisposable
     [SkipLocalsInit]
     private bool TryStealAndExecute(WorkerContext context)
     {
-        var count = _allContexts.Length;
+        var contexts = _allContexts;
+        var count = contexts.Length;
         var start = (int)context.StealRand.NextN((uint)count);
 
         for (var i = 0; i < count; i++)
         {
             var idx = start + i;
             if (idx >= count) idx -= count;
-            var target = _allContexts[idx];
+            Debug.Assert((uint)idx < (uint)count);
+#if UNSAFE_OPT
+            var target = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(contexts), idx);
+#else
+            var target = contexts[idx];
+#endif
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
