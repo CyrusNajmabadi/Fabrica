@@ -423,7 +423,7 @@ public sealed class WorkerPool : IDisposable
     [SkipLocalsInit]
     internal bool TryExecuteOne(WorkerContext context)
     {
-        // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
+        // WORK DISCOVERY PRIORITY: (1) pop own deque — hot slot then ring buffer; (2) steal from peers — FIFO; (3) shared injection
         // queue — cold, after local and peer deques (JobScheduler.Submit enqueues via Inject).
         var job = context.Deque.TryPop();
         if (job != null)

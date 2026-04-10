@@ -66,8 +66,9 @@ internal struct CacheLinePaddedHead
 ///   <c>_buffer</c>: <c>RingBuffer&lt;T?&gt;</c> — inline 256-element ring buffer, indexed by
 ///     <c>(index &amp; MASK)</c>.
 ///
-///   <c>_lifoSlot</c>: <c>T?</c> — single-slot LIFO bypass. The most recently pushed item lives
-///     here for cache-hot pops. Accessed atomically via <see cref="Interlocked.Exchange{T}"/>.
+///   <c>_hotSlot</c>: <c>T?</c> — single-element fast-path bypass. Allows the owner to push/pop
+    ///     one item without touching the ring buffer's CAS-contended head cursor. Accessed
+    ///     atomically via <see cref="Interlocked.Exchange{T}"/> so thieves can also claim it.
 ///
 /// THREAD MODEL
 ///
@@ -143,11 +144,11 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     private CacheLinePaddedHead _headTail;
 
     /// <summary>
-    /// Single-slot LIFO bypass. The most recently pushed item goes here so the owner can
-    /// pop it without CAS contention. Accessed atomically via Interlocked.Exchange so
-    /// thieves can steal it when the ring buffer is empty.
+    /// Single-element fast-path bypass. The owner pushes here first (and pops here first)
+    /// to avoid CAS contention on the ring buffer's head cursor. Accessed atomically via
+    /// <see cref="Interlocked.Exchange{T}"/> so thieves can also claim it when the ring is empty.
     /// </summary>
-    private T? _lifoSlot;
+    private T? _hotSlot;
 
 #if UNSAFE_OPT
     /// <summary>Inline ring buffer (256 elements, no heap allocation). Indexed by <c>index &amp; MASK</c>.</summary>
@@ -201,32 +202,28 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     // ═══════════════════════════ OWNER OPERATIONS ════════════════════════════
 
     /// <summary>
-    /// Pushes an item. The new item goes to the LIFO slot; any evicted item is appended to
-    /// the ring buffer tail.
+    /// Pushes an item. If the hot slot is empty, the item goes there; otherwise it is appended
+    /// to the ring buffer tail.
     /// </summary>
     public void Push(T item)
     {
         _owner.AssertOwnerThread();
 
-        // Volatile.Read first: if the LIFO slot is already occupied, skip the Exchange and push
+        // Volatile.Read first: if the hot slot is already occupied, skip the Exchange and push
         // directly to the ring buffer. This avoids an Interlocked.Exchange that would acquire
-        // exclusive cache line ownership and invalidate every thief's cached copy of _lifoSlot —
+        // exclusive cache line ownership and invalidate every thief's cached copy of _hotSlot —
         // for no benefit, since the evicted item would just go to the ring buffer anyway. This is
         // a producer-side application of the same "test before RMW" principle as TTAS: an Exchange
         // that replaces one non-null value with another is pure cache coherence waste.
-        //
-        // Trade-off: the slot may keep an older item while the newer one goes to the ring buffer,
-        // weakening strict LIFO freshness. This is benign — the owner will pop the slot item soon,
-        // and the ring buffer item is still available to both the owner and thieves.
-        if (Volatile.Read(ref _lifoSlot) != null)
+        if (Volatile.Read(ref _hotSlot) != null)
         {
             this.PushToRingBuffer(item);
             return;
         }
 
-        // Interlocked: thieves may concurrently read _lifoSlot via Interlocked.Exchange
+        // Interlocked: thieves may concurrently read _hotSlot via Interlocked.Exchange
         // in TryPop or TryStealHalf. Must be atomic to avoid torn reads/writes.
-        var prev = Interlocked.Exchange(ref _lifoSlot, item);
+        var prev = Interlocked.Exchange(ref _hotSlot, item);
         if (prev == null)
             return;
 
@@ -302,21 +299,21 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     }
 
     /// <summary>
-    /// Pops an item. Checks the LIFO slot first (no CAS, cache-hot). Falls back to CAS-popping
-    /// from the ring buffer head. Returns <c>null</c> if the queue is empty.
+    /// Pops an item. Checks the hot slot first (cache-friendly, no CAS on the ring buffer).
+    /// Falls back to CAS-popping from the ring buffer head. Returns <c>null</c> if the queue is empty.
     /// </summary>
     public T? TryPop()
     {
         _owner.AssertOwnerThread();
 
-        // Interlocked: thieves may concurrently Interlocked.Exchange _lifoSlot (in
+        // Interlocked: thieves may concurrently Interlocked.Exchange _hotSlot (in
         // TryStealHalf). Atomic swap ensures exactly one thread gets the item.
         // Volatile.Read first: dominant path is empty slot — skip expensive Exchange when null.
-        if (Volatile.Read(ref _lifoSlot) != null)
+        if (Volatile.Read(ref _hotSlot) != null)
         {
-            var lifo = Interlocked.Exchange(ref _lifoSlot, null);
-            if (lifo != null)
-                return lifo;
+            var hot = Interlocked.Exchange(ref _hotSlot, null);
+            if (hot != null)
+                return hot;
         }
 
         // Volatile.Read: acquire fence to see the latest _headTail.Head from thieves' CAS
@@ -409,11 +406,11 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
             if (available <= 0)
             {
-                // Volatile.Read first: the LIFO slot is usually empty — skip the expensive
+                // Volatile.Read first: the hot slot is usually empty — skip the expensive
                 // Interlocked.Exchange (swpal on ARM64) when the slot is null.
-                if (Volatile.Read(ref _lifoSlot) == null)
+                if (Volatile.Read(ref _hotSlot) == null)
                     return null;
-                return Interlocked.Exchange(ref _lifoSlot, null);
+                return Interlocked.Exchange(ref _hotSlot, null);
             }
 
             n = available - (available / 2);
@@ -508,7 +505,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
     /// <summary>
     /// Approximate item count. Not linearizable — concurrent operations may change the
-    /// count between the reads of <c>_headTail.Head</c>, <c>_headTail.Tail</c>, and <c>_lifoSlot</c>.
+    /// count between the reads of <c>_headTail.Head</c>, <c>_headTail.Tail</c>, and <c>_hotSlot</c>.
     /// </summary>
     public int Count
     {
@@ -516,11 +513,11 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
         {
             // All Volatile.Read: Count can be called from any thread. Acquire fences
             // ensure we see the latest values written by the owner's Volatile.Write
-            // (_headTail.Tail), the owner/thief CAS (_headTail.Head), and Interlocked.Exchange (_lifoSlot).
+            // (_headTail.Tail), the owner/thief CAS (_headTail.Head), and Interlocked.Exchange (_hotSlot).
             var (_, real) = Unpack(Volatile.Read(ref _headTail.Head));
             var tail = Volatile.Read(ref _headTail.Tail);
-            var lifo = Volatile.Read(ref _lifoSlot) != null ? 1 : 0;
-            return Math.Max(0, Distance(tail, real)) + lifo;
+            var hot = Volatile.Read(ref _hotSlot) != null ? 1 : 0;
+            return Math.Max(0, Distance(tail, real)) + hot;
         }
     }
 
@@ -541,5 +538,5 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     }
 
     // Volatile.Read: may be called from a non-owner thread in tests.
-    internal bool HasLifoItem => Volatile.Read(ref _lifoSlot) != null;
+    internal bool HasHotItem => Volatile.Read(ref _hotSlot) != null;
 }

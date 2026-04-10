@@ -78,8 +78,8 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
         // completion while work is still running.
         scheduler.IncrementOutstanding();
 
-        // Push onto this worker's deque (LIFO end). The owning thread is most likely to pop it
-        // back (cache-hot), but other idle workers can steal it (FIFO end) for load balancing.
+        // Push onto this worker's deque (hot slot, then ring buffer). The owning thread is most
+        // likely to pop it back (cache-hot), but idle workers can steal from the ring (FIFO end).
         Deque.Push(job);
 
         // Wake any parked workers so they can steal the newly available work.
