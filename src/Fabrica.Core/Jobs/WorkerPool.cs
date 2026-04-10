@@ -230,6 +230,7 @@ public sealed class WorkerPool : IDisposable
     /// currently searching (HotSpin/WarmYield) — a searching worker will find the new work on its
     /// next <see cref="TryExecuteOne"/> call.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void NotifyWorkAvailable() => this.TryWakeOneWorker();
 
     // ── Worker loop ─────────────────────────────────────────────────────────

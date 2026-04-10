@@ -57,6 +57,7 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
     /// stamped with the currently executing job's scheduler, and that scheduler's outstanding count
     /// is incremented.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void Enqueue(Job job)
     {
         Debug.Assert(CurrentScheduler != null, "Enqueue is only valid during Job.Execute.");
