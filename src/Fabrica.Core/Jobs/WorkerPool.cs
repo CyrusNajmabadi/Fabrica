@@ -249,7 +249,11 @@ public sealed class WorkerPool : IDisposable
         var workerEvent = _workerEvents[context.WorkerIndex];
 #endif
         this.IncrementUnparked();
-        try
+        RunWorkerLoop(context, workerEvent);
+        this.DecrementUnparked();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void RunWorkerLoop(WorkerContext context, ManualResetEventSlim workerEvent)
         {
             while (!_shutdownRequested)
             {
@@ -317,10 +321,6 @@ public sealed class WorkerPool : IDisposable
                 workerEvent.Reset();
                 this.TransitionFromParked();
             }
-        }
-        finally
-        {
-            this.DecrementUnparked();
         }
     }
 
