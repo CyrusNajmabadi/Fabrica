@@ -168,7 +168,7 @@ public class TreeFanOutBenchmark
 
             // Critical path: longest root-to-leaf chain (depth 0 → depth Depth).
             // Walk each leaf back to root, summing job durations.
-            var firstLeaf = (TotalJobs - (int)Math.Pow(FanOut, Depth));
+            var firstLeaf = TotalJobs - (int)Math.Pow(FanOut, Depth);
             var maxCritical = 0.0;
             for (var leaf = firstLeaf; leaf < TotalJobs; leaf++)
             {
