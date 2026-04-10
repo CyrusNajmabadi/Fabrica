@@ -67,8 +67,8 @@ internal struct CacheLinePaddedHead
 ///     <c>(index &amp; MASK)</c>.
 ///
 ///   <c>_hotSlot</c>: <c>T?</c> — single-element fast-path bypass. Allows the owner to push/pop
-    ///     one item without touching the ring buffer's CAS-contended head cursor. Accessed
-    ///     atomically via <see cref="Interlocked.Exchange{T}"/> so thieves can also claim it.
+///     one item without touching the ring buffer's CAS-contended head cursor. Accessed
+///     atomically via <see cref="Interlocked.Exchange{T}"/> so thieves can also claim it.
 ///
 /// THREAD MODEL
 ///
