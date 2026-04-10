@@ -435,14 +435,15 @@ public sealed class WorkerPool : IDisposable
 
     private bool TryStealAndExecute(WorkerContext context)
     {
-        var count = _allContexts.Length;
+        var contexts = _allContexts;
+        var count = contexts.Length;
         var start = (int)context.StealRand.NextN((uint)count);
 
         for (var i = 0; i < count; i++)
         {
             var idx = start + i;
             if (idx >= count) idx -= count;
-            var target = _allContexts[idx];
+            var target = contexts[idx];
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
