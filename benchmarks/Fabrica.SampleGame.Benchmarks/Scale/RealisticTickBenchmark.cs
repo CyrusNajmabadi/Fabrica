@@ -10,14 +10,14 @@ using Fabrica.SampleGame.Benchmarks.Scale;
 namespace Fabrica.SampleGame.Benchmarks;
 
 /// <summary>
-/// Measures pure scheduler overhead: 4 identical sequential phases, each fanning out
+/// Measures pure scheduler overhead: 32 identical sequential phases, each fanning out
 /// 192 ComputeJobs across 12 P-cores (16 jobs/core). Every job does ~15-20μs of hash-mixing
 /// in L1-resident arrays. No arena allocation or snapshot merging — just compute + scheduling.
 ///
-///   Phase 1 → Phase 2 → Phase 3 → Phase 4   (each: 192 ComputeJobs, barrier between)
+///   Phase 1 → Phase 2 → … → Phase 32   (each: 192 ComputeJobs, barrier between)
 ///
-/// Total: 768 compute jobs + 1 trigger + 4 barriers = 773 jobs per tick.
-/// Optimal = (768 × per-job work) / 12 cores.
+/// Total: 6144 compute jobs + 1 trigger + 32 barriers = 6177 jobs per tick.
+/// Optimal = (6144 × per-job work) / 12 cores.
 /// </summary>
 [Config(typeof(DiagnoserConfig))]
 [EventPipeProfiler(EventPipeProfile.CpuSampling)]
@@ -40,13 +40,13 @@ public class RealisticTickBenchmark
     }
 
     private const int JobsPerPhase = 192;
-    private const int PhaseCount = 4;
+    private const int PhaseCount = 32;
     private const int Cores = 12;
 
     /// <summary>
     /// Hash-mixing iterations per job. Calibrate so each job takes ~15-20μs.
     /// </summary>
-    private const int ComputeIterations = 25_000;
+    private const int ComputeIterations = 12_500;
 
     private WorkerPool _pool = null!;
     private JobScheduler _scheduler = null!;
