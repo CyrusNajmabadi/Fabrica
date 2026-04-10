@@ -447,6 +447,7 @@ public sealed class WorkerPool : IDisposable
     {
         var contexts = _allContexts;
         var count = contexts.Length;
+        var myIndex = context.WorkerIndex;
         var start = (int)context.StealRand.NextN((uint)count);
 
         for (var i = 0; i < count; i++)
@@ -459,7 +460,7 @@ public sealed class WorkerPool : IDisposable
 #else
             var target = contexts[idx];
 #endif
-            if (target.WorkerIndex == context.WorkerIndex)
+            if (target.WorkerIndex == myIndex)
                 continue;
 
             // TryStealHalf: batch-steal ~half the victim's items into our local queue,
