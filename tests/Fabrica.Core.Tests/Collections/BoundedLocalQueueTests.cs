@@ -389,7 +389,7 @@ public class BoundedLocalQueueTests
     // ═══════════════════════════ CAPACITY ════════════════════════════════════
 
     [Fact]
-    public void Capacity_Is256() => Assert.Equal(256, BoundedLocalQueue<string>.QueueCapacity);
+    public void Capacity_Is256() => Assert.Equal(8192, BoundedLocalQueue<string>.QueueCapacity);
 
     [Fact]
     public void Push_FillsRingToCapacity_NoOverflow()

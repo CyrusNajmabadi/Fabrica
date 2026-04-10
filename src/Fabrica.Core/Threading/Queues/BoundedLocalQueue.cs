@@ -27,7 +27,7 @@ internal struct CacheLinePaddedHead
 /// Fixed-size inline ring buffer. Stored directly inside <see cref="BoundedLocalQueue{T}"/> with
 /// no heap allocation — elements occupy contiguous memory within the struct.
 /// </summary>
-[InlineArray(256)]
+[InlineArray(8192)]
 internal struct RingBuffer<T>
 {
     private T _element0;
@@ -63,7 +63,7 @@ internal struct CacheLinePaddedHead
 ///     thief-read (<see cref="Volatile.Read(ref int)"/>). Points one past the last item pushed
 ///     to the ring buffer. Sits on a separate cache line from <c>_headTail.Head</c>.
 ///
-///   <c>_buffer</c>: <c>RingBuffer&lt;T?&gt;</c> — inline 256-element ring buffer, indexed by
+///   <c>_buffer</c>: <c>RingBuffer&lt;T?&gt;</c> — inline 8192-element ring buffer, indexed by
 ///     <c>(index &amp; MASK)</c>.
 ///
 ///   <c>_hotSlot</c>: <c>T?</c> — single-element fast-path bypass. Allows the owner to push/pop
@@ -132,7 +132,7 @@ internal struct CacheLinePaddedHead
 /// </summary>
 internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) where T : class
 {
-    internal const int QueueCapacity = 256;
+    internal const int QueueCapacity = 8192;
     private const int Mask = QueueCapacity - 1;
     private const int OverflowBatchSize = QueueCapacity / 2;
 
@@ -151,10 +151,10 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
     private T? _hotSlot;
 
 #if UNSAFE_OPT
-    /// <summary>Inline ring buffer (256 elements, no heap allocation). Indexed by <c>index &amp; MASK</c>.</summary>
+    /// <summary>Inline ring buffer (8192 elements, no heap allocation). Indexed by <c>index &amp; MASK</c>.</summary>
     private RingBuffer<T?> _buffer;
 #else
-    /// <summary>Heap-allocated ring buffer (256 elements). Indexed by <c>index &amp; MASK</c>.</summary>
+    /// <summary>Heap-allocated ring buffer (8192 elements). Indexed by <c>index &amp; MASK</c>.</summary>
     private readonly T?[] _buffer = new T?[QueueCapacity];
 #endif
 
@@ -182,7 +182,7 @@ internal struct BoundedLocalQueue<T>(StrongBox<InjectionQueue<T>> overflow) wher
 
     /// <summary>
     /// Ring slot by logical index. After <c>rawIndex &amp; Mask</c> the offset is always in
-    /// <c>[0, 255]</c>. Under <c>UNSAFE_OPT</c>, <see cref="Unsafe.Add"/> avoids redundant JIT bounds
+    /// <c>[0, QueueCapacity-1]</c>. Under <c>UNSAFE_OPT</c>, <see cref="Unsafe.Add"/> avoids redundant JIT bounds
     /// checks on the inline buffer; otherwise plain array indexing (bounds-checked).
     /// </summary>
     /// <remarks>
