@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
@@ -443,7 +444,12 @@ public sealed class WorkerPool : IDisposable
         {
             var idx = start + i;
             if (idx >= count) idx -= count;
+            Debug.Assert((uint)idx < (uint)count);
+#if UNSAFE_OPT
+            var target = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(contexts), idx);
+#else
             var target = contexts[idx];
+#endif
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
