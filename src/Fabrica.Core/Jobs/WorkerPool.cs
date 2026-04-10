@@ -237,6 +237,8 @@ public sealed class WorkerPool : IDisposable
 
     // ── Worker loop ─────────────────────────────────────────────────────────
 
+    // Safe: all locals are explicitly assigned before use. No stackalloc.
+    // Eliminates the JIT's default SIMD zero-fill of the entire locals area.
     [SkipLocalsInit]
     private void RunWorker(WorkerContext context)
     {
@@ -417,6 +419,7 @@ public sealed class WorkerPool : IDisposable
     /// Attempts to find and execute one job. Tries local deque, then steals from peers, then
     /// checks the injection queue. Called by both background workers and coordinator threads.
     /// </summary>
+    // Safe: all locals are explicitly assigned before use. No stackalloc.
     [SkipLocalsInit]
     internal bool TryExecuteOne(WorkerContext context)
     {
@@ -438,6 +441,7 @@ public sealed class WorkerPool : IDisposable
         return this.TryDequeueInjected(context);
     }
 
+    // Safe: all locals are explicitly assigned before use. No stackalloc.
     [SkipLocalsInit]
     private bool TryStealAndExecute(WorkerContext context)
     {
