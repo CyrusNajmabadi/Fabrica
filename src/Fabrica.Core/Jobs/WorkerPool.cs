@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if UNSAFE_OPT
+using System.Runtime.InteropServices;
+#endif
 using Fabrica.Core.Threading.Queues;
 
 namespace Fabrica.Core.Jobs;
@@ -234,6 +237,9 @@ public sealed class WorkerPool : IDisposable
 
     // ── Worker loop ─────────────────────────────────────────────────────────
 
+    // Safe: all locals are explicitly assigned before use. No stackalloc.
+    // Eliminates the JIT's default SIMD zero-fill of the entire locals area.
+    [SkipLocalsInit]
     private void RunWorker(WorkerContext context)
     {
         var workerEvent = _workerEvents[context.WorkerIndex];
@@ -414,6 +420,8 @@ public sealed class WorkerPool : IDisposable
     /// Attempts to find and execute one job. Tries local deque, then steals from peers, then
     /// checks the injection queue. Called by both background workers and coordinator threads.
     /// </summary>
+    // Safe: all locals are explicitly assigned before use. No stackalloc.
+    [SkipLocalsInit]
     internal bool TryExecuteOne(WorkerContext context)
     {
         // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
@@ -434,16 +442,24 @@ public sealed class WorkerPool : IDisposable
         return this.TryDequeueInjected(context);
     }
 
+    // Safe: all locals are explicitly assigned before use. No stackalloc.
+    [SkipLocalsInit]
     private bool TryStealAndExecute(WorkerContext context)
     {
-        var count = _allContexts.Length;
+        var contexts = _allContexts;
+        var count = contexts.Length;
         var start = (int)context.StealRand.NextN((uint)count);
 
         for (var i = 0; i < count; i++)
         {
             var idx = start + i;
             if (idx >= count) idx -= count;
-            var target = _allContexts[idx];
+            Debug.Assert((uint)idx < (uint)count);
+#if UNSAFE_OPT
+            var target = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(contexts), idx);
+#else
+            var target = contexts[idx];
+#endif
             if (target.WorkerIndex == context.WorkerIndex)
                 continue;
 
