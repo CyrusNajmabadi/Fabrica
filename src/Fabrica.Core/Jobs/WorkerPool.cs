@@ -413,6 +413,7 @@ public sealed class WorkerPool : IDisposable
     /// Attempts to find and execute one job. Tries local deque, then steals from peers, then
     /// checks the injection queue. Called by both background workers and coordinator threads.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryExecuteOne(WorkerContext context)
     {
         // WORK DISCOVERY PRIORITY: (1) pop own deque — LIFO, cache-hot; (2) steal from peers — FIFO; (3) shared injection
@@ -464,6 +465,7 @@ public sealed class WorkerPool : IDisposable
         return false;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryDequeueInjected(WorkerContext context)
     {
         var job = _injectionQueue.Value.TryDequeue();
@@ -479,6 +481,7 @@ public sealed class WorkerPool : IDisposable
         return false;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void ExecuteJob(Job job, WorkerContext context)
     {
 #if INSTRUMENT
