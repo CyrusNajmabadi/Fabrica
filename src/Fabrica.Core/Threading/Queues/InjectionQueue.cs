@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -20,13 +21,24 @@ internal struct InjectionQueue<T>() where T : class
 {
     private readonly Lock _lock = new();
     private NonCopyableUnsafeStack<T> _stack = NonCopyableUnsafeStack<T>.Create();
+    /// <summary>
+    /// Kept in sync with <see cref="_stack"/> inside the lock. Read outside the lock via
+    /// <see cref="Volatile.Read(ref int)"/> to fast-reject <see cref="TryDequeue"/> when the
+    /// queue is likely empty, avoiding a lock hit in the common empty case. The unsynchronized
+    /// read may be momentarily stale, but never causes a missed item — only a rare unnecessary
+    /// lock acquisition.
+    /// </summary>
+    private int _approximateCount;
 
     /// <summary>Injects an item into the global queue. Called from the overflow path.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Enqueue(T item)
     {
         lock (_lock)
+        {
             _stack.Push(item);
+            _approximateCount++;
+        }
     }
 
     /// <summary>
@@ -43,6 +55,7 @@ internal struct InjectionQueue<T>() where T : class
             _stack.PushRange(AsNonNull(segment1));
             _stack.PushRange(AsNonNull(segment2));
             _stack.Push(extraItem);
+            _approximateCount += segment1.Length + segment2.Length + 1;
         }
     }
 
@@ -59,8 +72,18 @@ internal struct InjectionQueue<T>() where T : class
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T? TryDequeue()
     {
+        var approximateCount = Volatile.Read(ref _approximateCount);
+        Debug.Assert(approximateCount >= 0);
+        if (approximateCount == 0)
+            return null;
+
         lock (_lock)
-            return _stack.TryPop(out var item) ? item : null;
+        {
+            if (!_stack.TryPop(out var item))
+                return null;
+            _approximateCount--;
+            return item;
+        }
     }
 
     /// <summary>Approximate item count. Acquires the lock for an exact snapshot.</summary>
@@ -102,6 +125,7 @@ internal struct InjectionQueue<T>() where T : class
             {
                 while (_queue._stack.TryPop(out var item))
                     result.Add(item);
+                _queue._approximateCount = 0;
             }
 
             return result;
