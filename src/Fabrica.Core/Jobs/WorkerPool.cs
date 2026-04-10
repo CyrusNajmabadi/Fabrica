@@ -242,7 +242,13 @@ public sealed class WorkerPool : IDisposable
     [SkipLocalsInit]
     private void RunWorker(WorkerContext context)
     {
-        this.IncrementUnparked(searching: false);
+        Debug.Assert((uint)context.WorkerIndex < (uint)_workerEvents.Length);
+#if UNSAFE_OPT
+        var workerEvent = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_workerEvents), context.WorkerIndex);
+#else
+        var workerEvent = _workerEvents[context.WorkerIndex];
+#endif
+        this.IncrementUnparked();
         try
         {
             while (!_shutdownRequested)
@@ -307,14 +313,14 @@ public sealed class WorkerPool : IDisposable
                     continue;
                 }
 
-                _workerEvents[context.WorkerIndex].Wait();
-                _workerEvents[context.WorkerIndex].Reset();
+                workerEvent.Wait();
+                workerEvent.Reset();
                 this.TransitionFromParked();
             }
         }
         finally
         {
-            this.DecrementUnparked(searching: false);
+            this.DecrementUnparked();
         }
     }
 
@@ -335,17 +341,11 @@ public sealed class WorkerPool : IDisposable
     private static int NumSearching(int state) => state & SearchingMask;
     private static int NumUnparked(int state) => (state >> 16) & 0xFFFF;
 
-    private void IncrementUnparked(bool searching)
-    {
-        var delta = searching ? UnparkedBit | SearchingBit : UnparkedBit;
-        Interlocked.Add(ref _idleState, delta);
-    }
+    private void IncrementUnparked() =>
+        Interlocked.Add(ref _idleState, UnparkedBit);
 
-    private void DecrementUnparked(bool searching)
-    {
-        var delta = searching ? UnparkedBit | SearchingBit : UnparkedBit;
-        Interlocked.Add(ref _idleState, -delta);
-    }
+    private void DecrementUnparked() =>
+        Interlocked.Add(ref _idleState, -UnparkedBit);
 
     private void EnterSearching(WorkerContext context)
     {
