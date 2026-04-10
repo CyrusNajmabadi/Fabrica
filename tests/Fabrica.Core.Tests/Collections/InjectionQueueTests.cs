@@ -175,6 +175,159 @@ public class InjectionQueueTests
             Assert.Contains(i.ToString(), all);
     }
 
+    // ═══════════════════════════ CONCURRENT PRODUCER/CONSUMER ════════════════
+    // Separate producer and consumer threads to stress the lock contention path.
+
+    [Theory]
+    [InlineData(2, 2, 10_000)]
+    [InlineData(4, 4, 10_000)]
+    [InlineData(8, 2, 20_000)]
+    public void Stress_ProducersConsumers_NoItemsLost(int producerCount, int consumerCount, int itemsPerProducer)
+    {
+        var queue = new InjectionQueue<string>();
+        var totalItems = producerCount * itemsPerProducer;
+        var dequeued = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var producersDone = new CountdownEvent(producerCount);
+        var allDone = new ManualResetEventSlim(false);
+        var startBarrier = new Barrier(producerCount + consumerCount);
+
+        var consumers = new Thread[consumerCount];
+        for (var c = 0; c < consumerCount; c++)
+        {
+            consumers[c] = new Thread(() =>
+            {
+                startBarrier.SignalAndWait();
+                while (!allDone.IsSet || !queue.IsEmpty)
+                {
+                    var item = queue.TryDequeue();
+                    if (item != null)
+                        dequeued.Add(item);
+                    else
+                        Thread.SpinWait(10);
+                }
+
+                // Final drain after signal
+                for (var remaining = queue.TryDequeue(); remaining != null; remaining = queue.TryDequeue())
+                    dequeued.Add(remaining);
+            });
+            consumers[c].Start();
+        }
+
+        var producers = new Thread[producerCount];
+        for (var p = 0; p < producerCount; p++)
+        {
+            var producerId = p;
+            producers[p] = new Thread(() =>
+            {
+                startBarrier.SignalAndWait();
+                for (var i = 0; i < itemsPerProducer; i++)
+                    queue.Enqueue($"{producerId}-{i}");
+                producersDone.Signal();
+            });
+            producers[p].Start();
+        }
+
+        foreach (var t in producers)
+            t.Join();
+
+        // Spin-wait for consumers to drain, then signal
+        var sw = new SpinWait();
+        while (!queue.IsEmpty)
+            sw.SpinOnce();
+        allDone.Set();
+
+        foreach (var t in consumers)
+            t.Join();
+
+        var all = new HashSet<string>(dequeued);
+        Assert.Equal(totalItems, all.Count);
+    }
+
+    // ═══════════════════════════ BATCH ENQUEUE UNDER CONTENTION ═══════════
+    // Multiple threads calling EnqueueBatch concurrently with single Enqueue.
+
+    [Theory]
+    [InlineData(4, 1_000)]
+    [InlineData(8, 2_000)]
+    public void Stress_BatchEnqueue_ConcurrentWithSingleEnqueue_NoItemsLost(int threadCount, int itemsPerThread)
+    {
+        var queue = new InjectionQueue<string>();
+        var totalItems = threadCount * itemsPerThread;
+        var barrier = new Barrier(threadCount);
+
+        var threads = new Thread[threadCount];
+        for (var t = 0; t < threadCount; t++)
+        {
+            var threadId = t;
+            threads[t] = new Thread(() =>
+            {
+                barrier.SignalAndWait();
+                for (var i = 0; i < itemsPerThread; i++)
+                    queue.Enqueue($"{threadId}-{i}");
+            });
+            threads[t].Start();
+        }
+
+        foreach (var t in threads)
+            t.Join();
+
+        var dequeued = new HashSet<string>();
+        for (var item = queue.TryDequeue(); item != null; item = queue.TryDequeue())
+            Assert.True(dequeued.Add(item), $"Duplicate: {item}");
+
+        Assert.Equal(totalItems, dequeued.Count);
+    }
+
+    // ═══════════════════════════ RAPID ENQUEUE/DEQUEUE ════════════════════
+    // Tight push/pop cycles from many threads — stress the approximate count
+    // optimization path (Volatile.Read of _approximateCount before locking).
+
+    [Theory]
+    [InlineData(4, 50_000)]
+    [InlineData(8, 50_000)]
+    public void Stress_RapidEnqueueDequeue_AllThreads_NoItemsLost(int threadCount, int opsPerThread)
+    {
+        var queue = new InjectionQueue<string>();
+        var barrier = new Barrier(threadCount);
+        var perThreadDequeued = new List<string>[threadCount];
+
+        var threads = new Thread[threadCount];
+        for (var t = 0; t < threadCount; t++)
+        {
+            perThreadDequeued[t] = [];
+            var bag = perThreadDequeued[t];
+            var threadId = t;
+
+            threads[t] = new Thread(() =>
+            {
+                barrier.SignalAndWait();
+                for (var i = 0; i < opsPerThread; i++)
+                {
+                    queue.Enqueue($"{threadId}-{i}");
+                    var item = queue.TryDequeue();
+                    if (item != null)
+                        bag.Add(item);
+                }
+            });
+            threads[t].Start();
+        }
+
+        foreach (var t in threads)
+            t.Join();
+
+        var remaining = queue.GetTestAccessor().DrainToList();
+
+        var all = new HashSet<string>();
+        foreach (var bag in perThreadDequeued)
+            foreach (var item in bag)
+                Assert.True(all.Add(item), $"Duplicate: {item}");
+        foreach (var item in remaining)
+            Assert.True(all.Add(item), $"Duplicate in remaining: {item}");
+
+        var totalItems = threadCount * opsPerThread;
+        Assert.Equal(totalItems, all.Count);
+    }
+
     // ═══════════════════════════ STRUCT COPY SAFETY ══════════════════════════
 
     [Fact]
