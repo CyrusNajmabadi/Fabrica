@@ -515,8 +515,9 @@ public sealed class WorkerPool : IDisposable
         job.State = JobState.Completed;
 #endif
 
-        if (job.Dependents.Count > 0)
-            this.PropagateCompletion(job, context);
+        var dependentCount = job.Dependents.Count;
+        if (dependentCount > 0)
+            this.PropagateCompletion(job, dependentCount, context);
 
 #if INSTRUMENT
         // Record BEFORE DecrementOutstanding: the coordinator exits RunUntilComplete
@@ -554,16 +555,19 @@ public sealed class WorkerPool : IDisposable
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     [SkipLocalsInit]
-    private void PropagateCompletion(Job job, WorkerContext context)
+    private void PropagateCompletion(Job job, int count, WorkerContext context)
     {
+        Debug.Assert(count >= 1);
         var dependents = job.Dependents;
-        var count = dependents.Count;
         var scheduler = context.CurrentScheduler!;
 
-        // Fast path: single dependent — skip bitfield machinery.
         if (count == 1)
         {
+#if UNSAFE_OPT
+            var dependent = MemoryMarshal.GetArrayDataReference(dependents.UnsafeBackingArray);
+#else
             var dependent = dependents[0];
+#endif
             var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
             Debug.Assert(remaining >= 0);
             if (remaining == 0)
@@ -589,9 +593,17 @@ public sealed class WorkerPool : IDisposable
         Span<long> readiedBits = stackalloc long[(count + 63) >> 6];
         readiedBits.Clear(); // SkipLocalsInit: stackalloc is not zero-filled unless cleared.
 
+#if UNSAFE_OPT
+        ref var dependentsRef = ref MemoryMarshal.GetArrayDataReference(dependents.UnsafeBackingArray);
+#endif
+
         for (var i = 0; i < count; i++)
         {
+#if UNSAFE_OPT
+            var dependent = Unsafe.Add(ref dependentsRef, i);
+#else
             var dependent = dependents[i];
+#endif
             var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
             Debug.Assert(remaining >= 0);
             if (remaining != 0)
@@ -615,7 +627,11 @@ public sealed class WorkerPool : IDisposable
         for (var i = 0; i < count; i++)
         {
             if ((readiedBits[i >> 6] & (1L << (i & 63))) != 0)
+#if UNSAFE_OPT
+                context.Deque.Push(Unsafe.Add(ref dependentsRef, i));
+#else
                 context.Deque.Push(dependents[i]);
+#endif
         }
 
         this.TryWakeOneWorker();
