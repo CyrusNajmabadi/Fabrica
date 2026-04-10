@@ -449,33 +449,35 @@ public sealed class WorkerPool : IDisposable
         var count = contexts.Length;
         var myIndex = context.WorkerIndex;
         var start = (int)context.StealRand.NextN((uint)count);
+        var idx = start;
 
         for (var i = 0; i < count; i++)
         {
-            var idx = start + i;
-            if (idx >= count) idx -= count;
             Debug.Assert((uint)idx < (uint)count);
 #if UNSAFE_OPT
             var target = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(contexts), idx);
 #else
             var target = contexts[idx];
 #endif
-            if (target.WorkerIndex == myIndex)
-                continue;
-
-            // TryStealHalf: batch-steal ~half the victim's items into our local queue,
-            // returning one item for immediate execution. The remaining stolen items
-            // become available via our own TryPop on subsequent iterations, avoiding
-            // repeated cross-core steal overhead.
-            var job = target.Deque.TryStealHalf(ref context.Deque);
-            if (job != null)
+            if (target.WorkerIndex != myIndex)
             {
+                // TryStealHalf: batch-steal ~half the victim's items into our local queue,
+                // returning one item for immediate execution. The remaining stolen items
+                // become available via our own TryPop on subsequent iterations, avoiding
+                // repeated cross-core steal overhead.
+                var job = target.Deque.TryStealHalf(ref context.Deque);
+                if (job != null)
+                {
 #if INSTRUMENT
-                context.LastJobSource = JobSource.Steal;
+                    context.LastJobSource = JobSource.Steal;
 #endif
-                this.ExecuteJob(job, context);
-                return true;
+                    this.ExecuteJob(job, context);
+                    return true;
+                }
             }
+
+            idx++;
+            if (idx == count) idx = 0;
         }
 
         return false;
