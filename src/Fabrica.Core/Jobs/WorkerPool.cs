@@ -553,17 +553,41 @@ public sealed class WorkerPool : IDisposable
 #endif
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [SkipLocalsInit]
     private void PropagateCompletion(Job job, WorkerContext context)
     {
         var dependents = job.Dependents;
         var count = dependents.Count;
         var scheduler = context.CurrentScheduler!;
+
+        // Fast path: single dependent — skip bitfield machinery.
+        if (count == 1)
+        {
+            var dependent = dependents[0];
+            var remaining = Interlocked.Decrement(ref dependent.RemainingDependencies);
+            Debug.Assert(remaining >= 0);
+            if (remaining == 0)
+            {
+#if DEBUG
+                Debug.Assert(dependent.State == JobState.Pending);
+                dependent.State = JobState.Queued;
+#endif
+                dependent.Scheduler = scheduler;
+                scheduler.IncrementOutstandingBy(1);
+                context.Deque.Push(dependent);
+                this.TryWakeOneWorker();
+            }
+
+            return;
+        }
+
         var readied = 0;
 
         // Bitfield tracking which dependents this thread readied (decremented to 0), so
         // the second pass pushes exactly the right set. Necessary because concurrent
         // threads may also be decrementing shared dependents.
         Span<long> readiedBits = stackalloc long[(count + 63) >> 6];
+        readiedBits.Clear(); // SkipLocalsInit: stackalloc is not zero-filled unless cleared.
 
         for (var i = 0; i < count; i++)
         {
