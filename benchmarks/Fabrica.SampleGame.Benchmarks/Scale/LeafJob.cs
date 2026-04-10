@@ -3,7 +3,7 @@ using Fabrica.Core.Memory;
 
 namespace Fabrica.SampleGame.Benchmarks.Scale;
 
-internal sealed class LeafJob : TreeJob
+internal sealed class LeafJob(JobScheduler scheduler) : TreeJob(scheduler)
 {
     internal ThreadLocalBuffer<BenchNode>[]? Buffers;
     internal int ChainLength;

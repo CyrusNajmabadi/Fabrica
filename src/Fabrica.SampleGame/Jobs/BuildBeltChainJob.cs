@@ -9,7 +9,7 @@ namespace Fabrica.SampleGame.Jobs;
 /// <see cref="BeltSegmentNode"/> segments, wiring each to the next and optionally carrying
 /// an <see cref="ItemNode"/> from the spawn job.
 /// </summary>
-internal sealed class BuildBeltChainJob : Job
+internal sealed class BuildBeltChainJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal ThreadLocalBuffer<BeltSegmentNode>[]? BeltThreadLocalBuffers;
     internal int ChainLength;

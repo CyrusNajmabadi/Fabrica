@@ -12,7 +12,7 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// array that fits in L1 cache. The iteration count controls how long the job runs.
 /// Each job owns its own array to avoid false sharing between cores.
 /// </summary>
-internal sealed class ComputeJob : Job
+internal sealed class ComputeJob(JobScheduler scheduler) : Job(scheduler)
 {
     private const int ArrayLength = 64;
 

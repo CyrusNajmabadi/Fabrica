@@ -148,7 +148,7 @@ public class JobMergePipelineTests : IDisposable
     /// <see cref="ValueStart"/>. The allocated handles are stored in <see cref="AllocatedHandles"/>
     /// for the parent job to reference.
     /// </summary>
-    private sealed class CreateChildNodesJob : Job
+    private sealed class CreateChildNodesJob(JobScheduler scheduler) : Job(scheduler)
     {
         internal ThreadLocalBuffer<ChildNode>[] ChildThreadLocalBuffers = null!;
         internal int ChildCount;
@@ -178,7 +178,7 @@ public class JobMergePipelineTests : IDisposable
     /// via <see cref="ParentNode.LeftParent"/> so that the last parent is the root and all others
     /// are reachable through the chain.
     /// </summary>
-    private sealed class CreateParentNodesJob : Job
+    private sealed class CreateParentNodesJob(JobScheduler scheduler) : Job(scheduler)
     {
         internal ThreadLocalBuffer<ParentNode>[] ParentThreadLocalBuffers = null!;
         internal CreateChildNodesJob[] ChildSources = null!;
@@ -226,23 +226,25 @@ public class JobMergePipelineTests : IDisposable
     public void EndToEnd_JobDAG_MergeAndValidate()
     {
         var (parentStore, childStore) = CreateStores(_pool.WorkerCount);
+        var scheduler = new JobScheduler(_pool);
+        var testAccessor = scheduler.GetTestAccessor();
 
         // Build job DAG: childJob0 and childJob1 must both complete before parentJob runs.
-        var childJob0 = new CreateChildNodesJob
+        var childJob0 = new CreateChildNodesJob(scheduler)
         {
             ChildThreadLocalBuffers = childStore.ThreadLocalBuffers,
             ChildCount = 2,
             ValueStart = 10,
         };
 
-        var childJob1 = new CreateChildNodesJob
+        var childJob1 = new CreateChildNodesJob(scheduler)
         {
             ChildThreadLocalBuffers = childStore.ThreadLocalBuffers,
             ChildCount = 1,
             ValueStart = 30,
         };
 
-        var parentJob = new CreateParentNodesJob
+        var parentJob = new CreateParentNodesJob(scheduler)
         {
             ParentThreadLocalBuffers = parentStore.ThreadLocalBuffers,
             ChildSources = [childJob0, childJob1],
@@ -250,9 +252,6 @@ public class JobMergePipelineTests : IDisposable
 
         parentJob.DependsOn(childJob0);
         parentJob.DependsOn(childJob1);
-
-        var scheduler = new JobScheduler(_pool);
-        var testAccessor = scheduler.GetTestAccessor();
         testAccessor.Inject(childJob0);
         testAccessor.Inject(childJob1);
         testAccessor.WaitForCompletion();
@@ -319,21 +318,20 @@ public class JobMergePipelineTests : IDisposable
     public void WorkStealing_ProducesValidNonCopyableRemapTables()
     {
         var (_, childStore) = CreateStores(_pool.WorkerCount);
+        var scheduler = new JobScheduler(_pool);
+        var testAccessor = scheduler.GetTestAccessor();
 
         // Submit many small jobs to encourage work-stealing
         var jobs = new CreateChildNodesJob[8];
         for (var i = 0; i < jobs.Length; i++)
         {
-            jobs[i] = new CreateChildNodesJob
+            jobs[i] = new CreateChildNodesJob(scheduler)
             {
                 ChildThreadLocalBuffers = childStore.ThreadLocalBuffers,
                 ChildCount = 4,
                 ValueStart = i * 100,
             };
         }
-
-        var scheduler = new JobScheduler(_pool);
-        var testAccessor = scheduler.GetTestAccessor();
         foreach (var job in jobs)
             testAccessor.Inject(job);
 

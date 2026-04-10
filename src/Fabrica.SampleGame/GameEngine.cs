@@ -34,7 +34,7 @@ public static class GameEngine
         // shared for read-only render jobs in the future.
         var workerPool = new WorkerPool(simulationWorkerCount, coordinatorCount: 1);
         var scheduler = new JobScheduler(workerPool);
-        var tickState = new GameTickState(workerPool.WorkerCount);
+        var tickState = new GameTickState(workerPool.WorkerCount, scheduler);
 
         var producer = new GameProducer(scheduler, tickState);
 

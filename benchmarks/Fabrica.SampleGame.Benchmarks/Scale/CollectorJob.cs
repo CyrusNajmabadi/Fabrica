@@ -3,7 +3,7 @@ using Fabrica.Core.Memory;
 
 namespace Fabrica.SampleGame.Benchmarks.Scale;
 
-internal sealed class CollectorJob : TreeJob
+internal sealed class CollectorJob(JobScheduler scheduler) : TreeJob(scheduler)
 {
     internal ThreadLocalBuffer<BenchNode>[]? Buffers;
     internal TreeJob[] Children = null!;

@@ -8,7 +8,7 @@ const int ComputeIterations = 12_500;
 var pool = new WorkerPool(coordinatorCount: 1);
 var scheduler = new JobScheduler(pool);
 
-var trigger = new TriggerJob();
+var trigger = new TriggerJob(scheduler);
 var phases = new ComputeJob[PhaseCount][];
 var barriers = new BarrierJob[PhaseCount];
 
@@ -16,8 +16,8 @@ for (var p = 0; p < PhaseCount; p++)
 {
     phases[p] = new ComputeJob[JobsPerPhase];
     for (var i = 0; i < JobsPerPhase; i++)
-        phases[p][i] = new ComputeJob();
-    barriers[p] = new BarrierJob();
+        phases[p][i] = new ComputeJob(scheduler);
+    barriers[p] = new BarrierJob(scheduler);
 }
 
 // Run enough ticks to trigger tier-1 PGO recompilation (default threshold ~30 calls).

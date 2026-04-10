@@ -56,7 +56,7 @@ public sealed class JobScheduler(WorkerPool pool)
         Debug.Assert(job.State == JobState.Pending);
         job.State = JobState.Queued;
 #endif
-        job.Scheduler = this;
+        Debug.Assert(job.Scheduler == this, "Job was created for a different scheduler.");
         Interlocked.Increment(ref _outstandingJobs);
         _coordinatorContext.Deque.Push(job);
         pool.NotifyWorkAvailable();
@@ -84,7 +84,7 @@ public sealed class JobScheduler(WorkerPool pool)
         Debug.Assert(job.State == JobState.Pending);
         job.State = JobState.Queued;
 #endif
-        job.Scheduler = this;
+        Debug.Assert(job.Scheduler == this, "Job was created for a different scheduler.");
         Interlocked.Increment(ref _outstandingJobs);
         pool.Inject(job);
     }

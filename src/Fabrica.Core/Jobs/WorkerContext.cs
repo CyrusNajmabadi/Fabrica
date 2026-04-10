@@ -34,13 +34,6 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
     /// </summary>
     internal bool IsSearching;
 
-    /// <summary>
-    /// Set by <see cref="WorkerPool.ExecuteJob"/> before calling <see cref="Job.Execute"/>. Remains set to the last scheduler
-    /// between job executions — this avoids a GC write barrier on every job completion. Only read
-    /// during <see cref="Job.Execute"/> (via <see cref="Enqueue"/>), where it is always valid.
-    /// </summary>
-    internal JobScheduler? CurrentScheduler;
-
     // ── Instrumentation ──────────────────────────────────────────────────
 
     /// <summary>How the most recent job was obtained. Only set when INSTRUMENT is defined.</summary>
@@ -53,30 +46,22 @@ internal sealed class WorkerContext(WorkerPool pool, int workerIndex, StrongBox<
     internal int InstrumentRecordCount;
 
     /// <summary>
-    /// Pushes a ready-to-execute sub-job onto this worker's deque. The sub-job is automatically
-    /// stamped with the currently executing job's scheduler, and that scheduler's outstanding count
-    /// is incremented.
+    /// Pushes a ready-to-execute sub-job onto this worker's deque. The job's scheduler (set at
+    /// creation time) is used to increment the outstanding count. No scheduler write occurs —
+    /// the job is already bound to its scheduler.
     /// </summary>
     internal void Enqueue(Job job)
     {
-        Debug.Assert(CurrentScheduler != null, "Enqueue is only valid during Job.Execute.");
-        var scheduler = CurrentScheduler;
-
 #if DEBUG
         Debug.Assert(job.State == JobState.Pending);
         job.State = JobState.Queued;
 #endif
 
-        // Stamp the sub-job with the scheduler that owns the currently executing DAG. This lets
-        // WorkerPool route the job's completion signal (DecrementOutstanding) back to the correct
-        // scheduler, which is critical when multiple schedulers share one pool.
-        job.Scheduler = scheduler;
-
         // Tell the scheduler about the new in-flight job *before* making it visible to workers.
         // This ordering is essential: if we pushed first and a worker executed+completed the job
         // before we incremented, the scheduler could see outstanding == 0 prematurely and signal
         // completion while work is still running.
-        scheduler.IncrementOutstanding();
+        job.Scheduler.IncrementOutstanding();
 
         // Push onto this worker's deque (hot slot, then ring buffer). The owning thread is most
         // likely to pop it back (cache-hot), but idle workers can steal from the ring (FIFO end).

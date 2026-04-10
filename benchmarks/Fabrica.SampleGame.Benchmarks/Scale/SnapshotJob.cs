@@ -12,7 +12,7 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// Final-phase job that does CPU work AND allocates a chain of <see cref="BenchNode"/>s,
 /// exercising the arena allocation path alongside compute.
 /// </summary>
-internal sealed class SnapshotJob : Job
+internal sealed class SnapshotJob(JobScheduler scheduler) : Job(scheduler)
 {
     private const int ArrayLength = 64;
     private readonly int[] _localArray = new int[ArrayLength];

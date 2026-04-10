@@ -9,7 +9,7 @@ namespace Fabrica.SampleGame.Jobs;
 /// executing worker's TLB. Downstream jobs read <see cref="AllocatedItems"/> to wire items
 /// into belt segments.
 /// </summary>
-internal sealed class SpawnItemsJob : Job
+internal sealed class SpawnItemsJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal ThreadLocalBuffer<ItemNode>[]? ItemThreadLocalBuffers;
     internal int Count;

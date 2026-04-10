@@ -1,3 +1,4 @@
+using Fabrica.Core.Jobs;
 using Fabrica.Core.Memory;
 using Fabrica.SampleGame.Jobs;
 using Fabrica.SampleGame.Nodes;
@@ -16,12 +17,15 @@ internal sealed class GameTickState
     internal readonly GlobalNodeStore<ItemNode, GameNodeOps> ItemStore;
     internal readonly MergeCoordinator Coordinator;
 
-    internal readonly SpawnItemsJob SpawnJob = new();
-    internal readonly BuildBeltChainJob BeltJob = new();
-    internal readonly PlaceMachinesJob MachineJob = new();
+    internal readonly SpawnItemsJob SpawnJob;
+    internal readonly BuildBeltChainJob BeltJob;
+    internal readonly PlaceMachinesJob MachineJob;
 
-    internal GameTickState(int workerCount)
+    internal GameTickState(int workerCount, JobScheduler scheduler)
     {
+        SpawnJob = new SpawnItemsJob(scheduler);
+        BeltJob = new BuildBeltChainJob(scheduler);
+        MachineJob = new PlaceMachinesJob(scheduler);
         MachineStore = new(workerCount);
         BeltStore = new(workerCount);
         ItemStore = new(workerCount);

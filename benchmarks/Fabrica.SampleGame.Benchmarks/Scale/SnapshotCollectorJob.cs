@@ -7,7 +7,7 @@ namespace Fabrica.SampleGame.Benchmarks.Scale;
 /// <summary>
 /// Fan-in job that collects results from <see cref="SnapshotJob"/>s into a single root node.
 /// </summary>
-internal sealed class SnapshotCollectorJob : Job
+internal sealed class SnapshotCollectorJob(JobScheduler scheduler) : Job(scheduler)
 {
     internal ThreadLocalBuffer<BenchNode>[]? Buffers;
     internal SnapshotJob[] Sources = null!;

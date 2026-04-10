@@ -3,14 +3,26 @@ using Xunit;
 
 namespace Fabrica.Core.Tests.Jobs;
 
-public class JobPoolTests
+public class JobPoolTests : IDisposable
 {
+    private readonly WorkerPool _pool = new(coordinatorCount: 1);
+    private readonly JobScheduler _scheduler;
+
+    public JobPoolTests()
+    {
+        _scheduler = new JobScheduler(_pool);
+    }
+
+    public void Dispose() => _pool.Dispose();
+
     // ── Test job ──────────────────────────────────────────────────────────
 
-    private sealed class TestJob : Job
+    private sealed class TestJob(JobScheduler scheduler) : Job(scheduler), IPoolableJob<TestJob>
     {
         public int Value { get; set; }
         public bool Executed { get; set; }
+
+        public static TestJob Create(JobScheduler scheduler) => new(scheduler);
 
         protected internal override void Execute(JobContext context)
             => this.Executed = true;
@@ -27,7 +39,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_FromEmptyPool_AllocatesNewInstance()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
         Assert.NotNull(job);
     }
@@ -35,7 +47,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_MultipleFromEmpty_AllocatesDistinctInstances()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job1 = pool.Rent();
         var job2 = pool.Rent();
         var job3 = pool.Rent();
@@ -47,7 +59,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_FromEmptyPool_ReturnsCleanInstance()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
         Assert.Equal(0, job.Value);
         Assert.False(job.Executed);
@@ -58,7 +70,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_AfterReturn_ReusesSameInstance()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
         pool.Return(job);
 
@@ -69,7 +81,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_MultipleThenReturn_ReturnsInLifoOrder()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job1 = pool.Rent();
         var job2 = pool.Rent();
         var job3 = pool.Rent();
@@ -86,7 +98,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_DrainsPoolThenAllocates()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
         pool.Return(job);
 
@@ -102,7 +114,7 @@ public class JobPoolTests
     [Fact]
     public void Return_ResetsSubclassState()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
         job.Value = 42;
         job.Executed = true;
@@ -118,7 +130,7 @@ public class JobPoolTests
     [Fact]
     public void Return_ResetsBaseClassState()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
 
         var otherJob = pool.Rent();
@@ -136,7 +148,7 @@ public class JobPoolTests
     [Fact]
     public void Return_ClearsPoolNext()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job1 = pool.Rent();
         var job2 = pool.Rent();
 
@@ -152,14 +164,14 @@ public class JobPoolTests
     [Fact]
     public void Count_EmptyPool_IsZero()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         Assert.Equal(0, pool.Count);
     }
 
     [Fact]
     public void Count_AfterReturns_ReflectsSize()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job1 = pool.Rent();
         var job2 = pool.Rent();
 
@@ -173,7 +185,7 @@ public class JobPoolTests
     [Fact]
     public void Count_AfterRentAndReturn_Tracks()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job = pool.Rent();
         Assert.Equal(0, pool.Count);
 
@@ -189,7 +201,7 @@ public class JobPoolTests
     [Fact]
     public void FullLifecycle_RentConfigureExecuteReturn()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
 
         var job = pool.Rent();
         job.Value = 99;
@@ -211,7 +223,7 @@ public class JobPoolTests
     [Fact]
     public void Rent_UnderConcurrentRent_StillSucceeds()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job1 = pool.Rent();
         var job2 = pool.Rent();
 
@@ -225,7 +237,7 @@ public class JobPoolTests
     [Fact]
     public void Return_UnderConcurrentReturn_AllItemsPresent()
     {
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         var job1 = pool.Rent();
         var job2 = pool.Rent();
 
@@ -242,7 +254,7 @@ public class JobPoolTests
     {
         const int ThreadCount = 8;
         const int OpsPerThread = 1000;
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
         using var barrier = new Barrier(ThreadCount);
 
         var threads = new Thread[ThreadCount];
@@ -274,10 +286,10 @@ public class JobPoolTests
     {
         const int ThreadCount = 8;
         const int JobsPerThread = 50;
-        var pool = new JobPool<TestJob>();
+        var pool = new JobPool<TestJob>(_scheduler);
 
         for (var i = 0; i < ThreadCount * JobsPerThread; i++)
-            pool.Return(new TestJob());
+            pool.Return(new TestJob(_scheduler));
 
         var allJobs = new TestJob[ThreadCount * JobsPerThread];
         using var barrier = new Barrier(ThreadCount);
