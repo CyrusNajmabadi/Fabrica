@@ -46,7 +46,8 @@ namespace Fabrica.Core.Jobs;
 ///       potentially cascade-wake one parked worker (see CASCADE WAKE below).
 ///
 ///     Phase 1 — HotSpin:
-///       Pure CPU spin via <see cref="SpinWait"/> for ~10 iterations (~sub-microsecond). Catches
+///       Fixed-count CPU spin via <see cref="Thread.SpinWait(int)"/> for <see cref="HotSpinIterations"/>
+///       iterations (~sub-microsecond). Catches
 ///       most inter-phase DAG gaps where the next batch of work arrives within microseconds.
 ///       Worker is counted as "searching" in <see cref="_idleState"/>.
 ///
@@ -146,6 +147,12 @@ public sealed class WorkerPool : IDisposable
     /// true idleness (loading screens, menus, low-demand game states).
     /// </summary>
     internal const int KeepAliveMs = 1000;
+
+    /// <summary>
+    /// Number of CPU spin iterations in the HotSpin phase before transitioning to WarmYield.
+    /// Matches the default SpinWait threshold (~10 spins before yielding).
+    /// </summary>
+    internal const int HotSpinIterations = 10;
 
     /// <summary>Set to <c>true</c> during <see cref="Dispose"/> to break worker loops.</summary>
     private volatile bool _shutdownRequested;
@@ -264,18 +271,18 @@ public sealed class WorkerPool : IDisposable
                     continue;
                 }
 
-                // ── HotSpin: ~10 pure CPU spin iterations ──
+                // ── HotSpin: fixed CPU spin iterations ──
                 this.EnterSearching(context);
-                var spinWait = new SpinWait();
                 var found = false;
-                while (!spinWait.NextSpinWillYield)
+                for (var spin = 0; spin < HotSpinIterations; spin++)
                 {
-                    spinWait.SpinOnce();
                     if (this.TryExecuteOne(context))
                     {
                         found = true;
                         break;
                     }
+
+                    Thread.SpinWait(1);
                 }
 
                 if (found)
